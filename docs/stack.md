@@ -1,51 +1,53 @@
 # Stack
 
-Toda tecnologia adotada, com uma linha sobre por que ela ganhou o lugar. O que não
-está aqui é decisão em aberto, nunca algo adotado em silêncio.
+Every adopted technology, with one line on why it earned its place. What is not here is an
+open decision, never something adopted silently.
 
-Nada nesta lista está instalado ainda — o monorepo é a tarefa 1.1 de
-`plans/project-wiki.md`. A lista existe antes das dependências porque é ela que
-torna a adição de cada uma um ato deliberado.
+Nothing on this list is installed yet — the monorepo is task 1.1 of
+`plans/project-wiki.md`. The list exists before the dependencies because it is what makes
+adding each one a deliberate act.
 
-## Captura
+## Capture
 
-- **Rust** — o gravador precisa falar COM com o WASAPI e sustentar um clock próprio por uma hora sem pausa de GC. Binário standalone, sem runtime a instalar.
-- **crate `wasapi`** — acesso direto ao WASAPI, incluindo loopback do dispositivo de renderização, que é exatamente o que o ffmpeg no Windows não tem. Ver `adr:0005-captura-wasapi-num-sidecar-minimo`.
+- **Rust** — the recorder has to speak COM to WASAPI and hold a clock of its own for an hour with no GC pause. Standalone binary, no runtime to install.
+- **`wasapi` crate** — direct access to WASAPI, including loopback of the render device, which is exactly what ffmpeg on Windows does not have. See `adr:0005-wasapi-capture-in-a-minimal-sidecar`.
 
 ## Pipeline
 
-- **TypeScript** — o pipeline vive no processo principal do Electron; uma linguagem só entre UI e orquestração evita uma fronteira de processo que não paga por si.
-- **Node.js** — runtime do Electron, já presente; nenhum processo extra.
-- **ffmpeg (vendored)** — downmix, VAD e encode Opus numa ferramenta só. Empacotado com verificação de hash, nunca baixado em tempo de execução.
-- **Opus 24 kbps** — a única codificação que põe uma hora de reunião abaixo do limite de 25 MB de upload. Requisito, não otimização. Ver `adr:0006-opus-como-formato-de-proveniencia`.
-- **Groq `whisper-large-v3-turbo`** — provedor padrão de STT: ~US$ 0,04 por hora e ~228x tempo real, com português aceitável. É a **única** credencial do aplicativo — ver `adr:0003-mcp-como-unica-ponte-com-o-llm`.
-- **whisper.cpp** — provedor local opcional, para quem exige que o áudio não saia da máquina. É o que sustenta o argumento de privacidade sem reescrever o pipeline.
+- **TypeScript** — the pipeline lives in Electron's main process; one language across UI and orchestration avoids a process boundary that does not pay for itself.
+- **Node.js** — Electron's runtime, already present; no extra process.
+- **ffmpeg (vendored)** — downmix, VAD and Opus encode in a single tool. Bundled with hash verification, never downloaded at run time.
+- **Opus 24 kbps** — the only encoding that puts an hour of meeting under the 25 MB upload limit. A requirement, not an optimisation. See `adr:0006-opus-as-the-provenance-format`.
+- **Groq `whisper-large-v3-turbo`** — the default STT provider: ~US$ 0.04 per hour and ~228x real time, multilingual, which is what lets the content language be a setting rather than a fixed choice — see `adr:0008-content-language-is-a-setting-english-by-default`. It is the **only** credential the application holds — see `adr:0003-mcp-as-the-only-bridge-to-the-llm`.
+- **whisper.cpp** — optional local provider, for anyone who requires that the audio never leave the machine. It is what holds up the privacy argument without rewriting the pipeline.
 
-## Aplicativo
+## Application
 
-- **Electron** — UI desktop com o mesmo TypeScript do pipeline, e acesso a filesystem e processos filhos sem ponte nativa.
-- **React** — a UI tem estado de verdade (gravação em curso, fontes atravessando o fluxo, páginas mudando enquanto o agente escreve); o ecossistema em torno do Electron é maior que o de qualquer alternativa, e isso importa mais que preferência.
-- **Vite** — build e recarga do renderer, rápido o bastante para não haver tentação de pular a UI ao iterar.
-- **markdown-it** — renderiza as páginas da wiki no navegador embutido; o modelo de plugins é o que permite ensinar `[[wikilink]]` e `rec://` sem reescrever o parser.
-- **pnpm workspaces** — monorepo de vários pacotes TS com dependências não achatadas, que é o que impede um pacote de importar o que não declarou.
+- **Electron** — desktop UI in the same TypeScript as the pipeline, with filesystem and child-process access and no native bridge.
+- **React** — the UI has real state (a recording in progress, sources crossing the flow, pages changing while the agent writes); the ecosystem around Electron is larger than any alternative's, and that matters more than preference.
+- **Vite** — renderer build and reload, fast enough that there is no temptation to skip the UI while iterating.
+- **markdown-it** — renders the wiki pages in the embedded browser; its plugin model is what allows teaching it `[[wikilink]]` and `rec://` without rewriting the parser.
+- **pnpm workspaces** — a monorepo of several TS packages with unhoisted dependencies, which is what stops a package from importing what it never declared.
 
-O workspace não usa git: `adr:0002-workspace-como-pasta-local-de-markdown`. O código-fonte
-deste projeto usa, e isso não é uma tecnologia adotada pelo produto.
+The workspace does not use git: `adr:0002-workspace-as-a-local-markdown-folder`. This
+project's source does, and that is not a technology adopted by the product.
 
-## Extração de texto das fontes
+## Text extraction from sources
 
-Cada adaptador de fonte tem uma responsabilidade só — virar `text.md` com âncoras de
-proveniência, e o caminho para de escrever ali — ver
-`adr:0003-mcp-como-unica-ponte-com-o-llm`.
+Each source adapter has a single responsibility — becoming `text.md` with provenance
+anchors, and the path stops writing there — see
+`adr:0003-mcp-as-the-only-bridge-to-the-llm`.
 
-- **pdf-parse** — texto e limites de página de um PDF; é o número da página que torna a citação possível, e sem ele a fonte não serve.
-- **mammoth** — DOCX para markdown preservando a hierarquia de títulos, que é a âncora equivalente à página do PDF.
+- **pdf-parse** — text and page boundaries of a PDF; it is the page number that makes the citation possible, and without it the source is of no use.
+- **mammoth** — DOCX to markdown preserving the heading hierarchy, which is the anchor equivalent to a PDF's page.
 
-## Servidor MCP
+## MCP server
 
-- **MCP TypeScript SDK** — a interface do produto, não um acessório: é por onde o agente lê, ingere e escreve. Não acopla o produto a um fornecedor, e não construímos motor de busca. Ver `adr:0003-mcp-como-unica-ponte-com-o-llm`.
+- **MCP TypeScript SDK** — the product's interface, not an accessory: it is how the agent reads, ingests and writes. It does not couple the product to a vendor, and we are not building a search engine. See `adr:0003-mcp-as-the-only-bridge-to-the-llm`.
 
-## Testes e verificação
+## Testing and verification
 
-- **Vitest** — runner dos pacotes TS: roda um arquivo isolado rápido o bastante para o loop por tarefa, que é o que a verificação escopada exige.
-- **`cargo test`** — o que já vem com Rust; adicionar um segundo runner não compra nada.
+- **Vitest** — runner for the TS packages: it runs a single file fast enough for the per-task loop, which is what scoped verification demands.
+- **`@vitest/coverage-v8`** — Vitest's V8 coverage provider, and the source of the `coverage-summary.json` that CI reads to enforce the 76% floor per package. V8 rather than Istanbul because it needs no instrumentation step.
+- **`cargo test`** — what already ships with Rust; adding a second runner buys nothing.
+- **GitHub Actions** — CI on `windows-latest`, which is the only platform the product supports. One job per workspace package, so a package below the coverage floor fails on its own instead of hiding behind a well-tested neighbour.

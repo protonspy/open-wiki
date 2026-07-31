@@ -1,24 +1,23 @@
-# Glossário
+# Glossary
 
-Um termo canônico por conceito, e os sinônimos a evitar. Estes termos aparecem em
-código, em nomes de arquivo, em schemas JSON, nas ferramentas do servidor MCP e nas
-páginas que o agente escreve — por isso são mantidos em inglês, na forma exata em que
-aparecem nos schemas.
+One canonical term per concept, and the synonyms to avoid. These terms appear in code, in
+file names, in JSON schemas, in the MCP server's tools and in the pages the agent writes —
+which is why each one is listed in the exact form it takes in the schemas.
 
-- **workspace** — a pasta raiz escolhida pelo usuário, com um diretório por project. Avoid: cofre, library
-- **project** — um projeto dentro do workspace, com `raw/`, `wiki/`, `.state/` e `CLAUDE.md` próprios. O servidor MCP serve exatamente um por vez. Avoid: namespace
-- **source** — qualquer entrada em `raw/`: um arquivo subido ou uma recording. Imutável depois de escrita. Avoid: attachment
-- **recording** — uma sessão de captura de áudio, identificada por `recording_id` em UTC ISO-8601. Avoid: session
-- **track** — uma das duas streams capturadas, `mic` ou `system`. Avoid: feed
-- **timeline** — a fusão ordenada das duas tracks em tempo real, em `timeline.json`. Avoid: transcript
-- **time map** — a tabela que converte instante do áudio comprimido em instante real, em `timemap.json`. Avoid: offset table
-- **chunk** — um pedaço de ~10 minutos cortado em ponto de silêncio, unidade de transcrição e de retry. Avoid: slice
-- **ingest** — o caminho de uma source até estar disponível como `text.md` no project. Termina aí: escrever páginas é do agente. Avoid: sync
-- **entity** — pessoa, projeto ou tópico com página própria, identificada por `id` no formato `type:slug`. Avoid: subject
-- **claim** — uma afirmação registrada numa página, de tipo `decision`, `fact`, `action_item` ou `open_question`, sempre com citação. Avoid: insight
-- **supersession** — marcar uma decisão anterior como substituída, preservando-a riscada com data e link para a que a substituiu. Avoid: override
-- **provenance link** — o link que abre a source no ponto de origem de uma claim: instante para áudio, página para PDF. Avoid: backlink
+- **workspace** — the root folder chosen by the user, with one directory per project. Avoid: vault, library
+- **project** — a project inside the workspace, with its own `raw/`, `wiki/`, `.state/` and `CLAUDE.md`. The MCP server serves exactly one at a time. Avoid: namespace
+- **source** — any entry in `raw/`: an uploaded file or a recording. Immutable once written. Avoid: attachment
+- **recording** — one audio capture session, identified by `recording_id` in UTC ISO-8601. Avoid: session
+- **track** — one of the two captured streams, `mic` or `system`. Avoid: feed
+- **timeline** — the two tracks merged and ordered by real time, in `timeline.json`. Avoid: transcript
+- **time map** — the table converting an instant of the compressed audio into a real instant, in `timemap.json`. Avoid: offset table
+- **chunk** — a ~10-minute piece cut at a silence point; the unit of transcription and of retry. Avoid: slice
+- **ingest** — the path from a source to being available as `text.md` in the project. It ends there: writing pages is the agent's job. Avoid: sync
+- **entity** — a person, project or topic with a page of its own, identified by `id` in the form `type:slug`. Avoid: subject
+- **claim** — a statement recorded on a page, of type `decision`, `fact`, `action_item` or `open_question`, always with a citation. Avoid: insight
+- **supersession** — marking an earlier decision as replaced, preserving it struck through with a date and a link to the one replacing it. Avoid: override
+- **provenance link** — the link that opens the source where a claim came from: an instant for audio, a page for a PDF. Avoid: backlink
 
-> **`workspace` tem outro sentido em `docs/stack.md`**, onde "pnpm workspaces" nomeia a
-> divisão do monorepo do código-fonte. São coisas diferentes: uma é a pasta do usuário,
-> a outra é ferramenta de quem desenvolve o aplicativo.
+> **`workspace` has another sense in `docs/stack.md`**, where "pnpm workspaces" names the
+> way the source monorepo is divided. They are different things: one is the user's folder,
+> the other is a tool for whoever develops the application.
