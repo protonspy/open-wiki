@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  # Never two runs publishing the same tag.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish the installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Until task 10.1 lands there is nothing to package. Saying so beats a
+      # pnpm error about a filter matching no project.
+      - name: Check the desktop app exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "apps/desktop/package.json")) {
+            Write-Error "apps/desktop does not exist yet — there is nothing to release (plan task 10.1)."
+            exit 1
+          }
+
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $version = (Get-Content "apps/desktop/package.json" -Raw | ConvertFrom-Json).version
+          if ($tag -ne $version) {
+            Write-Error "tag v$tag does not match apps/desktop/package.json version $version"
+            exit 1
+          }
+          Write-Host "releasing $version"
+
+      - name: Refuse to republish an existing release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A published release has been downloaded; deleting it does not undo that.
+          gh release view "${{ github.ref_name }}" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "release ${{ github.ref_name }} already exists — bump the version and tag again"
+            exit 1
+          }
+          Write-Host "no release for ${{ github.ref_name }} yet"
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the installer
+        shell: pwsh
+        env:
+          # electron-builder picks these up on its own and signs when they are
+          # set. Absent, it builds unsigned — see adr:0009.
+          CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          # Publishing is this workflow's job, not electron-builder's.
+          GH_TOKEN: ""
+        run: pnpm --filter "@project-wiki/desktop" run package
+
+      - name: Collect the artifacts and their checksums
+        id: collect
+        shell: pwsh
+        run: |
+          $dir = "apps/desktop/release"
+          $installers = @(Get-ChildItem -Path $dir -Filter *.exe -File -ErrorAction SilentlyContinue)
+          if ($installers.Count -eq 0) {
+            Write-Error "no .exe found in $dir — the package script produced no installer"
+            exit 1
+          }
+          $installers | ForEach-Object { Write-Host "  $($_.Name)  $([math]::Round($_.Length / 1MB, 1)) MB" }
+          Get-FileHash -Algorithm SHA256 $installers.FullName |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Out-File -FilePath "$dir/SHA256SUMS.txt" -Encoding utf8
+          Get-Content "$dir/SHA256SUMS.txt"
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/SHA256SUMS.txt
+          generate_release_notes: true
+          # A tag carrying a suffix — v0.1.0-beta.1 — is not a stable release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+
+      # workflow_dispatch builds without a tag: useful for checking the packaging
+      # still works without publishing anything.
+      - name: Upload the installer as a build artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ github.sha }}
+          path: apps/desktop/release/*
+          retention-days: 7

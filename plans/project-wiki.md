@@ -193,9 +193,10 @@ With the agent writing, this stops being hygiene and becomes the defence against
 
 ## 10 — Distribution
 
-- [ ] 10.1 (Unit) A single installer with ffmpeg and `recorder.exe` embedded, with no external dependency to install
-- [ ] 10.2 (Unit) Publish to winget and Scoop
-- [ ] 10.3 (Unit) A README with the recording notice and the responsibility to inform participants
+- [ ] 10.1 (Unit) A single NSIS installer with ffmpeg and `recorder.exe` embedded, written to `apps/desktop/release/`, with no external dependency to install — `adr:0009-distribution-through-github-releases`
+- [ ] 10.2 (Unit) Release from a `v*` tag: CI builds the installer, refuses a tag that disagrees with the app version or that already has a release, and publishes it to GitHub Releases with its `SHA256SUMS.txt`
+- [ ] 10.3 (Unit) Publish to winget and Scoop, with the manifests pointing at the release URL and quoting its hash
+- [ ] 10.4 (Unit) A README with the recording notice, the responsibility to inform participants, and what the SmartScreen warning on an unsigned installer means
 
 ---
 

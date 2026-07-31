@@ -50,4 +50,9 @@ anchors, and the path stops writing there — see
 - **Vitest** — runner for the TS packages: it runs a single file fast enough for the per-task loop, which is what scoped verification demands.
 - **`@vitest/coverage-v8`** — Vitest's V8 coverage provider, and the source of the `coverage-summary.json` that CI reads to enforce the 76% floor per package. V8 rather than Istanbul because it needs no instrumentation step.
 - **`cargo test`** — what already ships with Rust; adding a second runner buys nothing.
-- **GitHub Actions** — CI on `windows-latest`, which is the only platform the product supports. One job per workspace package, so a package below the coverage floor fails on its own instead of hiding behind a well-tested neighbour.
+- **GitHub Actions** — CI on `windows-latest`, which is the only platform the product supports. One job per workspace package, so a package below the coverage floor fails on its own instead of hiding behind a well-tested neighbour. It also builds and publishes the release — see `adr:0009-distribution-through-github-releases`.
+
+## Distribution
+
+- **electron-builder** — packs the Electron application, ffmpeg and `recorder.exe` into one NSIS installer, and is what reads `CSC_LINK` to sign it the day there is a certificate. See `adr:0009-distribution-through-github-releases`.
+- **GitHub Releases** — where the installer is downloaded from. No host of ours to run, and a stable URL with a published hash is exactly what a winget or Scoop manifest needs.
