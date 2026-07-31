@@ -4,7 +4,7 @@ Every adopted technology, with one line on why it earned its place. What is not 
 open decision, never something adopted silently.
 
 Nothing on this list is installed yet — the monorepo is task 1.1 of
-`plans/project-wiki.md`. The list exists before the dependencies because it is what makes
+`plans/open-wiki.md`. The list exists before the dependencies because it is what makes
 adding each one a deliberate act.
 
 ## Capture

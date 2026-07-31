@@ -6,10 +6,13 @@ which is why each one is listed in the exact form it takes in the schemas.
 
 - **workspace** — the root folder chosen by the user, with one directory per project. Avoid: vault, library
 - **project** — a project inside the workspace, with its own `raw/`, `wiki/`, `.state/` and `CLAUDE.md`. The MCP server serves exactly one at a time. Avoid: namespace
-- **source** — any entry in `raw/`: an uploaded file or a recording. Immutable once written. Avoid: attachment
-- **recording** — one audio capture session, identified by `recording_id` in UTC ISO-8601. Avoid: session
+- **source** — any entry in `raw/`: an uploaded file or a recording. Immutable once written, and named for what it is — `adr:0011-sources-are-named-by-what-they-are`. Avoid: attachment
+- **source id** — a source's directory name, and what a provenance link points at. Derived from the source's name when it is written, and never changed after.
+- **title** — a source's readable name, held in its `manifest.json` and correctable at any time. It is not the source id and may drift from it.
+- **recording** — one audio capture, named for the occasion and the date it happened, as in `fenix-weekly-2026-07-31`. Avoid: session
 - **track** — one of the two captured streams, `mic` or `system`. Avoid: feed
-- **timeline** — the two tracks merged and ordered by real time, in `timeline.json`. Avoid: transcript
+- **timeline** — the two tracks merged and ordered by real time, in `timeline.json`, and written out as `timeline.vtt` for anything that reads WebVTT. Avoid: transcript
+- **transcription journal** — the per-chunk record of a transcription in progress, in the recording's directory, that makes an interrupted run resumable — `adr:0012-transcription-is-a-journalled-serial-pipeline`. It is not the operation log of `.state/` and not the wiki's `log.md`.
 - **time map** — the table converting an instant of the compressed audio into a real instant, in `timemap.json`. Avoid: offset table
 - **chunk** — a ~10-minute piece cut at a silence point; the unit of transcription and of retry. Avoid: slice
 - **ingest** — the path from a source to being available as `text.md` in the project. It ends there: writing pages is the agent's job. Avoid: sync

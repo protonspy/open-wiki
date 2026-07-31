@@ -4,7 +4,7 @@
  * Emits `key=value` lines on stdout, meant to be appended to $GITHUB_OUTPUT, and
  * a human-readable summary on stderr:
  *
- *   packages=[{"name":"@project-wiki/desktop","path":"apps/desktop", ...}]
+ *   packages=[{"name":"@open-wiki/desktop","path":"apps/desktop", ...}]
  *   any=true
  *   rust=false
  *
