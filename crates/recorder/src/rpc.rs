@@ -56,6 +56,14 @@ pub struct StatusPayload {
     pub mic_frames: u64,
     pub system_frames: u64,
     pub pauses: usize,
+    /// Samples that reached this process and were dropped because the queue
+    /// was full, and the number of times Windows reported it had overwritten
+    /// frames nobody collected. Both zero on a clean recording; either
+    /// non-zero means silence in the file that was never silence in the room.
+    pub dropped_samples: u64,
+    pub discontinuities: u64,
+    /// Set when a capture thread has stopped working.
+    pub capture_fault: Option<String>,
     pub device_changes: usize,
 }
 

@@ -60,6 +60,9 @@ fn a_status_response_renders_as_one_line_of_json() {
         mic_frames: 59_232,
         system_frames: 59_232,
         pauses: 1,
+        dropped_samples: 0,
+        discontinuities: 0,
+        capture_fault: None,
         device_changes: 0,
     }));
     let line = render(&response);
@@ -68,6 +71,9 @@ fn a_status_response_renders_as_one_line_of_json() {
     assert_eq!(parsed["ok"], "true");
     assert_eq!(parsed["state"], "recording");
     assert_eq!(parsed["recorded_ms"], 1234);
+    // A clean recording says so, rather than leaving the caller to infer it.
+    assert_eq!(parsed["dropped_samples"], 0);
+    assert_eq!(parsed["capture_fault"], serde_json::Value::Null);
 }
 
 #[test]

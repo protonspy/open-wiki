@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -23,6 +23,12 @@ pub struct ThreadedSource {
     device: String,
     rx: Receiver<Poll>,
     commands: Sender<Command>,
+    /// Frames the queue had no room for, so a lossy recording can say so.
+    dropped: Arc<AtomicU64>,
+    /// Cleared when the capture thread returns, for any reason.
+    alive: Arc<AtomicBool>,
+    /// Why it returned, when it did.
+    fault: Arc<Mutex<Option<String>>>,
     running: Arc<AtomicBool>,
     lost: Arc<AtomicU64>,
     /// A device change taken out of the channel behind frames that have to be
@@ -33,6 +39,11 @@ pub struct ThreadedSource {
     opened: Arc<Mutex<Option<Result<String, String>>>>,
     handle: Option<JoinHandle<()>>,
 }
+
+/// Packets the queue holds before it starts dropping. At a few milliseconds
+/// per packet this is seconds of slack, which is far more than the pump loop
+/// needs and still bounded.
+const QUEUE_DEPTH: usize = 2048;
 
 enum Command {
     Start,
@@ -54,17 +65,33 @@ impl ThreadedSource {
         F: FnOnce() -> Result<S, CaptureError> + Send + 'static,
     {
         let device = "opening".to_string();
-        let (tx, rx) = mpsc::channel::<Poll>();
+        // Bounded. Unbounded meant the capture threads pushed ~384 KB/s per
+        // device for as long as the session went without polling, and nothing
+        // capped it. Bounded, the oldest audio is lost instead of the machine
+        // — and the loss is counted, because a recording that lost audio has
+        // to be able to say so rather than presenting silence as the real
+        // thing. Sized for several seconds of packets.
+        let (tx, rx) = mpsc::sync_channel::<Poll>(QUEUE_DEPTH);
         let (commands, orders) = mpsc::channel::<Command>();
         let running = Arc::new(AtomicBool::new(false));
         let lost = Arc::new(AtomicU64::new(0));
+        let dropped = Arc::new(AtomicU64::new(0));
+        let alive = Arc::new(AtomicBool::new(true));
+        let fault: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
         let opened: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));
 
         let thread_running = Arc::clone(&running);
         let thread_lost = Arc::clone(&lost);
         let thread_opened = Arc::clone(&opened);
+        let thread_dropped = Arc::clone(&dropped);
+        let thread_alive = Arc::clone(&alive);
+        let thread_fault = Arc::clone(&fault);
         let handle = thread::spawn(move || {
+            // Whatever happens below, the session finds out. A thread that
+            // returns quietly is indistinguishable from a device that is
+            // merely silent, which is the whole failure this guards.
+            let _guard = AliveGuard(thread_alive);
             let mut source = match open() {
                 Ok(source) => {
                     let name = source.device_name();
@@ -74,6 +101,7 @@ impl ThreadedSource {
                 Err(e) => {
                     // Say so and stop. A thread that dies quietly looks to the
                     // session exactly like a device that is merely silent.
+                    *thread_fault.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.to_string());
                     *thread_opened.lock().unwrap_or_else(|e| e.into_inner()) =
                         Some(Err(e.to_string()));
                     return;
@@ -107,10 +135,23 @@ impl ThreadedSource {
                     // A closed channel means the session is gone; so is the point
                     // of this thread.
                     Ok(poll) => {
-                        thread_lost.store(source.lost_frames(), Ordering::Relaxed);
-                        if tx.send(poll).is_err() {
-                            source.stop();
-                            return;
+                        thread_lost.store(source.discontinuities(), Ordering::Relaxed);
+                        // `try_send`, never `send`: a full queue must not block
+                        // the drain, because a blocked drain is exactly how
+                        // WASAPI comes to overwrite frames nobody collected.
+                        // The oldest audio is lost instead, and counted.
+                        match tx.try_send(poll) {
+                            Ok(()) => {}
+                            Err(TrySendError::Full(unsent)) => {
+                                if let Poll::Frames { samples, .. } = unsent {
+                                    thread_dropped
+                                        .fetch_add(samples.len() as u64, Ordering::Relaxed);
+                                }
+                            }
+                            Err(TrySendError::Disconnected(_)) => {
+                                source.stop();
+                                return;
+                            }
                         }
                     }
                     Err(_) => {
@@ -129,6 +170,9 @@ impl ThreadedSource {
             commands,
             running,
             lost,
+            dropped,
+            alive,
+            fault,
             deferred: None,
             opened,
             handle: Some(handle),
@@ -168,8 +212,24 @@ impl CaptureSource for ThreadedSource {
         self.device.clone()
     }
 
-    fn lost_frames(&self) -> u64 {
+    fn discontinuities(&self) -> u64 {
         self.lost.load(Ordering::Relaxed)
+    }
+
+    fn dropped_samples(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
+    }
+
+    fn health(&self) -> Result<(), String> {
+        if self.alive.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        Err(self
+            .fault
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or_else(|| "the capture thread stopped".into()))
     }
 
     /// Everything the thread collected since the last call, as one packet.
@@ -190,8 +250,12 @@ impl CaptureSource for ThreadedSource {
                     if samples.is_empty() {
                         return Ok(Poll::DeviceChanged { device });
                     }
-                    // Hand back the audio from before the change first; the
-                    // change itself is still queued for the next call.
+                    // Hand back the audio from before the change first — but
+                    // *hold* the change. It has already been taken out of the
+                    // channel, so returning the frames without keeping it drops
+                    // it, and the recording carries on with no record that the
+                    // device moved, which is the one thing 4.2 writes down.
+                    self.deferred = Some(Poll::DeviceChanged { device });
                     return Ok(Poll::Frames {
                         wall_ns: 0,
                         samples,
@@ -230,5 +294,14 @@ impl Drop for ThreadedSource {
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
+    }
+}
+
+/// Clears the alive flag however the thread leaves — return, or panic.
+struct AliveGuard(Arc<AtomicBool>);
+
+impl Drop for AliveGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Relaxed);
     }
 }

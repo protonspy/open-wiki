@@ -240,3 +240,63 @@ fn a_device_change_reaches_the_manifest() {
     assert_eq!(manifest.device_changes[0].device, "new-mic");
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn status_reports_what_the_recording_lost_and_whether_capture_is_alive() {
+    // Silence that nobody flagged, presented as a healthy hour, is the failure
+    // this sidecar exists to avoid. Both counters and the fault are in the one
+    // response a parent already polls.
+    let service = service(vec![]);
+    let status = json(&service.status());
+    assert_eq!(status["dropped_samples"], 0);
+    assert_eq!(status["discontinuities"], 0);
+    assert_eq!(status["capture_fault"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_system_device_that_will_not_start_rolls_the_microphone_back() {
+    use recorder::capture::{CaptureError, CaptureSource, Poll};
+
+    struct WontStart(AudioFormat);
+    impl CaptureSource for WontStart {
+        fn format(&self) -> AudioFormat {
+            self.0
+        }
+        fn device_name(&self) -> String {
+            "wont-start".into()
+        }
+        fn poll(&mut self) -> Result<Poll, CaptureError> {
+            Ok(Poll::Idle)
+        }
+        fn start(&mut self) -> Result<(), CaptureError> {
+            Err(CaptureError("device in use".into()))
+        }
+    }
+
+    let format = AudioFormat {
+        sample_rate: 48_000,
+        channels: 1,
+    };
+    let mic = ScriptedSource::new(format, "mic", vec![]);
+    let mut service = Service::new(
+        SystemClock::new,
+        Box::new(mic),
+        Box::new(WontStart(format)),
+        devices_ok,
+    );
+
+    let dir = tempdir("rollback");
+    let start = parse(&format!(
+        r#"{{"method":"start","dir":{:?}}}"#,
+        dir.to_str().unwrap()
+    ))
+    .unwrap();
+    let response = json(&service.handle(start));
+
+    assert_eq!(response["ok"], "false");
+    assert!(response["error"].as_str().unwrap().contains("system audio"));
+    // Leaving the microphone running would fail the next start with
+    // AUDCLNT_E_NOT_STOPPED on a device nobody asked for.
+    assert_eq!(json(&service.status())["state"], "idle");
+    let _ = fs::remove_dir_all(&dir);
+}

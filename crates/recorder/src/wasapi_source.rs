@@ -190,9 +190,19 @@ impl WasapiSource {
     /// frames the old device was not producing anyway; the track is padded to
     /// cover the gap by the session, which is what keeps the timeline honest.
     fn reopen(&mut self) -> Result<(), CaptureError> {
-        let Some((device, name, id)) = self.default_device_changed() else {
-            self.needs_reopen = false;
-            return Ok(());
+        // Either the default moved, or this stream was invalidated on the
+        // device that is still default. Only handling the first left a track
+        // dead for the rest of the meeting whenever Windows invalidated the
+        // stream without changing the endpoint — a sleep/resume, a driver
+        // reset, a sample-rate change in the sound control panel.
+        let moved = self.default_device_changed();
+        let (device, name, id) = match moved {
+            Some(found) => found,
+            None if self.needs_reopen => default_device(self.which)?,
+            None => {
+                self.needs_reopen = false;
+                return Ok(());
+            }
         };
         // Open the new stream **before** dropping the working one. Dropping
         // first and then failing — which a newly promoted device does routinely
@@ -300,7 +310,7 @@ impl CaptureSource for WasapiSource {
         self.device_name.clone()
     }
 
-    fn lost_frames(&self) -> u64 {
+    fn discontinuities(&self) -> u64 {
         self.discontinuities
     }
 

@@ -205,8 +205,16 @@ impl TrackWriter {
         if self.segment.is_none() || frames.is_empty() {
             return 0;
         }
-        self.emit(frames);
-        let appended = (frames.len() / usize::from(self.channels.max(1))) as u64;
+        // Whole frames only. Writing a trailing partial frame put samples in
+        // the file that `frames_written` never counted, so every later
+        // `pad_to` computed its gap from a length the file did not have.
+        let channels = usize::from(self.channels.max(1));
+        let whole = (frames.len() / channels) * channels;
+        if whole == 0 {
+            return 0;
+        }
+        self.emit(&frames[..whole]);
+        let appended = (whole / channels) as u64;
         self.frames_written += appended;
         appended
     }

@@ -49,11 +49,22 @@ pub trait CaptureSource {
     fn start(&mut self) -> Result<(), CaptureError> {
         Ok(())
     }
-    /// How many frames the device reported it overwrote before anyone
-    /// collected them. A recording that lost audio must be able to say so
-    /// rather than presenting manufactured silence as the real thing.
-    fn lost_frames(&self) -> u64 {
+    /// How many times the device reported it had overwritten frames nobody
+    /// collected. An **event** count, not a frame count — Windows says that a
+    /// gap happened, not how big it was.
+    fn discontinuities(&self) -> u64 {
         0
+    }
+    /// Samples that reached this process and were then thrown away because the
+    /// queue was full. A recording that lost audio must be able to say so
+    /// rather than presenting manufactured silence as the real thing.
+    fn dropped_samples(&self) -> u64 {
+        0
+    }
+    /// `Err` when capture has stopped working. A source that has died must not
+    /// look like one that is merely silent.
+    fn health(&self) -> Result<(), String> {
+        Ok(())
     }
 }
 

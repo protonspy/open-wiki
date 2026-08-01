@@ -79,35 +79,53 @@ fn main() {
     };
 
     let mut service = Service::new(SystemClock::new, mic, system, list_devices);
-    let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
 
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let response = match parse(&line) {
-            Ok(request) => {
-                let stopping = matches!(request, Request::Stop);
-                let response = service.handle(request);
-                if stopping {
-                    let _ = writeln!(stdout, "{}", render(&response));
-                    let _ = stdout.flush();
-                    break;
-                }
-                response
+    // stdin on a thread of its own, so the loop below is free to pump on a
+    // timer. Blocking on `lines()` and pumping once per request meant the
+    // capture queues grew for as long as the parent stayed quiet — and the
+    // parent has no reason to send anything between `start` and `stop`.
+    let (tx, requests) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            if tx.send(line).is_err() {
+                break;
             }
-            Err(message) => error(message),
-        };
+        }
+    });
 
-        let _ = writeln!(stdout, "{}", render(&response));
-        let _ = stdout.flush();
-
-        // Fold in whatever the capture threads collected. The threads do the
-        // draining; this only moves it into the session, so a slow parent
-        // costs latency in `status` rather than audio.
-        service.pump();
+    // Often enough that a bounded queue never fills, cheap enough to ignore.
+    let tick = std::time::Duration::from_millis(50);
+    loop {
+        match requests.recv_timeout(tick) {
+            Ok(line) => {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let response = match parse(&line) {
+                    Ok(request) => {
+                        let stopping = matches!(request, Request::Stop);
+                        let response = service.handle(request);
+                        let _ = writeln!(stdout, "{}", render(&response));
+                        let _ = stdout.flush();
+                        if stopping {
+                            break;
+                        }
+                        continue;
+                    }
+                    Err(message) => error(message),
+                };
+                let _ = writeln!(stdout, "{}", render(&response));
+                let _ = stdout.flush();
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => service.pump(),
+            // The parent closed stdin: finish whatever is open rather than
+            // leaving a half-written recording behind.
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = service.handle(Request::Stop);
+                break;
+            }
+        }
     }
 }

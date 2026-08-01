@@ -74,8 +74,15 @@ impl<C: Clock> Service<C> {
                 if let Err(e) = session.attach_files(&dir) {
                     return error(format!("could not open the track files: {e}"));
                 }
-                if let Err(e) = self.mic.start().and_then(|()| self.system.start()) {
-                    return error(format!("could not start capture: {e}"));
+                if let Err(e) = self.mic.start() {
+                    return error(format!("could not start the microphone: {e}"));
+                }
+                if let Err(e) = self.system.start() {
+                    // Roll the first one back. Leaving it running puts the pair
+                    // in mixed states, and the next start or resume then fails
+                    // with AUDCLNT_E_NOT_STOPPED on a device nobody asked for.
+                    self.mic.stop();
+                    return error(format!("could not start system audio: {e}"));
                 }
                 self.dir = Some(dir);
                 self.session = Some(session);
@@ -145,6 +152,9 @@ impl<C: Clock> Service<C> {
                 system_frames: 0,
                 pauses: 0,
                 device_changes: 0,
+                dropped_samples: 0,
+                discontinuities: 0,
+                capture_fault: None,
             }));
         };
         Response::Ok(Payload::Status(StatusPayload {
@@ -161,6 +171,16 @@ impl<C: Clock> Service<C> {
             system_frames: session.system().frames_written(),
             pauses: session.pauses().len(),
             device_changes: session.device_changes().len(),
+            // What the recording lost, and whether either device has stopped
+            // working. Silence that nobody flagged is the failure this whole
+            // sidecar has to avoid presenting as a healthy hour.
+            dropped_samples: self.mic.dropped_samples() + self.system.dropped_samples(),
+            discontinuities: self.mic.discontinuities() + self.system.discontinuities(),
+            capture_fault: match (self.mic.health(), self.system.health()) {
+                (Err(e), _) => Some(format!("microphone: {e}")),
+                (_, Err(e)) => Some(format!("system audio: {e}")),
+                _ => None,
+            },
         }))
     }
 }
