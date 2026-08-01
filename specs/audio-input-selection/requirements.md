@@ -81,6 +81,28 @@ started twice — both present as a track that is simply dead.
 - **R4.4** The level shall be derived from the frames the recorder has already captured, and shall
   not open a second stream on the endpoint.
 
+## R5 · Proving the devices work, before the meeting
+
+R4 shows a dead track while the meeting is running, which is late: the minutes already
+lost are the ones nobody can re-record. A check that runs **before** capture starts is
+the same evidence at the moment it is still worth having.
+
+It is also how this product answers a gap it cannot close in CI. No test in this
+repository has captured a frame and none ever will, because build agents have no audio
+device. A pre-flight check moves that verification to the one machine that does have
+one, at the one moment somebody cares.
+
+- **R5.1** (ADDED) The application shall offer, before capture starts, a check that reports whether each
+  chosen endpoint is capturing.
+- **R5.2** (ADDED) When the check runs, the application shall capture briefly from each chosen endpoint and
+  report, per endpoint, whether frames arrived and whether they carried signal.
+- **R5.3** (ADDED) If an endpoint delivers frames that are entirely silent, then the application shall report
+  it as opened but receiving nothing, distinctly from an endpoint that failed to open.
+- **R5.4** (ADDED) The check shall discard everything it captures, and shall register no source.
+- **R5.5** (ADDED) When the check finishes, the application shall release both endpoints, so that a check does
+  not leave the microphone held.
+- **R5.6** (ADDED) While a recording is in progress, the application shall not offer the check.
+
 ## Out of scope
 
 - Per-endpoint gain, and monitoring the captured audio through a speaker. Reading the
