@@ -242,16 +242,31 @@ of record.
 
 ## 8 — Application
 
-- [ ] 8.1 (Unit) Design system: dense dark-theme tokens, a compact type scale, focus and error states, a recording indicator
-- [ ] 8.2 (Unit) Electron shell scoped to the directory it was opened in: navigation across wiki and sources, record, pause and stop, a persistent indicator while recording
+- [x] 8.1 (Unit) Design system: dense dark-theme tokens, a compact type scale, focus and error states, a recording indicator
+  - Tokens only, in one file. Dense because of what the window is for: a wiki read beside the harness, glanced at while a meeting records. Neither wants generous whitespace.
+  - Focus is visible on everything, always. `outline: none` with nothing in its place is the most common way a desktop UI becomes unusable for the people who navigate it by keyboard.
+  - The recording indicator is persistent and not subtle. Somebody who forgets it is running ends up with a recording of a conversation the other people in it believe ended.
+- [x] 8.2 (Unit) Electron shell scoped to the directory it was opened in: navigation across wiki and sources, record, pause and stop, a persistent indicator while recording
+  - **The project root is bound in the main process and never crosses the bridge.** The renderer names a slug, never a path, so the worst a wrong answer can do is fail to resolve.
+  - `contextIsolation` on, `nodeIntegration` off, `sandbox` on, and a CSP of `default-src 'none'`. This window renders markdown an agent wrote; a renderer with Node in it is one prompt injection away from being the agent's hands.
+  - The entry point is wiring and nothing else. Which project this is, what the renderer may ask for, what a folder change means — each is a module beside it that a test calls without starting a window, because CI has no display.
+  - A launch that names no project **says so and quits** rather than opening the user's home folder as a wiki. 8.4's launcher is what belongs there.
+  - The record/pause/stop calls go over 4.5's line protocol. The transport is injectable, so the framing and the ordering are tested without a Windows binary; that a real `recorder.exe` answers them is not, and joins group 4's outstanding manual checks.
 - [ ] 8.3 (Unit) Transcription credential: a Groq key typed and validated on the spot, or local whisper.cpp with no credential at all — stored as per `adr:0007-plaintext-credentials-in-the-config`
 - [ ] 8.4 (Unit) A launcher for when `ow` was run outside a project: the registry of known projects, and creating a new one
-- [ ] 8.5 (Unit) Browse the rendered wiki: follow wikilinks, see the page with its frontmatter, go back
+- [x] 8.5 (Unit) Browse the rendered wiki: follow wikilinks, see the page with its frontmatter, go back
+  - markdown-it with `html: false`. A page carrying a `<script>` would run it inside a renderer that has the project open, and nothing in the schema needs raw HTML.
+  - A wikilink becomes an `href` the app intercepts, never a real navigation. A **broken** one becomes a marked span rather than a link to nowhere — the reader should see the page is missing at the point they would have clicked, which is what 7.1 reports too.
+  - A page is resolved by slug through the index, never by joining a slug onto a path. `adr:0016-a-page-is-its-slug-wherever-it-sits` makes the index the only thing that knows where a page is, so the correct implementation is also the one that does no path arithmetic on untrusted input.
+  - Following a link after going back discards the forward history, exactly as a browser does. Anything else and Back stops meaning "where I came from".
 - [ ] 8.6 (Unit) Open the source at the right instant when a provenance link is clicked — audio at the timestamp, a document at the page
 - [ ] 8.7 (Unit) Edit a page's markdown with preview and save, going through the group 5 validations
 - [ ] 8.8 (Unit) Refuse to overwrite a page changed on disk since it was loaded, instead of losing the change silently
 - [ ] 8.9 (Unit) Create, rename and delete a page from the UI, fixing the wikilinks that pointed at it
-- [ ] 8.10 (Unit) Watch the folder and reflect changes on screen live, whichever wrote them — the agent, a hook, or the user in another editor
+- [x] 8.10 (Unit) Watch the folder and reflect changes on screen live, whichever wrote them — the agent, a hook, or the user in another editor
+  - `awaitWriteFinish` is not tuning. `fs.watch` reports a file the moment it appears, which on a copy is halfway through being written — and a page read halfway through has no frontmatter, which the screen would render as broken.
+  - It watches `wiki/` and `raw/` and not `.state/`, which is not content. A change rebuilds the index, because a new page changes which wikilinks resolve; the open page is re-read only when it is the one that moved.
+  - A watcher that errors stops updating rather than taking the window with it: a project on a network share raises EPERM for reasons that have nothing to do with this application.
 - [ ] 8.11 (Unit) An operation history with undo, fed by 2.4, and honest about covering only what was observed
 - [ ] 8.12 (Unit) Choose the content language at onboarding and change it afterwards — English by default, Brazilian Portuguese and Spanish alongside it — held in the project settings of 2.7 and reaching exactly two places: the transcription hint of 4.15, and the generated `CLAUDE.md` of 9.4, which is regenerated on change because it is generated and the skills are not
 
