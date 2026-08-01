@@ -72,6 +72,14 @@ jobs:
             exit 1
           }
           Write-Host "neither registry has $env:TAG yet"
+          # **Explicit, and load-bearing.** Both probes above are *expected* to
+          # fail — a 404 from each is what "not published yet" looks like — and
+          # pwsh carries the last native command's exit code out of the step.
+          # `Write-Host` is a cmdlet and does not reset it, so this step failed
+          # precisely on the happy path: every first release of a version, which
+          # is every release. It went unseen because the step is reached only on
+          # a `v*` tag and this repository had never had one.
+          exit 0
 
       - uses: pnpm/action-setup@v4
 
