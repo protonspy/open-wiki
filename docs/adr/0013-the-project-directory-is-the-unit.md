@@ -149,10 +149,17 @@ convention text the agent reads.
 **The gate moved, and it is rebuildable — for the file tools.** With writes gone from MCP,
 the agent writes the wiki with its own tools. A `PreToolUse` hook receives the complete
 `tool_input` — for `Write` that includes `content`, for `Edit` the strings — and can answer
-`permissionDecision: deny` with a reason the agent reads. So refusal survives intact: the
+`permissionDecision: deny` with a reason the agent reads. It can also return `updatedInput`,
+which replaces the arguments before the tool runs. So refusal survives intact — the
 malformed page never reaches the disk, and 0002's corollary that the defence has to be at
-the entrance still holds. This is the single most load-bearing fact in the record, and an
-earlier draft had it backwards.
+the entrance still holds — and so does everything the store used to do *for* the agent
+rather than *to* it: the fields filled in on its behalf are written into the input, not
+requested of it in an error message. The whole service survives, not a weakened half of it.
+
+This is the most load-bearing fact in the record and it was got wrong twice while drafting,
+in both directions, each time by reasoning about the hook contract instead of reading it.
+Nothing about what a harness can or cannot do belongs in these records unless it was
+checked against the reference.
 
 What does *not* survive is the completeness of that gate. A hook matches a tool, so a write
 that arrives some other way is not gated: `echo > wiki/page.md` through Bash carries a

@@ -168,6 +168,8 @@ a skill, scaffolded by `ow init`, and the `CLAUDE.md` points at it.
 Read 2026-07-31, against Claude Code v2.1.x. Revisited 2026-08-01 for what a plugin cannot
 carry, and for the hook mechanics the write gate rests on: a `PreToolUse` hook receives the
 tool's complete `tool_input` — including `content` for `Write` and the strings for `Edit` —
-and can answer `permissionDecision: deny` with a reason the agent reads, so a write can be
-refused before it lands. A first pass recorded the opposite, and three documents were
-written against it before it was checked.
+and can answer `permissionDecision: deny` with a reason the agent reads, or `updatedInput`
+to replace the arguments before the tool runs. So a write can be refused before it lands,
+and it can also be *completed* before it lands. Both facts were recorded wrongly on a first
+pass — first as "the hook cannot see the content", then as "the hook cannot change it" — and
+several documents were written against each before either was checked.

@@ -11,7 +11,7 @@ no server of our own, so there is no update endpoint and no download host to run
 distributes the binary is somebody else's infrastructure.
 
 The repository is already on GitHub, the tag is already the thing that says "this is a
-version", and the winget and Scoop manifests of task 10.2 both work by pointing at a stable
+version", and the winget and Scoop manifests both work by pointing at a stable
 download URL with a known hash. GitHub Releases is that URL, produced by the tag we are
 already pushing.
 
@@ -36,8 +36,8 @@ is a settings change and not a workflow rewrite.
 ## Consequences
 
 Distribution costs nothing to run and nothing to operate. The download URL is stable and
-predictable, which is the only property task 10.2 needs from it, and every release carries
-the hash that manifest has to state.
+predictable, which is the only property a winget or Scoop manifest needs from it, and every
+release carries the hash that manifest has to state.
 
 **An unsigned installer means Microsoft SmartScreen warns on it**, with a dialog whose
 default button is "Don't run". This lands worst in exactly the environment this product is

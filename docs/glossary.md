@@ -18,7 +18,7 @@ which is why each one is listed in the exact form it takes in the schemas.
 - **ingest** — the path from a source to being available as `text.md` in the project. It ends there: writing pages is the agent's job. Avoid: sync
 - **entity** — a person, project, topic or narrated code area with a page of its own, identified by `id` in the form `type:slug`. Avoid: subject
 - **claim** — a statement recorded on a page, of type `decision`, `fact`, `action_item` or `open_question`, always with a citation. Avoid: insight
-- **supersession** — marking an earlier decision as replaced, preserving it struck through with a date and a link to the one replacing it. Avoid: override
+- **supersession** — marking an earlier decision as replaced, never deleting it. It is carried twice: as data, in the replaced page's `status`, `superseded-by` and the date, which is what a traversal can answer from; and as prose, struck through with the same date and a link, which is what a reader sees. The prose alone is not supersession — nothing can walk it. Avoid: override
 - **provenance link** — the link that opens the source where a claim came from: an instant for audio, a page for a PDF. Avoid: backlink
 - **write gate** — whatever makes an agent's write to `wiki/` pass through the group 5 validations now that MCP no longer writes. Which mechanism it is has not been chosen — `adr:0013-the-project-directory-is-the-unit`.
 

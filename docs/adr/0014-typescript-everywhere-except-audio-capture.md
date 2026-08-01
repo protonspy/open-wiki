@@ -36,6 +36,14 @@ contract narrow enough to test"* — and that justification is agnostic of langu
 loses is the second binary, the two artifacts whose versions must agree, and the mismatched
 pair that fails looking like corrupted data.
 
+0010 is marked `superseded` rather than `rejected`, which deserves a word because it was
+never accepted. `rejected` would say the proposal was refused and nothing came of it; what
+happened is that its contract was adopted and its implementation language was not. This
+record is where the surviving half now lives, so pointing at it is more useful to a reader
+than a status that would send them nowhere. The two questions 0010 left open go with it:
+the inverted index is refused outright, and the graph comes before the search because the
+search is what a scan already does.
+
 `adr:0005-wasapi-capture-in-a-minimal-sidecar` becomes literally true again. Its sentence
 "everything that is not audio capture lives on the JavaScript side" was being narrowed by
 0010; it is not any more.

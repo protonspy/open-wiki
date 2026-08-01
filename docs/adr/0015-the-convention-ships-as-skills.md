@@ -30,8 +30,10 @@ the **wiki** and one for **codewiki** — and writes neither if it is already th
 This is what `scc` does to this repository, and the product does the same thing to the
 user's.
 
-The generated `CLAUDE.md` of task 9.14 is not a second home. Where it says anything about
-the page schema or the method, it points at the skill.
+The generated project `CLAUDE.md` is not a second home. Where it would say anything about
+the page schema or the method, it points at the skill instead; what it carries on its own is
+only what varies per project and cannot sit in a shared skill, which today is the configured
+content language.
 
 ## Consequences
 

@@ -10,10 +10,13 @@ What changed in the wiki, newest first.
   `additionalDirectories`. That absence is what stops the product from shipping the deny
   rule its write gate may need.
 - The page also records the hook mechanics the write gate rests on: a `PreToolUse` hook
-  receives the tool's complete `tool_input` and can deny with a reason, so a malformed page
-  can be refused before it lands. A first pass through this recorded the opposite, and
-  `adr:0013-the-project-directory-is-the-unit` was drafted against the wrong version before
-  it was checked against the hooks reference.
+  receives the tool's complete `tool_input`, can deny with a reason, and can replace the
+  arguments with `updatedInput` — so a malformed page can be refused before it lands, and a
+  page missing an automatic field can be completed before it lands.
+- Both of those were recorded wrongly first, in opposite directions, and
+  `adr:0013-the-project-directory-is-the-unit` was drafted against each wrong version in
+  turn. What the hook contract permits is now a thing to read rather than infer, and the
+  hooks reference joins this page's sources.
 
 ## 2026-07-31
 
@@ -22,5 +25,6 @@ What changed in the wiki, newest first.
 - Added [[claude-code-plugins]], distilled from the Claude Code plugin, marketplace and
   MCP references. It carries one finding that reaches the plan: an HTTP MCP server in a
   plugin can generate its own auth headers at connection time, which removes the pasted
-  token of task 9.13.
+  token of what was then task 9.13. (That finding was voided a day later, along with the
+  token itself — see the entry above.)
 - Started the wiki with `index.md` and this file.
