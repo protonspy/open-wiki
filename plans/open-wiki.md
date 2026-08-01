@@ -133,8 +133,13 @@ fenix/                          a project — usually a repository the user alre
 - [x] 4.3 (TDD) Pause and resume: both tracks stop and return at the same instant, the paused stretch leaves both as one block, and the time map still maps any recorded instant to the real clock instant
 - [x] 4.4 (Unit) Emit `manifest.json` with the recording's title, the absolute timestamp of each track's first frame, and the pause intervals
 - [x] 4.5 (Unit) Expose the sidecar over stdio JSON-RPC with `start`, `pause`, `resume`, `stop`, `status`, `devices`
-- [ ] 4.6 (Unit) ffmpeg: downmix to 16 kHz mono, VAD cutting silence from 800 ms, encode to Opus 24 kbps
-- [ ] 4.7 (TDD) Emit the time map converting a compressed instant into a real instant, and the chunk boundaries at silence points
+- [x] 4.6 (Unit) ffmpeg: downmix to 16 kHz mono, VAD cutting silence from 800 ms, encode to Opus 24 kbps
+  - The gate is ffmpeg's `silencedetect`, an amplitude threshold rather than a trained VAD — it is what the bundled essentials build carries. The tuning errs towards keeping: a gate that keeps too much wastes a few seconds of Opus, one that drops a quiet sentence loses evidence.
+  - Like 4.1, **not verified against a real file.** Everything above `FfmpegRunner` is tested; that ffmpeg accepts these arguments is not, because CI has no ffmpeg.
+- [x] 4.7 (TDD) Emit the time map converting a compressed instant into a real instant, and the chunk boundaries at silence points
+  - **Silence is cut only where every track is silent**, so both tracks share one compressed clock — `adr:0017-one-compressed-clock-for-both-tracks`. Cutting each on its own silence is the obvious design and it undoes 4.1 and 4.3: the files come out different lengths and `rec://<id>#14:32` would have to say which track it meant.
+  - `timemap.json` is the artifact, and **5.4's dormant in-range check is live against it** — a citation past the end of a recording is now refused, naming how long the recording runs. A recording with no map yet keeps the weaker check, because an absent map cannot make a citation resolve falsely.
+  - Durations are nanoseconds; **wall-clock instants are milliseconds**. Nanoseconds since the epoch is ~1.75e18 and JavaScript is exact only to 9.007e15, so the unit is chosen where the exactness is free rather than where it merely reads consistently.
 - [ ] 4.8 (Unit) A `SttProvider` interface with `groq` and `whispercpp` adapters, swappable by configuration
 - [ ] 4.9 (TDD) Transcribe chunks one at a time, writing each result to the journal before the next starts, so an application killed mid-run loses at most the chunk in flight — `adr:0012-transcription-is-a-journalled-serial-pipeline`
 - [ ] 4.10 (Unit) Seed the transcription vocabulary with the names already present in the project's pages — it is what stops the project's own name from coming out wrong
