@@ -1,11 +1,9 @@
 # Stack
 
 Every adopted technology, with one line on why it earned its place. What is not here is an
-open decision, never something adopted silently.
-
-Nothing on this list is installed yet — the monorepo is task 1.1 of
-`plans/open-wiki.md`. The list exists before the dependencies because it is what makes
-adding each one a deliberate act.
+open decision, never something adopted silently — and because the dependency manifests are
+structured data, the gap is checkable: a dependency in a `package.json` or `Cargo.toml` that is
+absent from this file is a finding.
 
 ## Capture
 
@@ -50,6 +48,7 @@ anchors, and the path stops writing there — see
 ## MCP server
 
 - **MCP TypeScript SDK** — how a project with no wiki of its own consults one that has: read-only, over stdio, spawned by the harness. It is not how the local wiki is reached, because the harness already has the directory open. See `adr:0013-the-project-directory-is-the-unit`.
+- **zod** — the schema the MCP read tools declare their arguments with. The SDK accepts a zod shape directly, so a tool's contract is one object rather than a hand-written JSON Schema drifting from the handler.
 
 ## Development tooling
 
