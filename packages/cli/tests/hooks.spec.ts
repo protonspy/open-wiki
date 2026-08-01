@@ -37,9 +37,11 @@ describe("detectShellWrite (9.5)", () => {
     expect(detectShellWrite(`echo hi > wiki/fenix.md`, "/p")).toBe("wiki/fenix.md");
     expect(detectShellWrite(`cat x >> wiki/fenix.md`, "/p")).toBe("wiki/fenix.md");
   });
-  it("flags cp/mv/tee/sed -i into wiki/ or codewiki/", () => {
+  it("flags cp/mv/tee/sed -i into wiki/, codewiki included", () => {
     expect(detectShellWrite(`cp /tmp/x wiki/fenix.md`, "/p")).toBe("wiki/fenix.md");
-    expect(detectShellWrite(`mv /tmp/x codewiki/dispatch.md`, "/p")).toBe("codewiki/dispatch.md");
+    expect(detectShellWrite(`mv /tmp/x wiki/codewiki/dispatch.md`, "/p")).toBe(
+      "wiki/codewiki/dispatch.md",
+    );
     expect(detectShellWrite(`echo hi | tee wiki/fenix.md`, "/p")).toBe("wiki/fenix.md");
     expect(detectShellWrite(`sed -i 's/a/b/' wiki/fenix.md`, "/p")).toBe("wiki/fenix.md");
   });
@@ -54,7 +56,9 @@ describe("detectShellWrite (9.5)", () => {
   });
   it("flags a shell write that uses Windows backslash separators", () => {
     expect(detectShellWrite(`echo hi > wiki\\fenix.md`, "/p")).toBe("wiki/fenix.md");
-    expect(detectShellWrite(`cp /tmp/x codewiki\\dispatch.md`, "/p")).toBe("codewiki/dispatch.md");
+    expect(detectShellWrite(`cp /tmp/x wiki\\codewiki\\dispatch.md`, "/p")).toBe(
+      "wiki/codewiki/dispatch.md",
+    );
   });
 });
 
@@ -189,7 +193,10 @@ describe("runPostToolUse — recording (9.5, 5.6, 5.7)", () => {
   it("records a modified page when the page already existed", () => {
     writeFileSync(join(root, "wiki", "fenix.md"), page(GOOD_FM.replace('""', "2026-08-01")));
     preWrite(root, "wiki/fenix.md", page(GOOD_FM, "edited.\n"), "tu_m");
-    writeFileSync(join(root, "wiki", "fenix.md"), page(GOOD_FM.replace('""', "2026-08-01"), "edited.\n"));
+    writeFileSync(
+      join(root, "wiki", "fenix.md"),
+      page(GOOD_FM.replace('""', "2026-08-01"), "edited.\n"),
+    );
     runPostToolUse(
       {
         hook_event_name: "PostToolUse",

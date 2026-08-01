@@ -25,7 +25,11 @@ function tempProject(): string {
 }
 
 function writePageFile(root: string, slug: string, frontmatter: string[], body: string): void {
-  writeFileSync(join(root, "wiki", `${slug}.md`), `---\n${frontmatter.join("\n")}\n---\n${body}`, "utf8");
+  writeFileSync(
+    join(root, "wiki", `${slug}.md`),
+    `---\n${frontmatter.join("\n")}\n---\n${body}`,
+    "utf8",
+  );
 }
 
 function active(slug: string, title: string): string[] {
@@ -122,7 +126,12 @@ describe("ow search (9.12)", () => {
   let root: string;
   beforeEach(() => {
     root = tempProject();
-    writePageFile(root, "fenix", active("fenix", "Fenix"), "Fenix is a rebuild. A rebuild twice over.\n");
+    writePageFile(
+      root,
+      "fenix",
+      active("fenix", "Fenix"),
+      "Fenix is a rebuild. A rebuild twice over.\n",
+    );
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -150,7 +159,12 @@ describe("ow write — the pages the gate does not own", () => {
 
   it("writes a non-entity page through without validating it against the page schema", () => {
     // `index.md` is the agent's to curate, not the schema's to validate.
-    const result = runWrite(root, join(root, "wiki", "index.md"), "# Index\n\nCurated by hand.\n", DATE);
+    const result = runWrite(
+      root,
+      join(root, "wiki", "index.md"),
+      "# Index\n\nCurated by hand.\n",
+      DATE,
+    );
     expect(result.ok).toBe(true);
     expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).toContain("Curated by hand.");
     // Passed through, so it is not announced in the changelog as an entity page.
@@ -173,5 +187,39 @@ describe("ow write — the pages the gate does not own", () => {
   it("reports paths relative to the project, in posix form, whatever was passed in", () => {
     expect(relativePath(root, join(root, "wiki", "fenix.md"))).toBe("wiki/fenix.md");
     expect(relativePath(root, "wiki/fenix.md")).toBe("wiki/fenix.md");
+  });
+});
+
+describe("graph and search over a page filed under a subdirectory (adr:0016)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "ow-nested-q-"));
+    mkdirSync(join(root, "wiki", "topics"), { recursive: true });
+    writeFileSync(
+      join(root, "wiki", "topics", "checkout.md"),
+      "---\nid: topic:checkout\ntype: topic\ntitle: Checkout\nstatus: superseded\n" +
+        'aliases: []\nupdated: 2026-08-01\nsources: []\nsuperseded-by: "topic:pay"\n---\nBody about payments.\n',
+      "utf8",
+    );
+    writeFileSync(join(root, "wiki", "index.md"), "# Index\n\n- [[checkout]]\n", "utf8");
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("walks supersession without throwing ENOENT", () => {
+    // Both commands resolved a slug as wiki/<slug>.md, so any project filing a
+    // page the way the plan's layout describes got a stack, not a sentence.
+    const parsed = JSON.parse(runGraph(root, "superseded"));
+    expect(parsed).toEqual([
+      { slug: "checkout", "superseded-by": "topic:pay", updated: "2026-08-01" },
+    ]);
+  });
+
+  it("lists the page in the default graph", () => {
+    expect(JSON.parse(runGraph(root, undefined)).pages).toEqual(["checkout"]);
+  });
+
+  it("searches its text", () => {
+    const results = JSON.parse(runSearch(root, "payments"));
+    expect(results).toEqual([{ slug: "checkout", title: "Checkout", matches: 1 }]);
   });
 });

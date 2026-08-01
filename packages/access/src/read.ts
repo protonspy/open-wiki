@@ -11,7 +11,39 @@
  * settings reads `ow.json`. Neither writes a page, so both belong here.
  */
 export { resolveReal, isWithin, assertWithin, OutsideProjectError } from "./paths.js";
-export { listEntityPages, isIndexed, findOrphans, readIndex } from "./store/index.js";
+export {
+  listEntityPages,
+  listPages,
+  pagePath,
+  isIndexed,
+  findOrphans,
+  readIndex,
+  CODEWIKI_DIR,
+  type PageRef,
+} from "./store/index.js";
+// The checks read only; the MCP process may run them.
+export {
+  checkProject,
+  readWiki,
+  citedSourcePages,
+  type CheckReport,
+  type LoadedPage,
+} from "./check/checks.js";
+export {
+  sourceState,
+  listSourceStates,
+  type SourceState,
+  type SourceStage,
+} from "./sources/state.js";
+export {
+  FINDING_CODES,
+  sortFindings,
+  hasErrors,
+  safe,
+  type Finding,
+  type FindingCode,
+  type Severity,
+} from "./check/findings.js";
 export {
   readFrontmatter,
   validatePage,

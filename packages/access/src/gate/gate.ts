@@ -12,10 +12,12 @@ import { readFrontmatter, validatePage, NON_ENTITY_PAGES } from "../store/page.j
  * and either let it through unchanged, accept it completed, or refuse it with
  * reasons the writer can act on.
  *
- * The gate owns the wiki and codewiki entity pages — the pages that carry the
- * schema of 5.1. Everything else (sources, the non-entity `index.md`/`changelog`
- * /`log.md`, files outside `wiki/` and `codewiki/`) is passed through; it is not
- * the gate's to validate. The gate's own configuration (`.claude/`, `.mcp.json`,
+ * The gate owns the entity pages under `wiki/` — at any depth, codewiki
+ * included, since codewiki lives at `wiki/codewiki/`
+ * (`adr:0016-a-page-is-its-slug-wherever-it-sits`). Everything else (sources,
+ * the non-entity `index.md`/`changelog.md`/`log.md` at the top of `wiki/`, and
+ * anything outside `wiki/`) is passed through; it is not the gate's to
+ * validate. The gate's own configuration (`.claude/`, `.mcp.json`,
  * `CLAUDE.md`) is refused outright (9.6): a write path that reached it would
  * edit away its own restraint through a change that reads as documentation.
  *
@@ -51,9 +53,23 @@ function gatedPageRel(projectRoot: string, filePath: string): string | null {
   if (rel === "" || rel.startsWith("..")) return null;
   const folded = rel.toLowerCase();
   if (!folded.endsWith(".md")) return null;
-  if (!folded.startsWith("wiki/") && !folded.startsWith("codewiki/")) return null;
-  // Non-entity pages are themselves, not validated against the schema.
-  if ((NON_ENTITY_PAGES as readonly string[]).includes(basename(folded))) return null;
+  // `wiki/` and everything under it, codewiki included. A top-level
+  // `codewiki/` was gated too, which is the half of plan 7.5's design gap that
+  // pointed the wrong way: the scaffolded skill and the plan's layout both put
+  // codewiki at `wiki/codewiki/`, and a page outside `wiki/` is not part of the
+  // wiki at all — nothing indexes it, nothing links it, nothing can cite it.
+  // Gating it implied otherwise. `ow check` reports a stray top-level
+  // `codewiki/` as misplaced instead of pretending it is a wiki.
+  if (!folded.startsWith("wiki/")) return null;
+  // Non-entity pages are themselves, not validated against the schema. Only
+  // the three at the top of `wiki/`: a `wiki/topics/index.md` is a page called
+  // "index", not the wiki's index.
+  if (
+    !folded.slice("wiki/".length).includes("/") &&
+    (NON_ENTITY_PAGES as readonly string[]).includes(basename(folded))
+  ) {
+    return null;
+  }
   return rel;
 }
 

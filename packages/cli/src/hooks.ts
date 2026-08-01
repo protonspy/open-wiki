@@ -101,16 +101,20 @@ function titleOf(markdown: string): string | undefined {
 }
 
 /** A shell command that writes a wiki/codewiki page, and the path it targets. */
+// `wiki/` only, which covers `wiki/codewiki/`. A top-level `codewiki/` used to
+// be listed here as well, and once the gate stopped treating it as part of the
+// wiki (adr:0016) the two doors disagreed: this one flagged a shell write there
+// and handed it to a gate that then said "allow".
 const SHELL_WRITE_TARGETS: ReadonlyArray<RegExp> = [
-  />>?\s*((?:wiki|codewiki)\/[^\s;|&<>]*\.md)/,
-  /\btee\s+(?:-\S+\s+)*((?:wiki|codewiki)\/[^\s;|&<>]*\.md)/,
-  /\b(?:cp|mv|install)\s+(?:-\S+\s+)*\S+\s+((?:wiki|codewiki)\/[^\s;|&<>]*\.md)/,
-  /\bsed\s+-i\b[^|&]*?\s((?:wiki|codewiki)\/[^\s;|&<>]*\.md)/,
+  />>?\s*(wiki\/[^\s;|&<>]*\.md)/,
+  /\btee\s+(?:-\S+\s+)*(wiki\/[^\s;|&<>]*\.md)/,
+  /\b(?:cp|mv|install)\s+(?:-\S+\s+)*\S+\s+(wiki\/[^\s;|&<>]*\.md)/,
+  /\bsed\s+-i\b[^|&]*?\s(wiki\/[^\s;|&<>]*\.md)/,
 ];
 
 export function detectShellWrite(command: string, _projectRoot: string): string | null {
   // Normalise backslashes to forward slashes first: the targets anchor on
-  // `(?:wiki|codewiki)/`, and on Windows a shell write may use `wiki\fenix.md`.
+  // `wiki/`, and on Windows a shell write may use `wiki\fenix.md`.
   const posix = command.replace(/\\/g, "/");
   for (const re of SHELL_WRITE_TARGETS) {
     const m = re.exec(posix);
@@ -211,11 +215,7 @@ export function runPreToolUse(
   };
 }
 
-export function runPostToolUse(
-  input: PostToolUseInput,
-  projectRoot: string,
-  date: string,
-): null {
+export function runPostToolUse(input: PostToolUseInput, projectRoot: string, date: string): null {
   if (input.tool_name !== "Write" && input.tool_name !== "Edit") return null;
 
   const s = readSidecar(projectRoot, input.tool_use_id);

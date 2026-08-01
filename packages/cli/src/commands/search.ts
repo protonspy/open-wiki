@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { listEntityPages, readFrontmatter } from "@open-wiki/access";
+import { listPages, readFrontmatter } from "@open-wiki/access";
 
 /**
  * `ow search <query>` — lexical search over the wiki (plan 9.12). A scan over a
@@ -11,14 +11,19 @@ import { listEntityPages, readFrontmatter } from "@open-wiki/access";
 export function runSearch(projectRoot: string, query: string): string {
   const q = query.toLowerCase();
   const results: Array<{ slug: string; title: string; matches: number }> = [];
-  for (const slug of listEntityPages(projectRoot)) {
-    const text = readFileSync(join(projectRoot, "wiki", `${slug}.md`), "utf8");
+  // Read where the page actually is: a page is its slug wherever it sits under
+  // `wiki/` (`adr:0016`), and assuming the top level threw ENOENT on any
+  // project that filed pages by type.
+  for (const { slug, path } of listPages(projectRoot)) {
+    const text = readFileSync(join(projectRoot, path), "utf8");
     const lower = text.toLowerCase();
     const matches = countOccurrences(lower, q);
     if (matches === 0) continue;
     const block = readFrontmatter(text);
     const title =
-      block && block.parsed && typeof (block.frontmatter as Record<string, unknown>)?.["title"] === "string"
+      block &&
+      block.parsed &&
+      typeof (block.frontmatter as Record<string, unknown>)?.["title"] === "string"
         ? String((block.frontmatter as Record<string, unknown>)["title"])
         : slug;
     results.push({ slug, title, matches });

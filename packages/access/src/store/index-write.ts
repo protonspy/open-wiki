@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { assertWithin } from "../paths.js";
 import { readIndex, isIndexed, PAGES_SECTION } from "./index.js";
 
@@ -13,6 +13,9 @@ import { readIndex, isIndexed, PAGES_SECTION } from "./index.js";
 export function registerInIndex(projectRoot: string, slug: string, title?: string): boolean {
   const file = assertWithin(projectRoot, `${projectRoot}/wiki/index.md`);
   const text = readIndex(projectRoot);
+  // `readIndex` creates nothing — it is a read. Making the directory is this
+  // side's job, because this is the side that writes.
+  mkdirSync(`${projectRoot}/wiki`, { recursive: true });
   if (isIndexed(text, slug)) return false;
 
   const bullet = title ? `- [[${slug}]] — ${title}` : `- [[${slug}]]`;

@@ -81,6 +81,12 @@ export {
 } from "./sources/manifest.js";
 export { registerSource, type RegisterInput } from "./sources/register.js";
 export { deriveId, isIdTaken, EmptyNameError } from "./sources/id.js";
+export {
+  sourceState,
+  listSourceStates,
+  type SourceState,
+  type SourceStage,
+} from "./sources/state.js";
 export { uploadTextSource, writeSourceText, normaliseText } from "./sources/ingest.js";
 export {
   uploadPdfSource,
@@ -110,5 +116,39 @@ export {
 export { resolveProvenance, extractProvenanceLinks } from "./store/provenance.js";
 export { completeFrontmatter } from "./store/complete.js";
 export { recordWrite, type WriteEntry, type WriteAction } from "./store/record.js";
-export { listEntityPages, isIndexed, findOrphans, readIndex } from "./store/index.js";
+export {
+  listEntityPages,
+  listPages,
+  pagePath,
+  isIndexed,
+  findOrphans,
+  readIndex,
+  CODEWIKI_DIR,
+  type PageRef,
+} from "./store/index.js";
 export { registerInIndex } from "./store/index-write.js";
+
+// The integrity checks (group 7)
+export {
+  checkProject,
+  checkLinks,
+  checkRecords,
+  checkProvenance,
+  checkVocabulary,
+  checkCodewiki,
+  checkSchema,
+  citedSourceIds,
+  citedSourcePages,
+  readWiki,
+  type CheckReport,
+  type LoadedPage,
+} from "./check/checks.js";
+export {
+  FINDING_CODES,
+  sortFindings,
+  hasErrors,
+  safe,
+  type Finding,
+  type FindingCode,
+  type Severity,
+} from "./check/findings.js";
