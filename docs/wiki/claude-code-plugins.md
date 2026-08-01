@@ -122,7 +122,7 @@ Both routes now matter, which was not true when this page was written. The audie
 a desktop application, so the marketplace reaches them — but after
 `adr:0013-the-project-directory-is-the-unit` they also work in repositories where
 `.claude/` and `.mcp.json` are committed and reach everyone who clones, and
-`npx open-wiki init` targets someone with nothing installed at all.
+`npx @protonspy/open-wiki init` targets someone with nothing installed at all.
 
 ## What a plugin carries, and the two things it does not
 
@@ -146,7 +146,7 @@ whole.
 
 **`bin/` on the `PATH` is worth more than it looks.** A plugin can put a CLI in front of
 the agent without the desktop application being installed, which is the same reach
-`npx open-wiki` has and the reason
+`npx @protonspy/open-wiki` has and the reason
 `adr:0014-typescript-everywhere-except-audio-capture` cares that the CLI runs standalone.
 
 What a plugin still does not distribute is the wiki itself: an MCP server consulting

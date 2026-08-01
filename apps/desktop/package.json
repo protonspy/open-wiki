@@ -1,6 +1,6 @@
 {
   "name": "@open-wiki/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "build/main/index.js",
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "build:main": "node ../../scripts/build-main.mjs",
-    "build:cli": "pnpm --filter open-wiki run build",
+    "build:cli": "pnpm --filter @protonspy/open-wiki run build",
     "build": "pnpm run build:main && pnpm run build:renderer && pnpm run build:cli",
     "package": "pnpm run build && electron-builder --win --publish never"
   },
