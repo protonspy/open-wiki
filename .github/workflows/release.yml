@@ -74,7 +74,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           # Publishing is this workflow's job, not electron-builder's.
           GH_TOKEN: ""
-        run: pnpm --filter "@project-wiki/desktop" run package
+        run: pnpm --filter "@open-wiki/desktop" run package
 
       - name: Collect the artifacts and their checksums
         id: collect
