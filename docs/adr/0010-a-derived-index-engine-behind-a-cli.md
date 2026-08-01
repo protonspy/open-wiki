@@ -1,5 +1,6 @@
 ---
-status: proposed
+status: superseded
+superseded-by: 0014-typescript-everywhere-except-audio-capture
 ---
 
 # 0010 · A derived-index engine as a second Rust binary, behind a CLI

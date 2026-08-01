@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0013-the-project-directory-is-the-unit
 ---
 
 # 0003 · MCP is the only bridge between the wiki and the LLM
