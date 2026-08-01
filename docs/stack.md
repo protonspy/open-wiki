@@ -26,7 +26,8 @@ absent from this file is a finding.
 - **Electron** — desktop UI in the same TypeScript as the pipeline, with filesystem and child-process access and no native bridge. Opened scoped to one project directory, by `ow`.
 - **React** — the UI has real state (a recording in progress, sources crossing the flow, pages changing while the agent writes); the ecosystem around Electron is larger than any alternative's, and that matters more than preference.
 - **Vite** — renderer build and reload, fast enough that there is no temptation to skip the UI while iterating.
-- **markdown-it** — renders the wiki pages in the embedded browser; its plugin model is what allows teaching it `[[wikilink]]` and `rec://` without rewriting the parser.
+- **markdown-it** — renders the wiki pages in the embedded browser. The plugin model is not a convenience: `[[wikilink]]` and `rec://` are taught to it as an inline rule and a core rule, which is the only way to add them without editing serialised HTML — and a `String.replace` over rendered HTML does not know what an attribute is, so a citation inside a link title breaks out of `title="…"`, and a code span quoting the syntax becomes a live link. It also earns its place on security grounds: `html: false` plus its own `validateLink` is what stops a page from carrying a `<script>`, or a `javascript:`/`data:`/`file:` href, into a renderer that has the project open.
+- **@vitejs/plugin-react** — the React transform for the renderer's Vite build. Vite does not transform JSX on its own and nothing else in the toolchain would.
 - **pnpm workspaces** — a monorepo of several TS packages with unhoisted dependencies, which is what stops a package from importing what it never declared.
 - **esbuild** — bundles the CLI to a single file. Not a preference: an unbundled CLI pays module resolution on every invocation, and a hook fires it on every page write — see `adr:0014-typescript-everywhere-except-audio-capture`.
 

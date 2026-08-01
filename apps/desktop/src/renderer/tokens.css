@@ -1,0 +1,333 @@
+/*
+ * The design system (plan 8.1).
+ *
+ * Dense and dark, because of what this window is for: somebody reads a wiki
+ * beside the harness they are talking to, and glances at it while a meeting is
+ * being recorded. Neither is a task that wants generous whitespace — the
+ * measure of this UI is how much of a page is on screen at once, not how
+ * comfortable one paragraph looks.
+ *
+ * Tokens only. Every component reads from here, so a change to the type scale
+ * is one edit rather than twenty, and a colour that is not in this file is a
+ * colour somebody typed into a component.
+ */
+
+:root {
+  /* --- Surfaces. Three depths, no more: the window, a panel, a raised thing. */
+  --surface-0: #101216;
+  --surface-1: #171a20;
+  --surface-2: #1f232b;
+  --surface-inset: #0b0d10;
+
+  /* --- Ink. Four steps of contrast against surface-0, all above 4.5:1. */
+  --ink-0: #e8ecf2;
+  --ink-1: #b6bec9;
+  --ink-2: #808a97;
+  --ink-3: #5b646f;
+
+  --line: #262b34;
+  --line-strong: #39404b;
+
+  /* --- Accents. One per meaning; none decorative. */
+  --accent: #6aa6ff;
+  --accent-ink: #0b1220;
+  --danger: #ff6b6b;
+  --warn: #f0b429;
+  --ok: #57c98a;
+  --recording: #ff4d4f;
+
+  /* --- Type. A compact scale: 12/13/15/18/24, 1.45 line height. */
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+  --leading: 1.45;
+  --leading-tight: 1.25;
+
+  /* --- Space. A 4px grid; the whole UI uses these six. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  /* --- Focus. Never removed, only restyled — see the note below. */
+  --focus-ring: 0 0 0 2px var(--surface-0), 0 0 0 4px var(--accent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--surface-0);
+  color: var(--ink-0);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: var(--leading);
+  /* The window is a document, not a page: nothing here scrolls sideways. */
+  overflow: hidden;
+}
+
+/*
+ * Focus is visible on everything, always. An Electron app is used with a
+ * keyboard by exactly the people who cannot use it any other way, and
+ * `outline: none` with nothing in its place is the single most common way a
+ * desktop UI becomes unusable for them. `:focus-visible` keeps it off a mouse
+ * click, which is the only reason anyone removed it in the first place.
+ */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-sm);
+}
+
+.chrome__project {
+  font-weight: 600;
+  color: var(--ink-0);
+}
+
+.chrome__spacer {
+  flex: 1;
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+button {
+  font: inherit;
+  color: var(--ink-1);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  color: var(--ink-0);
+  border-color: var(--line-strong);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button[aria-current="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+button.danger {
+  color: var(--danger);
+}
+
+/*
+ * The recording indicator. It is persistent and it is not subtle: this
+ * application captures a meeting, and somebody who forgets it is running has a
+ * recording of a conversation the other people in it think ended. The dot
+ * pulses; `prefers-reduced-motion` gets a steady one, which is still red and
+ * still there.
+ */
+.recording {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--recording);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+}
+
+.recording__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--recording);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.recording--paused .recording__dot {
+  animation: none;
+  background: var(--warn);
+}
+
+.recording--paused {
+  color: var(--warn);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording__dot {
+    animation: none;
+  }
+}
+
+.main {
+  overflow: auto;
+  padding: var(--space-6);
+}
+
+.page {
+  max-width: 78ch;
+}
+
+.page h1 {
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-4);
+}
+
+.page h2 {
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+.page code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--surface-inset);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.page pre {
+  background: var(--surface-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  overflow-x: auto;
+}
+
+.frontmatter {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.frontmatter dt {
+  color: var(--ink-3);
+}
+
+.frontmatter dd {
+  margin: 0;
+  color: var(--ink-1);
+  font-family: var(--font-mono);
+}
+
+a,
+.wikilink {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a:hover,
+.wikilink:hover {
+  text-decoration: underline;
+}
+
+/*
+ * A broken wikilink looks broken where the reader would have clicked it. A
+ * link to nowhere that looks like a link is worse than obviously missing
+ * text — and it is the same thing 7.1 reports.
+ */
+.wikilink--broken {
+  color: var(--danger);
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.provenance {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+  border-bottom: 1px dotted var(--line-strong);
+}
+
+.provenance:hover {
+  color: var(--accent);
+}
+
+/* Errors say what happened and what to do, and never look like content. */
+.error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.empty {
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.list button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+
+.list button:hover {
+  background: var(--surface-1);
+}

@@ -18,6 +18,11 @@ env:
   # number so the failure happens locally first; scripts/ci/check-coverage.mjs
   # re-reads it here so a package cannot configure its own gate away.
   COVERAGE_THRESHOLD: "76"
+  # Nothing in CI starts a window. The Electron entry point is wiring, and
+  # every module worth testing sits beside it importing no Electron at all, so
+  # fetching the ~100 MB runtime once per matrix job buys nothing. The
+  # installer build (plan 10.1) is where it is actually needed.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
 jobs:
   # One matrix entry per workspace package that has tests. Runs on Linux because
