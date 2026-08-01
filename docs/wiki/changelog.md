@@ -4,6 +4,10 @@ What changed in the wiki, newest first.
 
 ## 2026-08-01
 
+- Updated [[claude-code-plugins]] for the CLI's published name. npm refused `open-wiki` as
+  too similar to the existing `openwiki`, so the registry entry is `@protonspy/open-wiki`
+  and the `npx` invocations name the scope. The plugin, the installer and the MCP server
+  keep the unscoped name — only the registry ever sees the scope.
 - Revised [[claude-code-plugins]] against `adr:0013-the-project-directory-is-the-unit`.
   Its `headersHelper` finding no longer applies to this product — a stdio server has no
   headers and no token — and it gains what a plugin *cannot* carry: permission rules and

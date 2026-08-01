@@ -40,7 +40,7 @@ not work today.
 For the CLI alone, with nothing installed:
 
 ```
-npx open-wiki init
+npx @protonspy/open-wiki init
 ```
 
 ### The SmartScreen warning

@@ -66,9 +66,13 @@ jobs:
             exit 1
           }
           $version = $env:TAG.TrimStart("v")
-          npm view "open-wiki@$version" version 2>$null
+          # The published name, read from the manifest rather than written out
+          # here: they were two copies of one string and they drifted the moment
+          # the package was renamed.
+          $pkg = (Get-Content packages/cli/package.json | ConvertFrom-Json).name
+          npm view "$pkg@$version" version 2>$null
           if ($LASTEXITCODE -eq 0) {
-            Write-Error "open-wiki@$version is already on npm — a version there is permanent; bump and tag again"
+            Write-Error "$pkg@$version is already on npm — a version there is permanent; bump and tag again"
             exit 1
           }
           Write-Host "neither registry has $env:TAG yet"
@@ -194,11 +198,16 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # A prerelease must not become what `npx open-wiki` resolves to.
+          # A prerelease must not become what `npx @protonspy/open-wiki`
+          # resolves to.
           $pre = node scripts/ci/release-version.mjs --prerelease "$env:TAG"
           $tag = if ($pre) { "next" } else { "latest" }
-          Write-Host "publishing to the '$tag' dist-tag"
-          pnpm --filter open-wiki publish --access public --no-git-checks --tag $tag
+          $pkg = (Get-Content packages/cli/package.json | ConvertFrom-Json).name
+          Write-Host "publishing $pkg to the '$tag' dist-tag"
+          # `--access public` is not optional now that the name is scoped: a
+          # scoped package defaults to restricted, and a restricted publish on a
+          # free account fails outright.
+          pnpm --filter $pkg publish --access public --no-git-checks --tag $tag
 
       # workflow_dispatch builds without a tag: useful for checking the packaging
       # still works without publishing anything.

@@ -85,14 +85,19 @@ export function checkPlugin(repoRoot = root, read = defaultRead, exists = exists
 export const CLI_MANIFEST = "packages/cli/package.json";
 
 /**
- * The hook commands have to name a version.
+ * The hook commands have to name the published package, at a pinned version.
  *
- * `npx -y open-wiki gate pre` resolves whatever is `latest` on the registry —
- * on **every page write**, which is the exact cost `scripts/build-cli.mjs`
- * exists to remove. It also defeats 10.3's whole point: the installer and the
- * npm package ship from one tag so they cannot skew, and a hook that picks up
- * `latest` skews by design. So the pin is checked, and checked against the
- * version this repository would publish.
+ * `npx -y @protonspy/open-wiki gate pre` resolves whatever is `latest` on the
+ * registry — on **every page write**, which is the exact cost
+ * `scripts/build-cli.mjs` exists to remove. It also defeats 10.3's whole point:
+ * the installer and the npm package ship from one tag so they cannot skew, and
+ * a hook that picks up `latest` skews by design.
+ *
+ * **Both halves come from the CLI's manifest**, never written out here. They
+ * were a hardcoded string once, and it went stale the moment the package was
+ * renamed — while still passing, because the old name is a substring of the new
+ * one. A check that cannot tell `open-wiki` from `@protonspy/open-wiki` is a
+ * check that would let a hook invoke a package nobody publishes.
  */
 function checkHooks(dir, source, read, exists, cli) {
   const file = join(dir, "hooks", "hooks.json");
@@ -102,15 +107,21 @@ function checkHooks(dir, source, read, exists, cli) {
 
   const problems = [];
   const version = cli?.version;
+  const name = cli?.name;
+  if (!name || !version) {
+    return [`${CLI_MANIFEST} is missing or declares no name/version to pin hooks against`];
+  }
   const entries = Object.values(doc.hooks ?? {}).flat();
   if (entries.length === 0) problems.push(`${source}/hooks/hooks.json declares no hooks`);
   for (const entry of entries) {
     for (const hook of entry?.hooks ?? []) {
       const command = String(hook.command ?? "");
-      if (!command.includes("open-wiki")) continue;
-      if (!command.includes(`open-wiki@${version}`)) {
+      // Only the commands that invoke this product. Anything else in a hooks
+      // file is somebody else's tool and none of this check's business.
+      if (!/\bnpx\b/.test(command)) continue;
+      if (!command.includes(`${name}@${version}`)) {
         problems.push(
-          `${source} runs "${command}" — pin it to open-wiki@${String(version)}, or a page write ` +
+          `${source} runs "${command}" — pin it to ${name}@${String(version)}, or a page write ` +
             `resolves whatever is latest on the registry`,
         );
       }

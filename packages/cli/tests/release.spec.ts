@@ -167,17 +167,18 @@ describe("checkPlugin (10.6)", () => {
       PreToolUse: [
         {
           matcher: "Write|Edit|MultiEdit|Bash",
-          hooks: [{ type: "command", command: "npx -y open-wiki@0.1.0 gate pre" }],
+          hooks: [{ type: "command", command: "npx -y @protonspy/open-wiki@0.1.0 gate pre" }],
         },
       ],
     },
   };
+  const CLI = { name: "@protonspy/open-wiki", version: "0.1.0" };
   const files = (over: Record<string, unknown> = {}) => {
     const map: Record<string, unknown> = {
       ".claude-plugin/marketplace.json": marketplace,
       "plugins/open-wiki/.claude-plugin/plugin.json": manifest,
       "plugins/open-wiki/hooks/hooks.json": hooks,
-      "packages/cli/package.json": { version: "0.1.0" },
+      "packages/cli/package.json": CLI,
       ...over,
     };
     return (path: string) => {
@@ -204,20 +205,55 @@ describe("checkPlugin (10.6)", () => {
       files({
         "plugins/open-wiki/hooks/hooks.json": {
           hooks: {
-            PreToolUse: [{ hooks: [{ type: "command", command: "npx -y open-wiki gate pre" }] }],
+            PreToolUse: [
+              { hooks: [{ type: "command", command: "npx -y @protonspy/open-wiki gate pre" }] },
+            ],
           },
         },
       }),
       exists(PRESENT),
     );
     expect(result.ok).toBe(false);
-    expect(result.ok === false && result.problems.join(" ")).toContain("open-wiki@0.1.0");
+    expect(result.ok === false && result.problems.join(" ")).toContain(
+      "@protonspy/open-wiki@0.1.0",
+    );
+  });
+
+  it("refuses a hook still naming the package by its old, unscoped name", () => {
+    // The trap this check walked into once: `"@protonspy/open-wiki@0.1.0"`
+    // *contains* `"open-wiki@0.1.0"`, so a check written against the bare name
+    // passes a hook that invokes a package nobody publishes. The pin is read
+    // from the manifest now, and it has to match the whole name.
+    const result = checkPlugin(
+      ".",
+      files({
+        "plugins/open-wiki/hooks/hooks.json": {
+          hooks: {
+            PreToolUse: [
+              { hooks: [{ type: "command", command: "npx -y open-wiki@0.1.0 gate pre" }] },
+            ],
+          },
+        },
+      }),
+      exists(PRESENT),
+    );
+    expect(result.ok).toBe(false);
   });
 
   it("refuses a pin that is not the version this repository publishes", () => {
     const result = checkPlugin(
       ".",
-      files({ "packages/cli/package.json": { version: "0.2.0" } }),
+      files({ "packages/cli/package.json": { ...CLI, version: "0.2.0" } }),
+      exists(PRESENT),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses to pass when the CLI manifest names no package to pin against", () => {
+    // Otherwise the pin is checked against `undefined` and everything passes.
+    const result = checkPlugin(
+      ".",
+      files({ "packages/cli/package.json": { version: "0.1.0" } }),
       exists(PRESENT),
     );
     expect(result.ok).toBe(false);
