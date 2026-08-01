@@ -93,6 +93,40 @@ describe("source state (6.1)", () => {
       expect(state.progress).toEqual({ done: 1, total: 2 });
     });
 
+    it("is still transcribing while chunks remain untried, and says what failed", () => {
+      // The pipeline (4.9) records a chunk's error and carries on, because 6.3
+      // offers "redo only what failed" and that needs the rest attempted. A
+      // single 429 twelve minutes into a healthy run must not make the source
+      // read as `failed` — with a progress count that keeps climbing — for the
+      // remaining forty minutes.
+      source(root, "weekly", {
+        kind: "recording",
+        journal: {
+          chunks: [{ done: true }, { error: "groq: 429 rate limited" }, { done: false }],
+        },
+      });
+      const state = sourceState(root, "weekly");
+      expect(state.stage).toBe("transcribing");
+      expect(state.error).toContain("429");
+      expect(state.progress).toEqual({ done: 1, total: 3 });
+    });
+
+    it("is failed once nothing is left to try", () => {
+      source(root, "weekly", {
+        kind: "recording",
+        journal: { chunks: [{ done: true }, { error: "a" }, { error: "b" }] },
+      });
+      expect(sourceState(root, "weekly").stage).toBe("failed");
+    });
+
+    it("is failed when the journal itself carries the error", () => {
+      source(root, "weekly", {
+        kind: "recording",
+        journal: { error: "the recording had no audio", chunks: [{ done: false }] },
+      });
+      expect(sourceState(root, "weekly").stage).toBe("failed");
+    });
+
     it("is not failed once the text landed anyway", () => {
       // A chunk that failed and was retried successfully leaves its error in
       // the journal; the text is the thing that says it finished.

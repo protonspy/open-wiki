@@ -15,3 +15,7 @@ export * from "./preprocess.js";
 export * from "./recording.js";
 export * from "./silence.js";
 export * from "./timemap.js";
+export * from "./absolute.js";
+export * from "./journal.js";
+export * from "./transcribe.js";
+export * from "./stt/index.js";

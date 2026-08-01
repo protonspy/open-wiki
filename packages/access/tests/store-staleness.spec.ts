@@ -28,19 +28,23 @@ describe("isStoreOnlyChange (5.8)", () => {
   });
 
   it("a store-stamped `updated` on a later day is not an external edit", () => {
-    const author = page("id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-01\nsources: []\nsuperseded-by: \"\"");
-    const disk = page("id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-02\nsources: []\nsuperseded-by: \"\"");
+    const author = page(
+      'id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-01\nsources: []\nsuperseded-by: ""',
+    );
+    const disk = page(
+      'id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-02\nsources: []\nsuperseded-by: ""',
+    );
     expect(isStoreOnlyChange(author, disk)).toBe(true);
   });
 
   it("a store-appended `sources` is not an external edit (hook path)", () => {
     // The agent wrote the citation in the body; the store mirrored it into `sources`.
     const author = page(
-      "id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-01\nsources: []\nsuperseded-by: \"\"",
+      'id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-01\nsources: []\nsuperseded-by: ""',
       "See src://doc.pdf#p1.\n",
     );
     const disk = page(
-      "id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-01\nsources:\n  - src://doc.pdf#p1\nsuperseded-by: \"\"",
+      'id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-01\nsources:\n  - src://doc.pdf#p1\nsuperseded-by: ""',
       "See src://doc.pdf#p1.\n",
     );
     expect(isStoreOnlyChange(author, disk)).toBe(true);
@@ -49,7 +53,7 @@ describe("isStoreOnlyChange (5.8)", () => {
   it("`updated` and `sources` changing together is still store-only", () => {
     const author = page(FM.replace("updated: 2026-08-01", 'updated: ""'));
     const disk = page(
-      "id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-02\nsources:\n  - src://doc.pdf#p1\nsuperseded-by: \"\"",
+      'id: t:a\ntype: t\ntitle: A\nstatus: active\naliases: []\nupdated: 2026-08-02\nsources:\n  - src://doc.pdf#p1\nsuperseded-by: ""',
     );
     expect(isStoreOnlyChange(author, disk)).toBe(true);
   });

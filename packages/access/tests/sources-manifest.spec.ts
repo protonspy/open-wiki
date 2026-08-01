@@ -2,7 +2,13 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readManifest, listSources, sourceExists, TakenIdError, type SourceManifest } from "../src/sources/manifest.js";
+import {
+  readManifest,
+  listSources,
+  sourceExists,
+  TakenIdError,
+  type SourceManifest,
+} from "../src/sources/manifest.js";
 import { registerSource } from "../src/sources/register.js";
 import { EmptyNameError } from "../src/sources/id.js";
 import { OutsideProjectError } from "../src/paths.js";
@@ -116,7 +122,11 @@ describe("readManifest / listSources / sourceExists (3.1 read side)", () => {
     // as the id `../../elsewhere`. Answering "yes, that exists" would make the
     // gate an existence oracle for any manifest.json on the machine, and would
     // let a page cite something that is not a source at all.
-    writeFileSync(join(root, "manifest.json"), JSON.stringify({ id: "x", title: "outside raw" }), "utf8");
+    writeFileSync(
+      join(root, "manifest.json"),
+      JSON.stringify({ id: "x", title: "outside raw" }),
+      "utf8",
+    );
     mkdirSync(join(root, ".claude"), { recursive: true });
     writeFileSync(join(root, ".claude", "manifest.json"), JSON.stringify({ id: "y" }), "utf8");
 
