@@ -1,6 +1,6 @@
-import { renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { absolutePassages, type TimedPassage } from "./absolute.js";
+import { writeAtomic } from "./atomic.js";
 import type { Journal, TrackName } from "./journal.js";
 import type { TimeMap } from "./timemap.js";
 
@@ -83,18 +83,7 @@ export function buildTimeline(journal: Journal, map: TimeMap): Timeline {
   };
 }
 
-/** Write `timeline.json` through a rename, for the reasons in `journal.ts`. */
+/** Write `timeline.json` through a rename, for the reasons in `atomic.ts`. */
 export function writeTimeline(dir: string, timeline: Timeline): void {
   writeAtomic(join(dir, TIMELINE_FILE), `${JSON.stringify(timeline, null, 2)}\n`);
-}
-
-export function writeAtomic(target: string, contents: string): void {
-  const temp = `${target}.tmp`;
-  try {
-    writeFileSync(temp, contents, "utf8");
-    renameSync(temp, target);
-  } catch (e) {
-    rmSync(temp, { force: true });
-    throw e;
-  }
 }

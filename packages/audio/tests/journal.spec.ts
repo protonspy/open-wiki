@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -221,7 +221,7 @@ describe("readJournal and writeJournal", () => {
     // It is rewritten after every chunk, so it is the file in this product
     // most likely to be caught mid-write by a machine going down.
     writeJournal(dir, planJournal(expected, "en"));
-    expect(existsSync(join(dir, "journal.json.tmp"))).toBe(false);
+    expect(readdirSync(dir).filter((f) => f.startsWith(".ow-tmp-"))).toEqual([]);
   });
 
   it("leaves the previous journal intact when a write fails", () => {
@@ -242,7 +242,7 @@ describe("readJournal and writeJournal", () => {
     expect(() => writeJournal(dir, doomed as never)).toThrow();
 
     expect(readJournal(dir)).toEqual(first);
-    expect(existsSync(join(dir, "journal.json.tmp"))).toBe(false);
+    expect(readdirSync(dir).filter((f) => f.startsWith(".ow-tmp-"))).toEqual([]);
   });
 
   it("stays readable by the source-state reader that counts progress", () => {

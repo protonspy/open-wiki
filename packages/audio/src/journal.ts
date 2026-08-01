@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeAtomic } from "./atomic.js";
 import type { ProviderName, SttSegment } from "./stt/provider.js";
 import type { Chunk } from "./timemap.js";
 
@@ -197,15 +198,7 @@ export function readJournal(dir: string): Journal | null {
  * journal reads as no journal, which throws away everything already paid for.
  */
 export function writeJournal(dir: string, journal: Journal): void {
-  const target = journalPath(dir);
-  const temp = `${target}.tmp`;
-  try {
-    writeFileSync(temp, `${JSON.stringify(journal, null, 2)}\n`, "utf8");
-    renameSync(temp, target);
-  } catch (e) {
-    rmSync(temp, { force: true });
-    throw e;
-  }
+  writeAtomic(journalPath(dir), `${JSON.stringify(journal, null, 2)}\n`);
 }
 
 /**

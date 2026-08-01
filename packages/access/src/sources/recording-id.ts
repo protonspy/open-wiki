@@ -21,6 +21,19 @@ import { isIdTaken, slugify } from "./id.js";
 /** How many same-day recordings can share an occasion before it is absurd. */
 const MAX_SAME_DAY = 99;
 
+/**
+ * How much of the occasion reaches the directory name.
+ *
+ * Unlike `deriveId`'s input — a filename the operating system already bounded
+ * — an occasion is free text from a form. Left unbounded, a pasted paragraph
+ * becomes a directory name that fails at `mkdir` on Windows' default path
+ * limit, at the moment the recording is being saved; and `isIdTaken` answers
+ * "not taken" on the way there, because `existsSync` returns false for a name
+ * that is too long. Capture must not be lost to a naming rule, so the name is
+ * trimmed rather than refused.
+ */
+const MAX_OCCASION_CHARS = 80;
+
 export interface RecordingIdInput {
   /** What is being recorded, as the user typed it. May be empty. */
   occasion: string;
@@ -55,7 +68,9 @@ export function baseId(input: RecordingIdInput): string {
   // `slugify`, not `deriveId`: `deriveId` keeps a trailing `.pdf` because a
   // file's format is part of its identity. An occasion has no format, and
   // "Vendor call re. arch" would otherwise keep `.arch` as though it were one.
-  const occasion = slugify(input.occasion);
+  // Trimmed after slugging and then re-trimmed of a trailing `-`, so a cut
+  // landing mid-word does not leave the id ending in a separator.
+  const occasion = slugify(input.occasion).slice(0, MAX_OCCASION_CHARS).replace(/-+$/, "");
   const day = dayOf(input.at);
   return occasion === "" ? `recording-${day}-${timeOf(input.at)}` : `${occasion}-${day}`;
 }

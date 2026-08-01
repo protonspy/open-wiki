@@ -1,8 +1,9 @@
 import { join } from "node:path";
-import type { Journal } from "./journal.js";
+import { writeAtomic } from "./atomic.js";
+import { isComplete, type Journal } from "./journal.js";
 import { RECORDING_TEXT_FILE, renderRecordingText } from "./recording-text.js";
-import { sealRecording, type SealRefusal } from "./seal.js";
-import { buildTimeline, writeAtomic, writeTimeline, type Timeline } from "./timeline.js";
+import { sealRecording, sourceDir, type SealResult } from "./seal.js";
+import { buildTimeline, writeTimeline, type Timeline } from "./timeline.js";
 import type { TimeMap } from "./timemap.js";
 import { renderVtt, VTT_FILE } from "./vtt.js";
 
@@ -21,6 +22,15 @@ import { renderVtt, VTT_FILE } from "./vtt.js";
  * It is separate from `transcribeRecording` because it is also what runs when
  * a *resumed* transcription completes — the last chunk of a run that started
  * yesterday reaches exactly here.
+ *
+ * **`text.md` is written only when the journal is complete.** It is the file
+ * `sources/state.ts` reads to decide a source is `text-ready`, and it outranks
+ * everything the journal says — so writing it for a run that stopped at chunk
+ * four turns a half-transcribed recording into one that reads as finished,
+ * with its 690 MB WAV still on disk under a source nobody will look at again.
+ * That is exactly the failure `adr:0012` claims to convert from silent to
+ * visible. The timeline and the VTT carry no such meaning and are written
+ * either way, so a partial run is still inspectable.
  */
 
 export interface FinishOptions {
@@ -32,25 +42,34 @@ export interface FinishOptions {
 
 export interface FinishResult {
   timeline: Timeline;
-  seal: SealRefusal;
+  /** True once `text.md` is on disk — which only a complete journal produces. */
+  textReady: boolean;
+  seal: SealResult;
 }
 
 export function finishRecording(
-  dir: string,
+  projectRoot: string,
+  id: string,
   journal: Journal,
   map: TimeMap,
   options: FinishOptions,
 ): FinishResult {
+  const dir = sourceDir(projectRoot, id);
   const timeline = buildTimeline(journal, map);
   writeTimeline(dir, timeline);
   writeAtomic(join(dir, VTT_FILE), renderVtt(timeline));
-  writeAtomic(join(dir, RECORDING_TEXT_FILE), renderRecordingText(timeline, options));
 
-  // Last. `sealRecording` re-checks the journal and the outputs rather than
-  // trusting that it was called at the right moment — it is the one step that
-  // cannot be undone, so it does not take the caller's word for it.
-  const seal = sealRecording(dir, journal, {
+  const complete = isComplete(journal);
+  if (complete) {
+    writeAtomic(join(dir, RECORDING_TEXT_FILE), renderRecordingText(timeline, options));
+  }
+
+  // Last. `sealRecording` re-derives the directory, re-reads the journal from
+  // disk and re-checks every output rather than trusting that it was called at
+  // the right moment — it is the one step that cannot be undone, so it does
+  // not take the caller's word for anything.
+  const seal = sealRecording(projectRoot, id, journal, {
     ...(options.deleteWav !== undefined ? { deleteWav: options.deleteWav } : {}),
   });
-  return { timeline, seal };
+  return { timeline, textReady: complete, seal };
 }

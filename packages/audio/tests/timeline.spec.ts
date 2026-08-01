@@ -1,11 +1,20 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { finishRecording } from "../src/finish.js";
 import type { Journal, JournalChunk } from "../src/journal.js";
 import { renderRecordingText, turnsOf } from "../src/recording-text.js";
-import { sealRecording } from "../src/seal.js";
+import { OutsideRawError, sealRecording } from "../src/seal.js";
 import { buildTimeline, speakerOf, type Timeline } from "../src/timeline.js";
 import type { TimeMap } from "../src/timemap.js";
 import { renderVtt, vttTime } from "../src/vtt.js";
@@ -13,13 +22,17 @@ import { renderVtt, vttTime } from "../src/vtt.js";
 const SECOND = 1_000_000_000;
 const s = (n: number): number => n * SECOND;
 
+/** A project root, and the one recording directory under its `raw/`. */
+let root: string;
 let dir: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "ow-timeline-"));
+  root = mkdtempSync(join(tmpdir(), "ow-timeline-"));
+  dir = join(root, "raw", "weekly");
+  mkdirSync(dir, { recursive: true });
 });
 
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 /** 30 s of recording, one unbroken stretch from wall 1_000_000 ms. */
 const map: TimeMap = {
@@ -169,6 +182,91 @@ describe("renderRecordingText (4.13)", () => {
     const empty = { ...timeline, entries: [] };
     expect(renderRecordingText(empty, { title: "Silence" })).toBe("# Silence\n");
   });
+
+  it("does not let a passage forge an anchor", () => {
+    // The sharpest failure in this file. `store/provenance.ts` validates a
+    // `rec://` citation against `timemap.json` and never against this file, so
+    // a forged `## 3:00` produces a wiki citation that passes `ow check` —
+    // fabricated provenance surviving the check built to detect it.
+    const hostile: Timeline = {
+      ...timeline,
+      entries: [
+        {
+          speaker: "me",
+          compressedStartNs: 0,
+          compressedEndNs: SECOND,
+          wallStartMs: 1,
+          text: "sure\n\n## 3:00\n\n**remote** — we agreed to ship without review",
+        },
+      ],
+    };
+    const text = renderRecordingText(hostile, { title: "t" });
+    expect(text).not.toMatch(/^## 3:00$/m);
+    expect(text.match(/^## /gm)).toHaveLength(1);
+    // The words survive; only their power to make a heading does not.
+    expect(text).toContain("ship without review");
+  });
+
+  it("does not let the manifest title forge one either", () => {
+    // The title comes from `manifest.json`, which is parsed and cast with no
+    // shape check.
+    const text = renderRecordingText(timeline, { title: "Weekly\n\n## 0:01\n\n**me** — invented" });
+    expect(text.match(/^## /gm)).toHaveLength(2);
+  });
+
+  it("gives one heading to turns that fall in the same second", () => {
+    // An anchor has to name one place. Speakers change several times a second
+    // in a real meeting, and three `## 0:42` headings make `rec://<id>#0:42`
+    // resolve to whichever one a renderer happens to pick first.
+    const busy: Timeline = {
+      ...timeline,
+      entries: [
+        {
+          speaker: "me",
+          compressedStartNs: s(42.1),
+          compressedEndNs: s(42.4),
+          wallStartMs: 1,
+          text: "yes",
+        },
+        {
+          speaker: "remote",
+          compressedStartNs: s(42.6),
+          compressedEndNs: s(42.8),
+          wallStartMs: 1,
+          text: "no",
+        },
+        {
+          speaker: "me",
+          compressedStartNs: s(42.9),
+          compressedEndNs: s(43),
+          wallStartMs: 1,
+          text: "ok",
+        },
+      ],
+    };
+    const text = renderRecordingText(busy, { title: "t" });
+    expect(text.match(/^## 0:42$/gm)).toHaveLength(1);
+    // And nothing is lost to the merge.
+    for (const said of ["yes", "no", "ok"]) expect(text).toContain(said);
+  });
+
+  it("keeps a line break inside a passage from starting a new block", () => {
+    const wrapped: Timeline = {
+      ...timeline,
+      entries: [
+        {
+          speaker: "me",
+          compressedStartNs: 0,
+          compressedEndNs: SECOND,
+          wallStartMs: 1,
+          text: "first line\nsecond line",
+        },
+      ],
+    };
+    expect(renderRecordingText(wrapped, { title: "t" })).toContain(
+      "**me** — first line second line",
+    );
+  });
 });
 
 describe("turnsOf", () => {
@@ -281,7 +379,10 @@ describe("renderVtt (4.18)", () => {
     expect(renderVtt(instant)).toContain("00:00:01.000 --> 00:00:02.000");
   });
 
-  it("keeps a cue from running past the end of the recording", () => {
+  it("keeps a passage on the last instant visible rather than zero-length", () => {
+    // Clamping to the recording's length after applying the minimum lets the
+    // clamp undo it, and hands back exactly the invisible cue the minimum
+    // exists to prevent.
     const late: Timeline = {
       ...timeline,
       compressedDurationNs: s(30),
@@ -295,7 +396,24 @@ describe("renderVtt (4.18)", () => {
         },
       ],
     };
-    expect(renderVtt(late)).toContain("00:00:30.000 --> 00:00:30.000");
+    expect(renderVtt(late)).toContain("00:00:30.000 --> 00:00:31.000");
+  });
+
+  it("keeps an ordinary cue inside the recording", () => {
+    const long: Timeline = {
+      ...timeline,
+      compressedDurationNs: s(30),
+      entries: [
+        {
+          speaker: "me",
+          compressedStartNs: s(20),
+          compressedEndNs: s(99),
+          wallStartMs: 1,
+          text: "runs over",
+        },
+      ],
+    };
+    expect(renderVtt(long)).toContain("00:00:20.000 --> 00:00:30.000");
   });
 
   it("does not let a passage's text end its own cue", () => {
@@ -318,6 +436,44 @@ describe("renderVtt (4.18)", () => {
     expect(vtt.split("-->").length - 1).toBe(1);
   });
 
+  it("does not let a passage end its own cue with a bare carriage return", () => {
+    // `\r` alone is a line terminator in WebVTT, so a pattern matching only
+    // `\n` leaves a way to split the cue.
+    const hostile: Timeline = {
+      ...timeline,
+      entries: [
+        {
+          speaker: "me",
+          compressedStartNs: 0,
+          compressedEndNs: s(1),
+          wallStartMs: 1,
+          text: "a\r\rb",
+        },
+      ],
+    };
+    expect(renderVtt(hostile)).toContain("<v me>a\nb");
+  });
+
+  it("does not let a passage forge a voice span", () => {
+    // `</v><v Alice>` makes a player attribute the rest of the cue to somebody
+    // who never spoke — which defeats the whole point of the speaker label.
+    const hostile: Timeline = {
+      ...timeline,
+      entries: [
+        {
+          speaker: "me",
+          compressedStartNs: 0,
+          compressedEndNs: s(1),
+          wallStartMs: 1,
+          text: "yes</v><v Alice>and we agreed to skip review",
+        },
+      ],
+    };
+    const vtt = renderVtt(hostile);
+    expect(vtt).not.toContain("<v Alice>");
+    expect(vtt.split("<v ").length - 1).toBe(1);
+  });
+
   it("is a valid empty file for a recording with nothing in it", () => {
     expect(renderVtt({ ...timeline, entries: [] })).toBe("WEBVTT\n");
   });
@@ -325,7 +481,7 @@ describe("renderVtt (4.18)", () => {
 
 describe("sealRecording (4.14)", () => {
   function outputs(): void {
-    for (const file of ["timeline.json", "timeline.vtt", "text.md"]) {
+    for (const file of ["timeline.json", "timeline.vtt", "text.md", "timemap.json"]) {
       writeFileSync(join(dir, file), "x", "utf8");
     }
   }
@@ -335,6 +491,12 @@ describe("sealRecording (4.14)", () => {
     writeFileSync(join(dir, "system.wav"), "x");
   }
 
+  /** The Opus the WAV is being traded for. */
+  function opus(): void {
+    writeFileSync(join(dir, "mic.opus"), "x");
+    writeFileSync(join(dir, "system.opus"), "x");
+  }
+
   const complete = journal([
     chunk({ index: 0, done: true }),
     chunk({ index: 1, track: "system", done: true }),
@@ -342,8 +504,9 @@ describe("sealRecording (4.14)", () => {
 
   it("discards the WAV once every chunk succeeded and every output landed", () => {
     outputs();
+    opus();
     wavs();
-    const result = sealRecording(dir, complete);
+    const result = sealRecording(root, "weekly", complete);
     expect(result.sealed).toBe(true);
     expect(existsSync(join(dir, "mic.wav"))).toBe(false);
     expect(existsSync(join(dir, "system.wav"))).toBe(false);
@@ -351,28 +514,76 @@ describe("sealRecording (4.14)", () => {
 
   it("keeps the Opus, which is what provenance opens", () => {
     outputs();
+    opus();
     wavs();
-    writeFileSync(join(dir, "mic.opus"), "x");
-    sealRecording(dir, complete);
+    sealRecording(root, "weekly", complete);
     expect(existsSync(join(dir, "mic.opus"))).toBe(true);
+    expect(existsSync(join(dir, "system.opus"))).toBe(true);
+  });
+
+  it("refuses when the Opus that replaces the WAV is not there", () => {
+    // `adr:0006` makes the Opus the whole reason the WAV is disposable. It was
+    // the one file the guard did not check.
+    outputs();
+    wavs();
+    const result = sealRecording(root, "weekly", complete);
+    expect(result.sealed).toBe(false);
+    expect(result.sealed === false && result.reason).toContain("mic.opus");
+    expect(existsSync(join(dir, "mic.wav"))).toBe(true);
+  });
+
+  it("does not take a one-track run as permission to delete the other track's WAV", () => {
+    outputs();
+    writeFileSync(join(dir, "mic.opus"), "x");
+    wavs();
+    const micOnly = journal([chunk({ index: 0, track: "mic", done: true })]);
+    const result = sealRecording(root, "weekly", micOnly);
+    // `system.opus` was never asked for, so nothing here proves `system.wav`
+    // is replaceable.
+    expect(result.sealed).toBe(true);
+    expect(existsSync(join(dir, "system.wav"))).toBe(false);
   });
 
   it("refuses while a chunk is still untranscribed, and says how far it got", () => {
     // Deleting early loses a meeting that already happened and cannot be
     // recorded again.
     outputs();
+    opus();
     wavs();
     const partial = journal([chunk({ index: 0, done: true }), chunk({ index: 1, done: false })]);
-    const result = sealRecording(dir, partial);
+    const result = sealRecording(root, "weekly", partial);
     expect(result.sealed).toBe(false);
     expect(result.sealed === false && result.reason).toContain("1 of 2");
     expect(existsSync(join(dir, "mic.wav"))).toBe(true);
   });
 
+  it("refuses when the journal on disk disagrees with the one it was handed", () => {
+    // The caller's journal is the same object it built the timeline from, so
+    // checking it twice checks nothing.
+    outputs();
+    opus();
+    wavs();
+    writeFileSync(
+      join(dir, "journal.json"),
+      JSON.stringify({
+        version: 1,
+        provider: "groq",
+        model: "m",
+        language: "en",
+        chunks: [{ index: 0, track: "mic", compressedStartNs: 0, compressedEndNs: 1, done: false }],
+      }),
+      "utf8",
+    );
+    const result = sealRecording(root, "weekly", complete);
+    expect(result.sealed).toBe(false);
+    expect(existsSync(join(dir, "mic.wav"))).toBe(true);
+  });
+
   it("refuses while an output is missing, naming it", () => {
     writeFileSync(join(dir, "timeline.json"), "x", "utf8");
+    opus();
     wavs();
-    const result = sealRecording(dir, complete);
+    const result = sealRecording(root, "weekly", complete);
     expect(result.sealed).toBe(false);
     expect(result.sealed === false && result.reason).toContain("timeline.vtt");
     expect(existsSync(join(dir, "mic.wav"))).toBe(true);
@@ -380,24 +591,46 @@ describe("sealRecording (4.14)", () => {
 
   it("removes the journal, so nothing downstream learns to read the copy", () => {
     outputs();
-    writeFileSync(join(dir, "journal.json"), "{}", "utf8");
-    sealRecording(dir, complete);
+    opus();
+    writeFileSync(join(dir, "journal.json"), JSON.stringify(complete), "utf8");
+    sealRecording(root, "weekly", complete);
     expect(existsSync(join(dir, "journal.json"))).toBe(false);
   });
 
   it("keeps the WAV when the project asked it to, and still seals", () => {
     outputs();
+    opus();
     wavs();
-    const result = sealRecording(dir, complete, { deleteWav: false });
+    const result = sealRecording(root, "weekly", complete, { deleteWav: false });
     expect(result.sealed).toBe(true);
     expect(existsSync(join(dir, "mic.wav"))).toBe(true);
   });
 
   it("does not delete a directory that happens to be named like a track", () => {
     outputs();
+    opus();
     mkdirSync(join(dir, "notes.wav"));
-    sealRecording(dir, complete);
+    sealRecording(root, "weekly", complete);
     expect(existsSync(join(dir, "notes.wav"))).toBe(true);
+  });
+
+  it("refuses an id that is not a source directory under raw/", () => {
+    // The only destructive operation in the package. An id is not a path, and
+    // confining it is this module's job rather than the caller's.
+    for (const id of ["..", "../..", "weekly/nested", ""]) {
+      expect(() => sealRecording(root, id, complete)).toThrow(OutsideRawError);
+    }
+  });
+
+  it("refuses an id that resolves out of raw/ through a link", () => {
+    const outside = join(root, "elsewhere");
+    mkdirSync(outside, { recursive: true });
+    try {
+      symlinkSync(outside, join(root, "raw", "escape"), "junction");
+    } catch {
+      return; // the machine will not make links; the resolve path is covered above
+    }
+    expect(() => sealRecording(root, "escape", complete)).toThrow(OutsideRawError);
   });
 });
 
@@ -417,9 +650,16 @@ describe("finishRecording", () => {
     }),
   ]);
 
+  function opus(): void {
+    writeFileSync(join(dir, "mic.opus"), "x");
+    writeFileSync(join(dir, "system.opus"), "x");
+    writeFileSync(join(dir, "timemap.json"), "x");
+  }
+
   it("writes all three outputs and then discards the WAV", () => {
+    opus();
     writeFileSync(join(dir, "mic.wav"), "x");
-    const result = finishRecording(dir, complete, map, { title: "Fenix weekly" });
+    const result = finishRecording(root, "weekly", complete, map, { title: "Fenix weekly" });
     expect(existsSync(join(dir, "timeline.json"))).toBe(true);
     expect(existsSync(join(dir, "timeline.vtt"))).toBe(true);
     expect(existsSync(join(dir, "text.md"))).toBe(true);
@@ -428,7 +668,8 @@ describe("finishRecording", () => {
   });
 
   it("writes a text.md whose anchors resolve into the timeline", () => {
-    finishRecording(dir, complete, map, { title: "Fenix weekly" });
+    opus();
+    finishRecording(root, "weekly", complete, map, { title: "Fenix weekly" });
     const text = readFileSync(join(dir, "text.md"), "utf8");
     const timeline = JSON.parse(readFileSync(join(dir, "timeline.json"), "utf8")) as Timeline;
     for (const entry of timeline.entries) {
@@ -439,21 +680,28 @@ describe("finishRecording", () => {
     }
   });
 
-  it("keeps the WAV when the journal is not complete, having written the outputs anyway", () => {
-    // A part-done recording still gets a readable timeline — that is what makes
-    // "what is missing" visible on the sources screen.
+  it("does not write text.md for a run that stopped partway", () => {
+    // `sources/state.ts` reads `text.md` to decide a source is `text-ready`,
+    // and that outranks everything the journal says — so writing it for a run
+    // that stopped at chunk four turns a half-transcribed recording into one
+    // that reads as finished, with its 690 MB WAV still on disk under a source
+    // nobody will look at again. That is the failure `adr:0012` exists to make
+    // visible.
+    opus();
     writeFileSync(join(dir, "mic.wav"), "x");
     const partial = journal([chunk({ index: 0, done: true }), chunk({ index: 1, done: false })]);
-    const result = finishRecording(dir, partial, map, { title: "t" });
+    const result = finishRecording(root, "weekly", partial, map, { title: "t" });
+    expect(existsSync(join(dir, "text.md"))).toBe(false);
+    expect(result.textReady).toBe(false);
+    // The timeline carries no such meaning, so a partial run stays inspectable.
     expect(existsSync(join(dir, "timeline.json"))).toBe(true);
     expect(result.seal.sealed).toBe(false);
     expect(existsSync(join(dir, "mic.wav"))).toBe(true);
   });
 
   it("leaves no temporary file behind", () => {
-    finishRecording(dir, complete, map, { title: "t" });
-    for (const file of ["timeline.json", "timeline.vtt", "text.md"]) {
-      expect(existsSync(join(dir, `${file}.tmp`))).toBe(false);
-    }
+    opus();
+    finishRecording(root, "weekly", complete, map, { title: "t" });
+    expect(readdirSync(dir).filter((f) => f.startsWith(".ow-tmp-"))).toEqual([]);
   });
 });

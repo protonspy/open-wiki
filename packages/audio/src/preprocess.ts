@@ -1,5 +1,5 @@
-import { renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeAtomic } from "./atomic.js";
 import { planChunks, type ChunkOptions } from "./chunks.js";
 import { planCompression } from "./compress.js";
 import { encodeTrack, probeDurationNs, SAMPLE_PERIOD_NS } from "./encode.js";
@@ -115,21 +115,10 @@ async function assertAgrees(run: FfmpegRunner, file: string, expectedNs: number)
 }
 
 /**
- * Write `timemap.json` through a temporary file and a rename.
- *
- * `store/provenance.ts` degrades on a map it cannot parse, and a half-written
- * JSON file is what produces that. The same reasoning as
- * `packages/access/src/write/atomic-write.ts`; the four lines are repeated
- * rather than shared because the dependency runs the other way.
+ * Write `timemap.json` so no reader sees half of it — `store/provenance.ts`
+ * degrades on a map it cannot parse, and a half-written JSON file is what
+ * produces that. See `atomic.ts`.
  */
 function writeTimeMap(dir: string, map: TimeMap): void {
-  const target = join(dir, TIMEMAP_FILE);
-  const temp = `${target}.tmp`;
-  try {
-    writeFileSync(temp, `${JSON.stringify(map, null, 2)}\n`, "utf8");
-    renameSync(temp, target);
-  } catch (e) {
-    rmSync(temp, { force: true });
-    throw e;
-  }
+  writeAtomic(join(dir, TIMEMAP_FILE), `${JSON.stringify(map, null, 2)}\n`);
 }

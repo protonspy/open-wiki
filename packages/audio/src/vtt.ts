@@ -51,8 +51,14 @@ export function renderVtt(timeline: Timeline): string {
 const MINIMUM_CUE_NS = NS_PER_SECOND;
 
 function endOf(entry: TimelineEntry, timeline: Timeline): number {
-  const end = Math.max(entry.compressedEndNs, entry.compressedStartNs + MINIMUM_CUE_NS);
-  return Math.min(end, timeline.compressedDurationNs || end);
+  // The recording's length first, then the minimum — the other order lets the
+  // clamp undo the minimum and hand back the zero-length cue this exists to
+  // prevent, for any passage sitting on the last instant.
+  const withinRecording = Math.min(
+    Math.max(entry.compressedEndNs, entry.compressedStartNs),
+    timeline.compressedDurationNs || Number.MAX_SAFE_INTEGER,
+  );
+  return Math.max(withinRecording, entry.compressedStartNs + MINIMUM_CUE_NS);
 }
 
 /** `HH:MM:SS.mmm`, the only form WebVTT accepts past an hour. */
@@ -67,12 +73,27 @@ export function vttTime(ns: number): string {
 }
 
 /**
- * A cue's text cannot contain a blank line — that is what ends a cue — and
- * `-->` inside one would read as a second timing line. Neither can come out of
- * a speech model, but both can come out of a hand-edited timeline, and a VTT
- * that silently splits one passage into two is worse than one that keeps a
- * literal arrow.
+ * A cue's payload is markup, and none of it is trusted — it is a speech
+ * model's output, or a `timeline.json` that arrived with a clone. Three things
+ * it must not be able to do:
+ *
+ * - **open or close a span.** `</v><v Alice>` makes a player attribute the
+ *   rest of the cue to somebody who never spoke, which defeats the whole point
+ *   of the `<v ${speaker}>` line above.
+ * - **end its own cue.** A blank line is what ends one, and `\r` alone is a
+ *   line terminator in WebVTT — so the blank-line pattern has to cover it and
+ *   not only `\n`.
+ * - **look like a timing line.** `-->` inside a cue reads as one.
+ *
+ * Escaping the angle brackets handles the first, and would handle the third on
+ * its own; the arrow substitution stays because a cue reading `&#45;&#45;&gt;`
+ * is worse to a human than one reading `→`.
  */
 function escapeCue(text: string): string {
-  return text.replace(/\r?\n\s*\r?\n/g, "\n").replace(/-->/g, "→");
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/[\r\n][ \t]*[\r\n]+/g, "\n")
+    .replace(/-->/g, "→");
 }
