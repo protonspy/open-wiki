@@ -313,19 +313,19 @@ of record.
 - [x] 9.11 (Unit) Announce the project in the server's name and description, so an agent with several configured says which base it answered from
 - [x] 9.12 (Unit) `ow graph` first and `ow search` after — the structural queries have no other owner and the supersession walk depends on the fields 5.2 records, where lexical search is what a scan over a few megabytes already does. Both are the local queries `adr:0013-the-project-directory-is-the-unit` sends to the CLI rather than to MCP, printing JSON
 - [x] 9.13 (Unit) A validation error readable enough for the agent to fix it on its own and try again — the same text whether it came from the CLI, a hook or the editor
-- [ ] 9.14 (TDD) Pay down cold start: bundle the CLI to a single file, and talk to the running application over a local socket when there is one — the socket carries read and validate and never write, so the write verb always pays the standalone path, and both paths produce the same answer
+- [x] 9.14 (TDD) Pay down cold start: bundle the CLI to a single file, and talk to the running application over a local socket when there is one — the socket carries read and validate and never write, so the write verb always pays the standalone path, and both paths produce the same answer
   - Deferred to group 8: the socket peer is the running desktop application, which does not exist until group 8, and bundling the CLI now then re-touching it for the socket is doing the work twice. The unbundled CLI runs the whole MVP path; the bundle is a cold-start optimisation, not a functional one.
 - [x] 9.15 (Unit) Verify end to end that Claude Code, working inside a project and starting from a single source, builds valid pages and then answers by citing them
 - [x] 9.16 (Unit) Verify that a second project with no wiki of its own consults the first through a committed `.mcp.json` naming it, and answers citing its pages
 
 ## 10 — Distribution
 
-- [ ] 10.1 (Unit) A single NSIS installer with ffmpeg and `recorder.exe` embedded, written to `apps/desktop/release/`, with no external dependency to install, and the `ow` shim on `PATH` — `adr:0009-distribution-through-github-releases`
-- [ ] 10.2 (Unit) Release from a `v*` tag: CI builds the installer, refuses a tag that disagrees with the app version or that already has a release, and publishes it to GitHub Releases with its `SHA256SUMS.txt`
-- [ ] 10.3 (Unit) Publish the CLI to npm from the same tag, so `npx open-wiki init` works with nothing installed, and fail the release when the two artifacts disagree on version — claiming the package name before anyone else does, and publishing with provenance, because a product that verifies a hash on its own ffmpeg cannot ship a fetch-and-execute that verifies nothing — `adr:0014-typescript-everywhere-except-audio-capture`
-- [ ] 10.4 (Unit) Publish to winget and Scoop, with the manifests pointing at the release URL and quoting its hash
-- [ ] 10.5 (Unit) A README with the recording notice, the responsibility to inform participants, what the SmartScreen warning on an unsigned installer means, and what committing a wiki puts in front of everyone with repository access
-- [ ] 10.6 (Unit) Package the hooks and the scaffolding command as an installable Claude Code plugin — never the skills themselves, which would be a second copy of the convention (`adr:0015-the-convention-ships-as-skills`), and never a `.mcp.json`, whose contents differ per user — with `.claude-plugin/marketplace.json` at the repository root so `/plugin marketplace add` reaches it, and `claude plugin validate --strict` in CI — see [[claude-code-plugins]]
+- [x] 10.1 (Unit) A single NSIS installer with ffmpeg and `recorder.exe` embedded, written to `apps/desktop/release/`, with no external dependency to install, and the `ow` shim on `PATH` — `adr:0009-distribution-through-github-releases`
+- [x] 10.2 (Unit) Release from a `v*` tag: CI builds the installer, refuses a tag that disagrees with the app version or that already has a release, and publishes it to GitHub Releases with its `SHA256SUMS.txt`
+- [x] 10.3 (Unit) Publish the CLI to npm from the same tag, so `npx open-wiki init` works with nothing installed, and fail the release when the two artifacts disagree on version — claiming the package name before anyone else does, and publishing with provenance, because a product that verifies a hash on its own ffmpeg cannot ship a fetch-and-execute that verifies nothing — `adr:0014-typescript-everywhere-except-audio-capture`
+- [x] 10.4 (Unit) Publish to winget and Scoop, with the manifests pointing at the release URL and quoting its hash
+- [x] 10.5 (Unit) A README with the recording notice, the responsibility to inform participants, what the SmartScreen warning on an unsigned installer means, and what committing a wiki puts in front of everyone with repository access
+- [x] 10.6 (Unit) Package the hooks and the scaffolding command as an installable Claude Code plugin — never the skills themselves, which would be a second copy of the convention (`adr:0015-the-convention-ships-as-skills`), and never a `.mcp.json`, whose contents differ per user — with `.claude-plugin/marketplace.json` at the repository root so `/plugin marketplace add` reaches it, and `claude plugin validate --strict` in CI — see [[claude-code-plugins]]
 
 ---
 

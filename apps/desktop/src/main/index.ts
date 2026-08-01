@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { CHANNELS, createApi, dispatch } from "./ipc.js";
 import { resolveProject } from "./project.js";
 import { RecorderSession, resolveRecorder, spawnTransport } from "./recorder.js";
+import { serveQueries } from "@open-wiki/access/socket";
 import { isOpenableExternally } from "../renderer/navigation.js";
 import { watchProject } from "./watcher.js";
 
@@ -66,6 +67,11 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     ipcMain.handle(channel, (_event, ...args: unknown[]) => dispatch(api, channel, args));
   }
 
+  // 9.14 — the CLI asks here rather than starting a process, when this
+  // window already has the project open. Read and validate only; the socket
+  // never carries a write.
+  const queries = projectRoot ? serveQueries(projectRoot) : null;
+
   // 8.10 — whoever wrote it, the screen follows. A launcher window has no
   // project to watch.
   const watcher = projectRoot
@@ -76,6 +82,7 @@ function createWindow(projectRoot: string | null): BrowserWindow {
 
   window.on("closed", () => {
     void watcher?.close();
+    queries?.close();
     session?.dispose();
     for (const channel of Object.values(CHANNELS)) ipcMain.removeHandler(channel);
   });

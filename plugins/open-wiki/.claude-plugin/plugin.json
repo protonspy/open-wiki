@@ -1,0 +1,9 @@
+{
+  "name": "open-wiki",
+  "description": "The write gate and the scaffolding command for an open-wiki project.",
+  "version": "0.1.0",
+  "author": { "name": "protonspy" },
+  "homepage": "https://github.com/protonspy/open-wiki",
+  "license": "Apache-2.0",
+  "keywords": ["wiki", "documentation", "provenance"]
+}

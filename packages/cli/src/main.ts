@@ -6,6 +6,7 @@ import { runGraph } from "./commands/graph.js";
 import { runSearch } from "./commands/search.js";
 import { runConsultAdd } from "./commands/consult.js";
 import { parseCheckArgs, runCheck, CHECK_FAILED_TO_RUN } from "./commands/check.js";
+import { askRunningApp, handleRequest } from "@open-wiki/access/socket";
 import { today } from "./date.js";
 
 /**
@@ -24,6 +25,7 @@ Usage:
   ow init [--language <en|pt-BR|es>] [--name <name>]   scaffold a project and install the gate
   ow write <path> [--content <text> | --file <path>]   write a page through the gate (no-hook path)
   ow gate pre|post                                     the hook handlers (read JSON on stdin)
+  ow read <slug>                                       print a page, through the running app when there is one
   ow check [--json] [--errors-only]                    the integrity checks; exit 2 means errors
   ow graph [superseded|orphans|index]                  structural queries, as JSON
   ow search <query>                                    lexical search over the wiki, as JSON
@@ -85,6 +87,19 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
       const kind = argv[1];
       if (kind !== "pre" && kind !== "post") return fail("ow gate needs pre|post");
       return runGateCommand(kind);
+    }
+
+    case "read": {
+      // 9.14 — the socket first, standalone when nothing is listening. The
+      // application already has this project open more often than not, and a
+      // hook fires this on every page write.
+      const slug = argv[1];
+      if (!slug) return fail("ow read needs a page slug");
+      const answered = await askRunningApp(projectRoot, { verb: "read", args: [slug] });
+      const result = answered ?? handleRequest(projectRoot, { verb: "read", args: [slug] });
+      if (!result.ok) return fail(result.error);
+      process.stdout.write(String(result.result));
+      return 0;
     }
 
     case "check": {
