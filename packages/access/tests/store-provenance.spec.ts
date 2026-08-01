@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveProvenance } from "../src/store/provenance.js";
@@ -71,5 +71,86 @@ describe("resolveProvenance (5.4)", () => {
   it("reports each broken citation separately", () => {
     const issues = resolveProvenance(root, ["src://ghost.pdf#p1", "src://phantom.pdf#p2"]);
     expect(issues).toHaveLength(2);
+  });
+
+  it("refuses an instant that reads as a time but is not one", () => {
+    // `14:75` passes any regex that merely counts digits. It is not a time, and
+    // accepting it would let a citation name a minute arithmetic then rolls
+    // into a different one.
+    const issues = resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#14:75"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.reason).toMatch(/instant/i);
+  });
+
+  describe("in range, once the recording has a time map (4.7)", () => {
+    /** A map for a recording that runs to exactly 20 minutes. */
+    function writeTimeMap(id: string, durationNs: number) {
+      writeFileSync(
+        join(root, "raw", id, "timemap.json"),
+        JSON.stringify({
+          version: 1,
+          compressedDurationNs: durationNs,
+          segments: [
+            {
+              compressedStartNs: 0,
+              durationNs,
+              recordedStartNs: 0,
+              wallStartMs: 1_000_000,
+            },
+          ],
+          chunks: [],
+        }),
+        "utf8",
+      );
+    }
+
+    const TWENTY_MINUTES_NS = 20 * 60 * 1_000_000_000;
+
+    it("accepts an instant inside the recording", () => {
+      writeTimeMap("fenix-weekly-2026-07-31", TWENTY_MINUTES_NS);
+      expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#14:32"])).toEqual([]);
+    });
+
+    it("refuses an instant past the end, and says how long the recording is", () => {
+      writeTimeMap("fenix-weekly-2026-07-31", TWENTY_MINUTES_NS);
+      const issues = resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#44:32"]);
+      expect(issues).toHaveLength(1);
+      expect(issues[0]!.reason).toContain("20:00");
+    });
+
+    it("accepts the very last instant of the recording", () => {
+      writeTimeMap("fenix-weekly-2026-07-31", TWENTY_MINUTES_NS);
+      expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#20:00"])).toEqual([]);
+    });
+
+    it("stays dormant for a recording that has not been encoded yet", () => {
+      // Captured but not through 4.6. There is no length to measure against,
+      // and an absent map cannot make a citation resolve falsely.
+      expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"])).toEqual([]);
+    });
+
+    it("falls back to the weaker check when the map will not parse", () => {
+      writeFileSync(
+        join(root, "raw", "fenix-weekly-2026-07-31", "timemap.json"),
+        "{ truncated",
+        "utf8",
+      );
+      expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"])).toEqual([]);
+    });
+
+    it("falls back on a map that parses into something that is not one", () => {
+      // The failure a cast misses. `{}` casts to TimeMap as happily as a real
+      // map does and then throws inside the reader — and this runs per page in
+      // `ow check` and on every write in the gate, so one corrupt file in one
+      // recording directory would take down the whole project's check.
+      for (const content of ["{}", "[]", '"a map"', "null", '{"version":2,"segments":[]}']) {
+        writeFileSync(
+          join(root, "raw", "fenix-weekly-2026-07-31", "timemap.json"),
+          content,
+          "utf8",
+        );
+        expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"])).toEqual([]);
+      }
+    });
   });
 });

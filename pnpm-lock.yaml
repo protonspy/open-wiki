@@ -43,6 +43,9 @@ importers:
 
   packages/access:
     dependencies:
+      '@open-wiki/audio':
+        specifier: workspace:*
+        version: link:../audio
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
@@ -55,6 +58,8 @@ importers:
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
+
+  packages/audio: {}
 
   packages/cli:
     dependencies:
