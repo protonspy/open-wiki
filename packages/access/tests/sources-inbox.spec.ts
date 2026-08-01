@@ -42,6 +42,22 @@ async function until(predicate: () => boolean, timeoutMs = 5000): Promise<void> 
   }
 }
 
+/**
+ * Create a symlink, or return false when this account cannot. A Windows
+ * account without the symlink privilege is a different failure from the
+ * behaviour under test, and the repo already treats it that way in
+ * `paths.spec.ts` — Windows is the platform this product supports, so the
+ * suite has to run there for a developer who is not elevated.
+ */
+function trySymlink(target: string, path: string): boolean {
+  try {
+    symlinkSync(target, path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("the raw/_inbox doorway (3.7)", () => {
   let root: string;
   beforeEach(() => (root = tempProject()));
@@ -111,7 +127,7 @@ describe("the raw/_inbox doorway (3.7)", () => {
     it("refuses to follow a symbolic link out of the project", async () => {
       const outside = join(root, "secret.md");
       writeFileSync(outside, "# not the agent's to publish\n");
-      symlinkSync(outside, join(root, "raw", INBOX, "innocuous.md"));
+      if (!trySymlink(outside, join(root, "raw", INBOX, "innocuous.md"))) return;
 
       const outcomes = await drainInbox(root);
       expect(outcomes[0]!.ok).toBe(false);
@@ -122,7 +138,7 @@ describe("the raw/_inbox doorway (3.7)", () => {
     it("keeps draining the rest of the batch after a file it refused", async () => {
       // One bad entry ending the whole drain would mean a single dropped
       // symlink silently stops every later file from ever being ingested.
-      symlinkSync(join(root, "raw"), join(root, "raw", INBOX, "a-link.md"));
+      if (!trySymlink(join(root, "raw"), join(root, "raw", INBOX, "a-link.md"))) return;
       writeFileSync(join(root, "raw", INBOX, "z-real.md"), "# Real\n");
 
       const outcomes = await drainInbox(root);
@@ -331,10 +347,16 @@ describe("the raw/_inbox doorway (3.7)", () => {
       try {
         // Replace raw/ with a link out of the project: the inbox no longer
         // resolves inside it, and an explicit drain has to say so.
-        rmSync(join(root, "raw"), { recursive: true, force: true });
+        try {
+          rmSync(join(root, "raw"), { recursive: true, force: true });
+        } catch {
+          // Windows refuses to delete a directory that is being watched. That
+          // is the platform, not the behaviour under test.
+          return;
+        }
         const elsewhere = mkdtempSync(join(tmpdir(), "ow-elsewhere-"));
         try {
-          symlinkSync(elsewhere, join(root, "raw"));
+          if (!trySymlink(elsewhere, join(root, "raw"))) return;
           await expect(watcher.drain()).rejects.toThrow(/outside the project/);
         } finally {
           rmSync(elsewhere, { recursive: true, force: true });
