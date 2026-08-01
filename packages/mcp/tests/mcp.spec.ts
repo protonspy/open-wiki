@@ -8,6 +8,7 @@ import {
   readPageWhole,
   listSourcesState,
   readSourceText,
+  MissingPageError,
 } from "../src/tools.js";
 import { parseMcpArgs } from "../src/index.js";
 import { OutsideProjectError, MissingSourceError } from "@open-wiki/access/read";
@@ -83,6 +84,22 @@ describe("MCP read tools — path confinement (9.9)", () => {
     expect(() => readPageWhole(root, "..%2f..%2f")).toThrow();
   });
 
+  it("reports a missing page rather than inventing one", () => {
+    // A slug that confines fine but names no file: the agent gets a page it can
+    // read about, not an empty string it would take for an empty page.
+    const err = (() => {
+      try {
+        readPageWhole(root, "nope");
+        return null;
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect(err).toBeInstanceOf(MissingPageError);
+    expect((err as MissingPageError).slug).toBe("nope");
+    expect((err as MissingPageError).message).toContain("nope");
+  });
+
   it("refuses a slug that stays in the project but leaves wiki/ — no root-file leak", () => {
     // A slug like `../README` resolves to `<root>/README.md`: inside the project,
     // but not a wiki page. The server serves `wiki/` only, so it must refuse
@@ -122,12 +139,43 @@ describe("MCP read tools — path confinement (9.9)", () => {
     expect(bySlug.orphan!.status).toBe("superseded");
   });
 
+  it("falls back to the slug when a page carries no readable frontmatter", () => {
+    // A page the agent wrote by hand before the gate saw it, and one whose
+    // frontmatter will not parse: both are still listed, described by what is
+    // knowable — the slug — rather than dropped from the structure.
+    writeFileSync(join(root, "wiki", "bare.md"), "# Bare\n\nNo frontmatter here.\n", "utf8");
+    writeFileSync(join(root, "wiki", "broken.md"), "---\n: : :\n---\n\nBroken.\n", "utf8");
+
+    const bySlug = Object.fromEntries(indexStructure(root).map((e) => [e.slug, e]));
+    for (const slug of ["bare", "broken"]) {
+      expect(bySlug[slug]!.title).toBe(slug);
+      expect(bySlug[slug]!.type).toBe("unknown");
+      expect(bySlug[slug]!.status).toBe("active");
+      expect(bySlug[slug]!.indexed).toBe(false);
+    }
+    expect(readPageWhole(root, "bare").frontmatter).toBeNull();
+  });
+
   it("lists sources with their manifest and whether text.md is present", () => {
     const sources = listSourcesState(root);
     expect(sources).toHaveLength(1);
     expect(sources[0]!.id).toBe("notes.txt");
     expect(sources[0]!.manifest.title).toBe("Notes");
     expect(sources[0]!.hasText).toBe(true);
+  });
+
+  it("marks a source that has been registered but not yet normalised", () => {
+    // A manifest with no text.md alongside it — the ingest ran, the extraction
+    // did not. `hasText: false` is what tells the agent not to cite into it yet.
+    const dir = join(root, "raw", "pending.pdf");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "manifest.json"),
+      JSON.stringify({ id: "pending.pdf", title: "Pending", kind: "file", original: "pending.pdf" }) + "\n",
+      "utf8",
+    );
+    const state = listSourcesState(root).find((s) => s.id === "pending.pdf");
+    expect(state!.hasText).toBe(false);
   });
 
   it("returns a source's text.md", () => {
