@@ -224,7 +224,7 @@ of record.
 - [ ] 9.10 (Unit) Read tools: the index as structure, a page returned whole, and the sources with their state and their `text.md`
 - [ ] 9.11 (Unit) Announce the project in the server's name and description, so an agent with several configured says which base it answered from
 - [ ] 9.12 (Unit) `ow graph` first and `ow search` after — the structural queries have no other owner and the supersession walk depends on the fields 5.2 records, where lexical search is what a scan over a few megabytes already does. Both are the local queries `adr:0013-the-project-directory-is-the-unit` sends to the CLI rather than to MCP, printing JSON
-- [ ] 9.13 (Unit) A validation error readable enough for the agent to fix it on its own and try again — the same text whether it came from the CLI, a hook or the editor
+- [x] 9.13 (Unit) A validation error readable enough for the agent to fix it on its own and try again — the same text whether it came from the CLI, a hook or the editor
 - [ ] 9.14 (TDD) Pay down cold start: bundle the CLI to a single file, and talk to the running application over a local socket when there is one — the socket carries read and validate and never write, so the write verb always pays the standalone path, and both paths produce the same answer
 - [ ] 9.15 (Unit) Verify end to end that Claude Code, working inside a project and starting from a single source, builds valid pages and then answers by citing them
 - [ ] 9.16 (Unit) Verify that a second project with no wiki of its own consults the first through a committed `.mcp.json` naming it, and answers citing its pages

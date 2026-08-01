@@ -64,6 +64,11 @@ export { supersedePage, type SupersessionResult } from "./store/supersede.js";
 export { resolveWikilinks } from "./store/wikilinks.js";
 export { isStoreOnlyChange, STORE_MANAGED_FIELDS } from "./store/staleness.js";
 
+// The write gate (group 9)
+export { gateWrite, type GateDecision, type GateInput } from "./gate/gate.js";
+export { isConfigWrite, configWriteReason } from "./gate/guard.js";
+export { formatDenial } from "./gate/errors.js";
+
 // Sources (group 3)
 export {
   registerSource,
