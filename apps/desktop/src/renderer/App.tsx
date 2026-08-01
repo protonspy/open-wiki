@@ -2,9 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import { bridge, hasBridge } from "./bridge.js";
 import { renderPageBody } from "./markdown.js";
-import { History, parseLink, type Location } from "./navigation.js";
+import { isOpenPage } from "../main/watcher.js";
+import { History, linkTarget, type Location } from "./navigation.js";
 import { RecordingIndicator } from "./RecordingIndicator.js";
-import { useRecording } from "./recording.js";
+import { useRecording, type RecordingState } from "./recording.js";
+
+/**
+ * How long a burst of folder changes is gathered before the screen redraws.
+ * An agent writing twenty pages is twenty events, and both `wikiIndex` and
+ * `readPage` walk the whole tree.
+ */
+const COALESCE_MS = 120;
 
 /**
  * The shell (plan 8.2), and browsing the wiki inside it (plan 8.5).
@@ -27,6 +35,16 @@ export function App(): React.JSX.Element {
     try {
       setIndex(await bridge().index());
     } catch (e) {
+      setError(message(e));
+    }
+  }, []);
+
+  const reload = useCallback(async (slug: string) => {
+    try {
+      setPage(await bridge().page(slug));
+      setError(null);
+    } catch (e) {
+      setPage(null);
       setError(message(e));
     }
   }, []);
@@ -58,26 +76,29 @@ export function App(): React.JSX.Element {
   // 8.10 — the folder changed, whoever wrote it. The index is rebuilt because
   // a new page changes which wikilinks resolve, and the open page is re-read
   // only when it is the one that moved.
+  //
+  // Coalesced: an agent writing twenty pages, or a `git checkout`, is twenty
+  // events, and both `wikiIndex` and `readPage` walk the whole tree.
   useEffect(() => {
     if (!hasBridge()) return;
-    return bridge().onChanged((change) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let reloadPage = false;
+    const unsubscribe = bridge().onChanged((change) => {
       if (change.area !== "wiki") return;
-      void refreshIndex();
-      if (location.slug && change.path.endsWith(`/${location.slug}.md`)) {
-        void reload(location.slug);
-      }
+      reloadPage ||= isOpenPage(change, location.slug);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void refreshIndex();
+        if (reloadPage && location.slug) void reload(location.slug);
+        reloadPage = false;
+      }, COALESCE_MS);
     });
-  }, [location.slug, refreshIndex]);
-
-  const reload = useCallback(async (slug: string) => {
-    try {
-      setPage(await bridge().page(slug));
-      setError(null);
-    } catch (e) {
-      setPage(null);
-      setError(message(e));
-    }
-  }, []);
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [location.slug, refreshIndex, reload]);
 
   useEffect(() => {
     if (location.view !== "wiki" || !location.slug) {
@@ -92,20 +113,48 @@ export function App(): React.JSX.Element {
     [page, index.slugs],
   );
 
-  // One handler for the whole rendered page: a click on an anchor is routed by
-  // what `markdown.ts` minted, and anything else leaves the window.
+  // One handler for the whole rendered page. `onAuxClick` as well as `onClick`
+  // because Chromium dispatches the middle button as `auxclick` — and a middle
+  // click on a link is what asks Electron to open a new window, which is the
+  // one path that reaches `shell.openExternal`.
   const onPageClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      const anchor = (event.target as HTMLElement).closest("a");
+      const anchor = (event.target as HTMLElement).closest("a, span[title]");
       if (!anchor) return;
-      event.preventDefault();
-      const target = parseLink(anchor.getAttribute("href") ?? "");
-      if (target.kind === "page") visit({ view: "wiki", slug: target.slug });
-      // `source:` is 8.6 and `external` is the system browser; neither is this
-      // PR's, and doing nothing is better than doing the wrong thing.
+      const target = linkTarget(anchor);
+      // Only what the application handles is cancelled. An external link is
+      // left to the main process, which allowlists the scheme and hands it to
+      // the system browser — cancelling here would make every external link in
+      // the wiki quietly do nothing.
+      if (target.kind === "page") {
+        event.preventDefault();
+        visit({ view: "wiki", slug: target.slug });
+      } else if (target.kind === "source") {
+        // 8.6 opens it at the instant. Until then, refusing to navigate is the
+        // whole of the correct behaviour.
+        event.preventDefault();
+      }
     },
     [visit],
   );
+
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const record = useCallback(async (action: "start" | "pause" | "resume" | "stop") => {
+    try {
+      setRecordError(null);
+      const ow = bridge();
+      if (action === "start") {
+        const occasion = globalThis.prompt?.("What are you recording?") ?? "";
+        // 4.16: an empty name falls back to the timestamp rather than blocking
+        // capture. A recording that started is worth more than a naming rule.
+        await ow.recordStart(occasion);
+      } else if (action === "pause") await ow.recordPause();
+      else if (action === "resume") await ow.recordResume();
+      else await ow.recordStop();
+    } catch (e) {
+      setRecordError(message(e));
+    }
+  }, []);
 
   return (
     <div className="app">
@@ -133,10 +182,12 @@ export function App(): React.JSX.Element {
         </nav>
         <span className="chrome__spacer" />
         <RecordingIndicator recording={recording} />
+        <RecordControls state={recording.state} onAction={(a) => void record(a)} />
       </header>
 
       <main className="main">
         {error ? <p className="error">{error}</p> : null}
+        {recordError ? <p className="error">{recordError}</p> : null}
         {location.view === "wiki" && !location.slug ? (
           <PageList index={index} onOpen={(slug) => visit({ view: "wiki", slug })} />
         ) : null}
@@ -145,12 +196,41 @@ export function App(): React.JSX.Element {
             <Frontmatter page={page} />
             {/* The markdown is rendered with `html: false`, so what reaches
                 here is a closed set of tags this renderer produced. */}
-            <div onClick={onPageClick} dangerouslySetInnerHTML={{ __html: html }} />
+            <div
+              onClick={onPageClick}
+              onAuxClick={onPageClick}
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
           </article>
         ) : null}
         {location.view === "sources" ? <p className="empty">The sources screen is 6.2.</p> : null}
       </main>
     </div>
+  );
+}
+
+/** Record, pause, stop — the affordance 8.2 asks for. */
+function RecordControls({
+  state,
+  onAction,
+}: {
+  state: RecordingState;
+  onAction: (action: "start" | "pause" | "resume" | "stop") => void;
+}): React.JSX.Element {
+  if (state === "idle") {
+    return <button onClick={() => onAction("start")}>Record</button>;
+  }
+  return (
+    <span className="nav">
+      {state === "paused" ? (
+        <button onClick={() => onAction("resume")}>Resume</button>
+      ) : (
+        <button onClick={() => onAction("pause")}>Pause</button>
+      )}
+      <button className="danger" onClick={() => onAction("stop")}>
+        Stop
+      </button>
+    </span>
   );
 }
 

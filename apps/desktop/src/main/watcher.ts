@@ -41,8 +41,24 @@ export function areaOf(relativePath: string): ProjectChange["area"] {
 /** A project-relative, forward-slashed path, or `null` when it escaped. */
 export function toProjectPath(projectRoot: string, absolute: string): string | null {
   const rel = relative(projectRoot, absolute);
-  if (rel === "" || rel.startsWith("..")) return null;
+  // `startsWith("..")` alone would reject a legitimate top-level entry named
+  // `..foo`. The separator is what makes it mean "above here".
+  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`)) return null;
   return rel.split(sep).join("/");
+}
+
+/**
+ * Whether a change is the open page moving (plan 8.10).
+ *
+ * By slug against the index, not by matching the path's tail. A page is its
+ * slug wherever it sits (`adr:0016`), so `wiki/projects/fenix.md` and
+ * `wiki/fenix.md` are the same page — and a suffix match would also fire for
+ * `wiki/not-fenix.md` on a project where somebody named a page that way.
+ */
+export function isOpenPage(change: ProjectChange, openSlug: string | undefined): boolean {
+  if (!openSlug || change.area !== "wiki") return false;
+  const file = change.path.split("/").pop() ?? "";
+  return file === `${openSlug}.md`;
 }
 
 export function describeChange(

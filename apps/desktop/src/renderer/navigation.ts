@@ -1,3 +1,5 @@
+import { FRAGMENT_ATTR, PAGE_ATTR, SOURCE_ATTR } from "./markdown.js";
+
 /**
  * Where the reader is, and how they get back (plan 8.5).
  *
@@ -68,29 +70,58 @@ function same(a: Location, b: Location): boolean {
 }
 
 /**
- * What an anchor in a rendered page means.
+ * What an element clicked in a rendered page means.
  *
- * `page:` and `source:` are minted by `markdown.ts` and nothing else, so
- * anything that is not one of them is a link the wiki's author wrote — an
- * external URL — and the application must not follow it in-window.
+ * **Routed by attribute, never by an `href` scheme.** A scheme looks like it
+ * proves the renderer minted the link and does not: markdown-it renders
+ * `[x](page:evil)` into `<a href="page:evil">` quite happily, so a page author
+ * can mint any scheme they like. `data-ow-page` is an attribute only
+ * `markdown.ts`'s rules emit, and `html: false` means a page cannot write an
+ * attribute at all — so the distinction actually holds.
+ *
+ * Everything else is a link the wiki's author wrote, which the application
+ * must not follow in-window.
  */
 export type LinkTarget =
   | { kind: "page"; slug: string }
   | { kind: "source"; id: string; fragment: string }
   | { kind: "external"; href: string };
 
-export function parseLink(href: string): LinkTarget {
-  if (href.startsWith("page:")) {
-    return { kind: "page", slug: decodeURIComponent(href.slice("page:".length)) };
-  }
-  if (href.startsWith("source:")) {
-    const rest = href.slice("source:".length);
-    const hash = rest.indexOf("#");
+/** The bit of an element this needs, so a test does not need a DOM. */
+export interface LinkLike {
+  getAttribute(name: string): string | null;
+}
+
+export function linkTarget(element: LinkLike): LinkTarget {
+  const page = element.getAttribute(PAGE_ATTR);
+  if (page !== null) return { kind: "page", slug: page };
+  const source = element.getAttribute(SOURCE_ATTR);
+  if (source !== null) {
     return {
       kind: "source",
-      id: decodeURIComponent(hash < 0 ? rest : rest.slice(0, hash)),
-      fragment: hash < 0 ? "" : decodeURIComponent(rest.slice(hash + 1)),
+      id: source,
+      fragment: element.getAttribute(FRAGMENT_ATTR) ?? "",
     };
   }
-  return { kind: "external", href };
+  return { kind: "external", href: element.getAttribute("href") ?? "" };
+}
+
+/**
+ * Whether the application may hand a URL to the system browser.
+ *
+ * `shell.openExternal` is `ShellExecute` on Windows, which invokes whichever
+ * protocol handler is registered — `ms-msdt:`, `ms-officecmd:`, `search-ms:`
+ * against a WebDAV share. Those are documented paths from "a link in a
+ * document" to code execution, and markdown-it's own link filter blocks only
+ * `javascript:`, `vbscript:`, `file:` and most `data:`. So the answer is an
+ * allowlist rather than a blocklist.
+ */
+const OPENABLE = new Set(["http:", "https:", "mailto:"]);
+
+export function isOpenableExternally(href: string): boolean {
+  try {
+    return OPENABLE.has(new URL(href).protocol);
+  } catch {
+    return false;
+  }
 }

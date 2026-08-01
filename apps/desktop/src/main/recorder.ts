@@ -37,6 +37,8 @@ export interface RecorderTransport {
   onLine(handler: (line: string) => void): void;
   onClose(handler: () => void): void;
   close(): void;
+  /** Whatever the sidecar said on the way out, for the message. */
+  stderr?(): string;
 }
 
 export function resolveRecorder(repoRoot = defaultRepoRoot()): string {
@@ -67,7 +69,10 @@ function defaultRepoRoot(): string {
 export function spawnTransport(exe: string, args: readonly string[] = []): RecorderTransport {
   const child: ChildProcessWithoutNullStreams = spawn(exe, [...args], { windowsHide: true });
   let buffered = "";
+  let stderr = "";
   const lineHandlers: Array<(line: string) => void> = [];
+  const closeHandlers: Array<() => void> = [];
+
   child.stdout.on("data", (chunk: Buffer) => {
     buffered += chunk.toString("utf8");
     let newline = buffered.indexOf("\n");
@@ -78,11 +83,33 @@ export function spawnTransport(exe: string, args: readonly string[] = []): Recor
       newline = buffered.indexOf("\n");
     }
   });
+
+  // Drained and bounded. A pipe nobody reads blocks the child once the OS
+  // buffer fills, which is how a sidecar that panicked hangs instead of
+  // exiting — and the panic message is the only thing that says why.
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderr = (stderr + chunk.toString("utf8")).slice(-8192);
+  });
+
+  // Both of these are unhandled-error crashes in the Electron **main**
+  // process, which takes the whole application down. `error` fires when the
+  // binary could not be started at all — a path that went stale between the
+  // `existsSync` above and here. `EPIPE` fires on writing to a child that has
+  // already gone, which is what the next call after a crash does.
+  const die = (): void => {
+    for (const handler of closeHandlers) handler();
+    closeHandlers.length = 0;
+  };
+  child.on("error", die);
+  child.stdin.on("error", () => {});
+  child.on("close", die);
+
   return {
     send: (line) => child.stdin.write(`${line}\n`),
     onLine: (handler) => lineHandlers.push(handler),
-    onClose: (handler) => child.on("close", handler),
+    onClose: (handler) => closeHandlers.push(handler),
     close: () => child.kill(),
+    stderr: () => stderr,
   };
 }
 
@@ -99,6 +126,14 @@ export class RecorderSession {
   private readonly queue: Pending[] = [];
   private closed = false;
 
+  /**
+   * The last thing the sidecar said before any request. `recorder.exe` writes
+   * a device-open failure and exits before it reads anything, so that one line
+   * is the whole explanation — and dropping it leaves the user with "the
+   * recorder stopped unexpectedly" instead of "microphone: …".
+   */
+  private unsolicited: string | null = null;
+
   constructor(private readonly transport: RecorderTransport) {
     transport.onLine((line) => this.receive(line));
     transport.onClose(() => {
@@ -106,15 +141,26 @@ export class RecorderSession {
       // Anything still waiting will never be answered. Rejecting is what turns
       // a sidecar that died into an error on screen rather than a button that
       // stays spinning.
+      const why = this.reasonItDied();
       while (this.queue.length > 0) {
-        this.queue.shift()?.reject(new RecorderError("the recorder stopped unexpectedly"));
+        this.queue.shift()?.reject(new RecorderError(why));
       }
     });
   }
 
+  private reasonItDied(): string {
+    const said = this.unsolicited ?? this.transport.stderr?.().trim();
+    return said ? `the recorder stopped: ${said}` : "the recorder stopped unexpectedly";
+  }
+
   private receive(line: string): void {
     const pending = this.queue.shift();
-    if (!pending) return;
+    if (!pending) {
+      // Not an answer to anything. Kept rather than dropped, because it is
+      // usually the reason the next call is about to fail.
+      this.unsolicited = errorIn(line) ?? line;
+      return;
+    }
     let parsed: { ok?: boolean; error?: string } & Record<string, unknown>;
     try {
       parsed = JSON.parse(line) as typeof parsed;
@@ -133,10 +179,21 @@ export class RecorderSession {
     method: RecorderMethod,
     params: Record<string, unknown> = {},
   ): Promise<Record<string, unknown>> {
-    if (this.closed) return Promise.reject(new RecorderError("the recorder is not running"));
+    if (this.closed) return Promise.reject(new RecorderError(this.reasonItDied()));
     return new Promise((resolvePromise, rejectPromise) => {
-      this.queue.push({ resolve: resolvePromise, reject: rejectPromise });
-      this.transport.send(JSON.stringify({ method, ...params }));
+      const pending: Pending = { resolve: resolvePromise, reject: rejectPromise };
+      this.queue.push(pending);
+      try {
+        this.transport.send(JSON.stringify({ method, ...params }));
+      } catch (e) {
+        // The entry has to come back out. Left in, it would be resolved by the
+        // *next* response, and every call after this one would be answered by
+        // the one before it — a desynchronisation nothing downstream could
+        // detect.
+        const at = this.queue.indexOf(pending);
+        if (at >= 0) this.queue.splice(at, 1);
+        rejectPromise(e instanceof Error ? e : new RecorderError(String(e)));
+      }
     });
   }
 
@@ -168,7 +225,27 @@ export class RecorderSession {
     return devices.map((d) => String((d as { name?: unknown }).name ?? d));
   }
 
+  /** True once the sidecar has gone, so a window can drop its reference. */
+  get isClosed(): boolean {
+    return this.closed;
+  }
+
   dispose(): void {
+    // Set before closing, not after: `close()` on a transport that has already
+    // exited may never fire another event, and a session that still thinks it
+    // is live queues calls into a dead pipe.
+    this.closed = true;
     this.transport.close();
   }
+}
+
+/** The `error` field of an `{"ok":false}` line, if that is what it is. */
+function errorIn(line: string): string | null {
+  try {
+    const parsed = JSON.parse(line) as { ok?: boolean; error?: unknown };
+    if (parsed.ok === false && typeof parsed.error === "string") return parsed.error;
+  } catch {
+    // Not JSON at all — a panic, say. The whole line is the explanation.
+  }
+  return null;
 }

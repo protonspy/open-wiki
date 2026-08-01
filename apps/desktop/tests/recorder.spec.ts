@@ -6,8 +6,15 @@ function fakeTransport() {
   const sent: string[] = [];
   let onLine: ((line: string) => void) | null = null;
   let onClose: (() => void) | null = null;
+  let refuse = false;
   const transport: RecorderTransport = {
-    send: (line) => sent.push(line),
+    send: (line) => {
+      if (refuse) {
+        refuse = false;
+        throw new Error("EPIPE: the pipe is closed");
+      }
+      sent.push(line);
+    },
     onLine: (handler) => (onLine = handler),
     onClose: (handler) => (onClose = handler),
     close: () => onClose?.(),
@@ -18,6 +25,7 @@ function fakeTransport() {
     answer: (payload: unknown) => onLine?.(JSON.stringify(payload)),
     raw: (line: string) => onLine?.(line),
     die: () => onClose?.(),
+    refuseNextSend: () => (refuse = true),
   };
 }
 
@@ -110,11 +118,11 @@ describe("RecorderSession (8.2, over the contract 4.5 defines)", () => {
     await expect(stopping).rejects.toThrow(RecorderError);
   });
 
-  it("refuses a new call once the sidecar has gone", async () => {
+  it("refuses a new call once the sidecar has gone, saying why it went", async () => {
     const fake = fakeTransport();
     const session = new RecorderSession(fake.transport);
     fake.die();
-    await expect(session.status()).rejects.toThrow(/not running/);
+    await expect(session.status()).rejects.toThrow(/stopped/);
   });
 
   it("reports a line that is not JSON rather than throwing out of the handler", async () => {
@@ -125,9 +133,57 @@ describe("RecorderSession (8.2, over the contract 4.5 defines)", () => {
     await expect(status).rejects.toThrow(/not JSON/);
   });
 
-  it("ignores an unsolicited line rather than resolving the next request with it", () => {
+  it("does not answer a pending request with a line that arrived before it", async () => {
+    // The queue is FIFO with no correlation, so a line delivered while nothing
+    // is waiting must not be held and applied to whatever asks next.
     const fake = fakeTransport();
-    new RecorderSession(fake.transport);
-    expect(() => fake.answer({ ok: true })).not.toThrow();
+    const session = new RecorderSession(fake.transport);
+    fake.answer({ ok: true, state: "recording", recorded_ms: 999 });
+
+    const status = session.status();
+    let settled = false;
+    void status.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    fake.answer({ ok: true, state: "idle", recorded_ms: 0 });
+    expect((await status).state).toBe("idle");
+  });
+
+  it("keeps what the sidecar said on its way out, and says it", async () => {
+    // `recorder.exe` writes a device-open failure and exits before it reads
+    // anything. Dropping that line leaves the user with "stopped unexpectedly"
+    // instead of "microphone: …".
+    const fake = fakeTransport();
+    const session = new RecorderSession(fake.transport);
+    fake.answer({ ok: false, error: "microphone: no capture device" });
+    fake.die();
+    await expect(session.status()).rejects.toThrow(/no capture device/);
+  });
+
+  it("does not desynchronise when the transport refuses to send", async () => {
+    // An entry left in the queue would be resolved by the *next* response, and
+    // every call after it answered by the one before — undetectable downstream.
+    const fake = fakeTransport();
+    const session = new RecorderSession(fake.transport);
+    fake.refuseNextSend();
+    await expect(session.pause()).rejects.toThrow(/pipe/);
+
+    const status = session.status();
+    fake.answer({ ok: true, state: "recording", recorded_ms: 7 });
+    expect((await status).recorded_ms).toBe(7);
+  });
+
+  it("refuses a call made after it was disposed", async () => {
+    // `close()` on a transport that has already exited may never fire another
+    // event, and a session that still thinks it is live queues into a dead pipe.
+    const fake = fakeTransport();
+    const session = new RecorderSession(fake.transport);
+    session.dispose();
+    expect(session.isClosed).toBe(true);
+    await expect(session.status()).rejects.toThrow(RecorderError);
   });
 });

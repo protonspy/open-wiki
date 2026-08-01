@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NoSuchPageError, projectInfo, readPage, wikiIndex } from "../src/main/api.js";
 import { CHANNELS, createApi, dispatch } from "../src/main/ipc.js";
 import { looksLikeProject, resolveProject } from "../src/main/project.js";
-import { areaOf, describeChange, toProjectPath } from "../src/main/watcher.js";
+import { areaOf, describeChange, isOpenPage, toProjectPath } from "../src/main/watcher.js";
 
 let root: string;
 
@@ -164,9 +164,106 @@ describe("the IPC surface (8.2)", () => {
 
   it("says recording is unavailable rather than throwing something unreadable", async () => {
     const api = createApi({ projectRoot: root });
-    await expect(dispatch(api, CHANNELS.recordStart, ["t", "d"])).rejects.toThrow(
+    await expect(dispatch(api, CHANNELS.recordStart, ["t"])).rejects.toThrow(
       /recording is not available/,
     );
+  });
+});
+
+describe("recording over IPC (8.2)", () => {
+  /** A recorder control that records whether it was asked to start one. */
+  function control() {
+    const calls: string[] = [];
+    let session: { start: unknown; status: unknown } | null = null;
+    const fake = {
+      start: (title: string, dir: string) => {
+        calls.push(`start ${title} ${dir}`);
+        return Promise.resolve();
+      },
+      pause: () => Promise.resolve(),
+      resume: () => Promise.resolve(),
+      stop: () => Promise.resolve(),
+      status: () => Promise.resolve({ state: "recording", recorded_ms: 12 }),
+    };
+    return {
+      calls,
+      spawned: () => session !== null,
+      control: {
+        ensure: () => {
+          calls.push("ensure");
+          session ??= fake as never;
+          return fake as never;
+        },
+        peek: () => session as never,
+      },
+    };
+  }
+
+  it("never starts the sidecar to answer a status poll", async () => {
+    // `recorder.exe` opens both WASAPI devices the moment it launches. A poll
+    // that constructed a session would hold the microphone from the moment the
+    // window opened, with the chrome saying nothing was being recorded.
+    const r = control();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+    const status = await api.recordStatus();
+    expect(r.spawned()).toBe(false);
+    expect(r.calls).not.toContain("ensure");
+    expect(status.state).toBe("idle");
+  });
+
+  it("reports idle rather than failing when nothing is recording", async () => {
+    const api = createApi({ projectRoot: root });
+    await expect(api.recordStatus()).resolves.toMatchObject({ state: "idle" });
+  });
+
+  it("starts the sidecar only when asked to record", async () => {
+    const r = control();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+    await api.recordStart("Fenix weekly");
+    expect(r.spawned()).toBe(true);
+  });
+
+  it("derives the directory from the project, never from the renderer", async () => {
+    // Every other handler binds the project root rather than accepting a path.
+    // This one used to be the exception, which is a compromised renderer
+    // choosing anywhere the user can write.
+    const r = control();
+    const api = createApi({
+      projectRoot: root,
+      recorder: r.control,
+      now: () => new Date(2026, 6, 31, 14, 2, 11),
+    });
+    const started = await api.recordStart("Fenix weekly");
+    expect(started.id).toBe("fenix-weekly-2026-07-31");
+    expect(started.dir).toBe(join(root, "raw", "fenix-weekly-2026-07-31"));
+  });
+
+  it("cannot be steered out of the project by the occasion", async () => {
+    const r = control();
+    const api = createApi({
+      projectRoot: root,
+      recorder: r.control,
+      now: () => new Date(2026, 6, 31, 14, 2, 11),
+    });
+    const started = await api.recordStart("../../../../Windows/Startup");
+    expect(started.dir.startsWith(join(root, "raw"))).toBe(true);
+    expect(started.id).not.toContain("..");
+  });
+
+  it("takes an occasion and nothing else over the wire", async () => {
+    const r = control();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+    // A second argument is simply not read.
+    await dispatch(api, CHANNELS.recordStart, ["Fenix weekly", "C:/Windows/Startup"]);
+    expect(r.calls.join(" ")).not.toContain("C:/Windows");
+  });
+
+  it("refuses pause and stop when nothing is recording", async () => {
+    const r = control();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+    await expect(api.recordPause()).rejects.toThrow(/nothing is being recorded/);
+    await expect(api.recordStop()).rejects.toThrow(/nothing is being recorded/);
+    expect(r.spawned()).toBe(false);
   });
 });
 
@@ -194,5 +291,33 @@ describe("the watcher's vocabulary (8.10)", () => {
     expect(areaOf("wiki/fenix.md")).toBe("wiki");
     expect(areaOf("raw/weekly/text.md")).toBe("raw");
     expect(areaOf(".state/log.json")).toBe("other");
+  });
+
+  it("does not mistake a top-level name beginning with dots for an escape", () => {
+    expect(toProjectPath(root, join(root, "..foo.md"))).toBe("..foo.md");
+  });
+});
+
+describe("isOpenPage (8.10)", () => {
+  const change = (path: string) => ({ kind: "changed" as const, path, area: "wiki" as const });
+
+  it("is true when the page on screen is the one that moved", () => {
+    expect(isOpenPage(change("wiki/fenix.md"), "fenix")).toBe(true);
+  });
+
+  it("is true wherever that page sits", () => {
+    // `adr:0016-a-page-is-its-slug-wherever-it-sits`.
+    expect(isOpenPage(change("wiki/projects/fenix.md"), "fenix")).toBe(true);
+  });
+
+  it("is false for a page whose name merely ends the same way", () => {
+    // A suffix match on `/fenix.md` would also fire for `not-fenix.md` on a
+    // project where somebody named a page that way.
+    expect(isOpenPage(change("wiki/not-fenix.md"), "fenix")).toBe(false);
+  });
+
+  it("is false when no page is open, and for a change outside the wiki", () => {
+    expect(isOpenPage(change("wiki/fenix.md"), undefined)).toBe(false);
+    expect(isOpenPage({ kind: "added", path: "raw/x/text.md", area: "raw" }, "fenix")).toBe(false);
   });
 });

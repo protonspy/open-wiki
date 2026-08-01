@@ -1,8 +1,9 @@
+import { join } from "node:path";
+import { recordingId } from "@open-wiki/access";
+import type { SourceState } from "@open-wiki/access/read";
 import type { PageView, ProjectInfo, WikiIndex } from "./api.js";
 import { projectInfo, readPage, sources, wikiIndex } from "./api.js";
 import type { RecorderSession, RecorderStatus } from "./recorder.js";
-import type { ProjectChange } from "./watcher.js";
-import type { SourceState } from "@open-wiki/access/read";
 
 /**
  * The one list of things the renderer can ask for, and the only place the
@@ -11,7 +12,7 @@ import type { SourceState } from "@open-wiki/access/read";
  * Named as data rather than registered inline against Electron's `ipcMain`,
  * because that is what makes the surface reviewable and testable: the handlers
  * below are ordinary functions over a project root, and `index.ts` is the
- * twelve lines that bolt them to a window. Nothing here imports `electron`.
+ * dozen lines that bolt them to a window. Nothing here imports `electron`.
  */
 
 export const CHANNELS = {
@@ -30,23 +31,60 @@ export const CHANNELS = {
 
 export type Channel = (typeof CHANNELS)[keyof typeof CHANNELS];
 
-export interface Deps {
-  projectRoot: string;
-  /** Absent until a recording starts; 8.2 creates one per window. */
-  recorder?: () => RecorderSession;
+/**
+ * How a window gets at its recorder.
+ *
+ * Two methods rather than one, and the difference matters more than it looks.
+ * `ensure` starts the sidecar; `peek` does not. `recorder.exe` opens both
+ * WASAPI devices the moment it launches, before it reads a single request — so
+ * a `status` poll that went through `ensure` would put the microphone into
+ * Windows' in-use state as soon as the window opened, held for its lifetime,
+ * while the chrome said nothing was being recorded. That is the exact failure
+ * the persistent indicator exists to prevent, inverted.
+ */
+export interface RecorderControl {
+  ensure(): RecorderSession;
+  peek(): RecorderSession | null;
 }
 
-/**
- * The renderer's whole vocabulary. Each returns plain data — an IPC boundary
- * structured-clones what crosses it, so anything with a method on it arrives
- * as an object that has lost it.
- */
+export interface Deps {
+  projectRoot: string;
+  recorder?: RecorderControl;
+  /** Injected so a test does not depend on today's date. */
+  now?: () => Date;
+}
+
+/** What a window reports when nothing is being recorded. */
+export const IDLE_STATUS: RecorderStatus = {
+  state: "idle",
+  recorded_ms: 0,
+  mic_frames: 0,
+  system_frames: 0,
+  pauses: 0,
+};
+
+export interface StartedRecording {
+  /** The frozen source id, from 4.16. */
+  id: string;
+  dir: string;
+}
+
 export interface DesktopApi {
   project(): ProjectInfo;
   index(): WikiIndex;
   page(slug: string): PageView;
   sources(): SourceState[];
-  recordStart(title: string, dir: string): Promise<void>;
+  /**
+   * Start recording what the user said they are recording.
+   *
+   * It takes the *occasion* and not a directory. Every other handler binds the
+   * project root rather than accepting a path, and this one used to be the
+   * exception — the renderer named the directory the sidecar wrote into, which
+   * is a compromised renderer choosing anywhere the user can write. The id
+   * comes from 4.16 and the directory from it, so the recording lands under
+   * `raw/` because there is nowhere else it can go.
+   */
+  recordStart(occasion: string): Promise<StartedRecording>;
   recordPause(): Promise<void>;
   recordResume(): Promise<void>;
   recordStop(): Promise<void>;
@@ -54,25 +92,51 @@ export interface DesktopApi {
 }
 
 export function createApi(deps: Deps): DesktopApi {
-  const session = (): RecorderSession => {
+  const ensure = (): RecorderSession => {
     if (!deps.recorder) throw new Error("recording is not available in this window");
-    return deps.recorder();
+    return deps.recorder.ensure();
   };
+  const running = (): RecorderSession => {
+    const session = deps.recorder?.peek();
+    if (!session) throw new Error("nothing is being recorded");
+    return session;
+  };
+  const now = deps.now ?? ((): Date => new Date());
+
   return {
     project: () => projectInfo(deps.projectRoot),
     index: () => wikiIndex(deps.projectRoot),
     page: (slug) => readPage(deps.projectRoot, slug),
     sources: () => sources(deps.projectRoot),
-    recordStart: (title, dir) => session().start(title, dir),
-    recordPause: () => session().pause(),
-    recordResume: () => session().resume(),
-    recordStop: () => session().stop(),
-    recordStatus: () => session().status(),
+
+    async recordStart(occasion) {
+      if (!deps.recorder) throw new Error("recording is not available in this window");
+      const id = recordingId(deps.projectRoot, { occasion, at: now() });
+      const dir = join(deps.projectRoot, "raw", id);
+      await ensure().start(occasion, dir);
+      return { id, dir };
+    },
+    // `async`, so a refusal is a rejected promise rather than a synchronous
+    // throw. `ipcMain.handle` turns either into a rejection on the renderer's
+    // side, but a caller in the main process would have to handle two shapes.
+    async recordPause() {
+      return running().pause();
+    },
+    async recordResume() {
+      return running().resume();
+    },
+    async recordStop() {
+      return running().stop();
+    },
+
+    // `peek`, never `ensure`: polling where the recorder is must not be what
+    // turns the microphone on.
+    async recordStatus() {
+      const session = deps.recorder?.peek();
+      return session ? session.status() : IDLE_STATUS;
+    },
   };
 }
-
-/** What the preload bridge exposes, keyed by channel. */
-export type Invoker = (channel: Channel, ...args: unknown[]) => Promise<unknown>;
 
 /**
  * Route one invocation. Unknown channels are refused rather than ignored: a
@@ -94,7 +158,7 @@ export async function dispatch(
     case CHANNELS.sources:
       return api.sources();
     case CHANNELS.recordStart:
-      return api.recordStart(String(args[0] ?? ""), String(args[1] ?? ""));
+      return api.recordStart(String(args[0] ?? ""));
     case CHANNELS.recordPause:
       return api.recordPause();
     case CHANNELS.recordResume:
@@ -107,5 +171,3 @@ export async function dispatch(
       throw new Error(`unknown channel "${channel}"`);
   }
 }
-
-export type ChangeListener = (change: ProjectChange) => void;

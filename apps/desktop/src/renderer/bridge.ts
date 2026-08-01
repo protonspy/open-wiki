@@ -14,7 +14,7 @@ export interface OwBridge {
   index(): Promise<WikiIndex>;
   page(slug: string): Promise<PageView>;
   sources(): Promise<unknown[]>;
-  recordStart(title: string, dir: string): Promise<void>;
+  recordStart(occasion: string): Promise<{ id: string; dir: string }>;
   recordPause(): Promise<void>;
   recordResume(): Promise<void>;
   recordStop(): Promise<void>;
