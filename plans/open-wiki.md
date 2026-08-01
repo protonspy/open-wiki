@@ -157,17 +157,29 @@ fenix/                          a project — usually a repository the user alre
 - [x] 4.11 (TDD) Reconstruct the absolute timestamps from the chunk offset and the time map
   - Two additions, and doing only the first is the failure that looks right: every timestamp after the first chunk would be wrong by exactly the length of what came before it, and the transcript would still read perfectly.
   - Segments are clamped into their chunk. Whisper over-runs — asked about ten seconds it sometimes answers about eleven — and the eleventh second belongs to the next chunk too, which puts the same words in the timeline twice.
-- [ ] 4.12 (Unit) Merge the two tracks into a `timeline.json` ordered by real time, labelling `me` and `remote` by the track they came from
-- [ ] 4.13 (Unit) Render the recording's `text.md` from the timeline, with each passage's instant as a provenance anchor
-- [ ] 4.14 (Unit) Discard the WAV as soon as transcription confirms success, keeping the Opus as the provenance file
+- [x] 4.12 (Unit) Merge the two tracks into a `timeline.json` ordered by real time, labelling `me` and `remote` by the track they came from
+  - The speaker comes from the track and from nothing else. There is no diarisation and there is not meant to be: the microphone is the person at this machine and the loopback is everybody else, which is a fact about where the audio came from rather than a guess about who was talking.
+  - Ordered by the compressed instant, which is the same order as wall time — the map is monotonic — and finer. A tie on the millisecond is where a merge silently reorders speakers.
+- [x] 4.13 (Unit) Render the recording's `text.md` from the timeline, with each passage's instant as a provenance anchor
+  - `## 14:32` is exactly the fragment `rec://<id>#14:32` carries, the same way `pdf.ts` writes `## p12` for a page. One rule — the anchor is the heading — covers both kinds of source.
+  - Consecutive passages from one speaker are joined into a turn. An hour of meeting is several hundred segments, and a heading every four seconds is a file nobody reads and a hundred anchors nobody cites.
+- [x] 4.14 (Unit) Discard the WAV as soon as transcription confirms success, keeping the Opus as the provenance file
+  - **Every chunk succeeded, and every output is on disk, and only then.** `sealRecording` re-checks both rather than trusting it was called at the right moment — it is the one step that cannot be undone, and the meeting already happened.
+  - The journal goes with the WAV, per `adr:0012`: the text lives in two places until the source seals, only the timeline may be read downstream, and a journal left behind is an invitation to read the copy.
 - [x] 4.15 (Unit) Send the configured content language as the transcription hint rather than relying on the provider detecting it — `adr:0008-content-language-is-a-setting-english-by-default`
   - `transcriptionInputs(projectRoot)` reads the language out of `ow.json` and the names out of the wiki, in one call. It deliberately carries **no credential**: `config/secrets.ts` says the CLI, the hooks and the MCP process must not read the key, because their stderr is consumed by an agent and travels to a model provider. Only the desktop application reads it, at the point it builds the provider — which is why there is no `ow transcribe` verb.
-- [ ] 4.16 (TDD) Ask what is being recorded before capture starts and build the id from it plus the date — `fenix-weekly-2026-07-31`, `-2` for a second the same day — falling back to the timestamp rather than blocking capture on an empty field
+- [x] 4.16 (TDD) Ask what is being recorded before capture starts and build the id from it plus the date — `fenix-weekly-2026-07-31`, `-2` for a second the same day — falling back to the timestamp rather than blocking capture on an empty field
+  - **Red observed** first: the whole file failed on a missing `slugify`, then on assertions once it existed.
+  - `-2` is the opposite of the rule for a file, which 3.6 refuses outright so the user renames it. The difference: a filename is a thing the user already has a name for, and two `fenix-weekly` on one Tuesday is a normal Tuesday with nothing to rename.
+  - Slugged with `slugify`, not `deriveId` — the latter keeps a trailing `.pdf` because a file's format is part of its identity, and would have kept `.arch` from "Vendor call re. arch".
+  - The prompt itself is group 8's; this is the id it produces.
 - [x] 4.17 (TDD) Resume from the journal on reopening, sending only what failed or never ran, and refuse a journal whose chunk boundaries, provider or model no longer match rather than stitching two segmentations into one timeline
   - The dangerous mismatch is not a different chunk *count* — it is the same count cut in different places, where every offset inside every chunk means something else and the result reads perfectly. Boundaries are compared one by one, not summed.
   - The refusal says what to do about it, and `restart: true` is how a caller takes the offer.
   - **The content language is checked with the provider and the model**, which is one more than `adr:0012` lists. It is the same class of mismatch: resuming a `pt-BR` journal after the setting moved to English produces one transcript in two languages, which reads as one. The record left the field recorded and unread; this makes it mean something.
-- [ ] 4.18 (Unit) Write `timeline.vtt` beside `timeline.json`, so the recording can be followed in any player and taken away if the user stops using this application
+- [x] 4.18 (Unit) Write `timeline.vtt` beside `timeline.json`, so the recording can be followed in any player and taken away if the user stops using this application
+  - Cued on the compressed clock, because that is the clock of the Opus a player will have open beside it. A wiki whose provenance only opens inside one Windows binary is provenance with a hostage in it.
+  - Written from the timeline and never read back. `adr:0012` names it a second representation of one truth and says which one wins.
 
 ## 5 — The wiki as a validated store
 
