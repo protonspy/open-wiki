@@ -12,7 +12,7 @@ import { FRAGMENT_ATTR, PAGE_ATTR, SOURCE_ATTR } from "./markdown.js";
 
 export interface Location {
   /** `wiki` browses a page; the other screens have no page. */
-  view: "wiki" | "sources" | "settings";
+  view: "wiki" | "sources" | "checks" | "history" | "settings";
   slug?: string;
 }
 

@@ -44,6 +44,9 @@ importers:
       '@open-wiki/access':
         specifier: workspace:*
         version: link:../../packages/access
+      '@open-wiki/audio':
+        specifier: workspace:*
+        version: link:../../packages/audio
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0

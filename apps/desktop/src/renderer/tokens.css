@@ -331,3 +331,160 @@ a:hover,
 .list button:hover {
   background: var(--surface-1);
 }
+
+/* --- The sources screen (6.2 to 6.7). Dense: one row per source. */
+.source {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-1);
+}
+
+.source__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.source__title {
+  font-weight: 600;
+}
+
+.source__id,
+.operation__pages {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+
+.source__cited {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+
+.badge {
+  font-size: var(--text-xs);
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-2);
+}
+
+.badge--cited,
+.badge--text-ready {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.badge--failed {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.badge--warn,
+.badge--transcribing {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* --- The editor (8.7, 8.8). Source and preview side by side. */
+.editor {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: var(--space-3);
+  height: 100%;
+}
+
+.editor__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.editor__panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.editor__source {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading);
+  color: var(--ink-0);
+  background: var(--surface-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  resize: none;
+}
+
+/* --- The findings (7.6). The fix is as prominent as the problem. */
+.finding {
+  border-left: 3px solid var(--line-strong);
+  padding: var(--space-1) var(--space-3);
+}
+
+.finding--error {
+  border-left-color: var(--danger);
+}
+
+.finding--warning {
+  border-left-color: var(--warn);
+}
+
+.finding__head {
+  display: flex;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+
+.finding p {
+  margin: var(--space-1) 0;
+}
+
+.finding__fix {
+  color: var(--ink-1);
+  font-size: var(--text-sm);
+}
+
+/* --- The operation history (8.11). */
+.operation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.operation__time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-3);
+}
+
+/* --- What a citation opens (8.6), beside the page rather than over it. */
+.source-at {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  width: min(480px, calc(100vw - var(--space-8)));
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.source-at audio {
+  width: 100%;
+}
+
+/* --- A drop in progress (3.5). The whole window is the target. */
+.app--dragging {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}

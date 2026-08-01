@@ -119,7 +119,8 @@ fenix/                          a project — usually a repository the user alre
 - [x] 3.3 (Unit) Upload a PDF: extract the text to `text.md`, keeping the page number as a provenance anchor
 - [x] 3.4 (Unit) Upload a DOCX: extract the text and the heading hierarchy to `text.md`
   - Requirement gap a review surfaced, to settle in group 7 with the rest of provenance: a DOCX records no pagination, so this writes the heading hierarchy and **no** page anchor — inventing a `p<N>` would be a number that looks like provenance and points nowhere. But 5.4 already shipped, and its `FILE_FRAGMENT` accepts only `p<N>` for a `src://` citation. So a DOCX source is citable only as `src://<id>#p1`, which resolves to the source but to no place inside its `text.md`. Closing it means either a fragment form for a structural anchor (a heading slug, checked against the headings in `text.md`) or accepting that a DOCX is cited whole. The MVP does not depend on it: the path that matters end to end is markdown and PDF.
-- [ ] 3.5 (Unit) Drag files onto the window and see what was recognised and what was not
+- [x] 3.5 (Unit) Drag files onto the window and see what was recognised and what was not
+  - The drop reports **what was recognised and what was not** — the second half of the task. A partial success reported as success is how a source silently never arrives, and a name already taken is reported as itself, because `adr:0011` chose that refusal deliberately.
 - [x] 3.6 (TDD) Derive the id: lowercase, accents folded, anything outside `[a-z0-9]` collapsed to one `-`, and refuse a filename already taken in this project instead of inventing a suffix
 - [x] 3.7 (Unit) Watch `raw/_inbox/` and ingest what lands there through the same path as 3.1 — the way an agent hands over material it fetched, now that no MCP tool ingests. The inbox is the one mutable thing under `raw/`: it is a doorway, emptied by ingestion, and it is not a source, so nothing enumerates it, cites it or reports it uncited
   - The watcher is built and tested but **nothing runs it yet** — 8.2's shell is what will hold it open. Until then the doorway works through `drainInbox`, called by hand. A reader should not take the ticked box to mean a file dropped into `raw/_inbox/` is picked up by a running process today.
@@ -218,12 +219,14 @@ which is 9.5's problem.
 
 - [x] 6.1 (Unit) Model each source's state — received, text ready, cited on a page — persisted and resumable
   - **Derived, not persisted.** The filesystem already is both: `manifest.json` says received, `text.md` says the text is ready, the pages say what is cited, `journal.json` says how far a transcription got. A state file beside those would be a second record of one fact, and the copy is the one that goes stale — the rule this plan applies to its own checklists and to the wiki's index. So a crash loses nothing and there is nothing to reconcile: the next read observes the same directory and reaches the same answer, which is what "resumable" was asking for.
-- [ ] 6.2 (Unit) Sources screen: one row per source with its current state, what is missing, and the error when it stopped
-- [ ] 6.3 (Unit) A transcribe button on a stopped recording, with per-chunk progress and the option to redo only what failed
-- [ ] 6.4 (Unit) Show, for a source, which pages cite it, and navigate from there to the page
-- [ ] 6.5 (Unit) Show, for a page, which sources it came from — the inverse path of the previous one
-- [ ] 6.6 (Unit) Highlight a source sitting in `raw/` that no page cites, which is the case that disappears from view on its own
-- [ ] 6.7 (Unit) Correct a source's title without moving its directory or touching a citation — the freeze in `adr:0011-sources-are-named-by-what-they-are` is only bearable if the readable name stays editable
+- [x] 6.2 (Unit) Sources screen: one row per source with its current state, what is missing, and the error when it stopped
+  - Every row is derived from the directory, which 6.1 already established as the only record. The screen arranges; it does not derive. One read of the wiki feeds all of them, so twenty sources are not twenty walks over the pages.
+- [x] 6.3 (Unit) A transcribe button on a stopped recording, with per-chunk progress and the option to redo only what failed
+- [x] 6.4 (Unit) Show, for a source, which pages cite it, and navigate from there to the page
+- [x] 6.5 (Unit) Show, for a page, which sources it came from — the inverse path of the previous one
+  - Reads the page’s prose as well as its `sources` field: 5.5 mirrors one into the other, and a page written before that ran has its citations in only one of the two.
+- [x] 6.6 (Unit) Highlight a source sitting in `raw/` that no page cites, which is the case that disappears from view on its own
+- [x] 6.7 (Unit) Correct a source's title without moving its directory or touching a citation — the freeze in `adr:0011-sources-are-named-by-what-they-are` is only bearable if the readable name stays editable
 
 ## 7 — Integrity
 
@@ -236,7 +239,8 @@ of record.
 - [x] 7.4 (Unit) Report a synonym used where the project has a canonical term
 - [x] 7.5 (Unit) Report a codewiki citation that no longer resolves or runs past the end of its file — the check that comes with scaffolding codewiki, per `adr:0015-the-convention-ships-as-skills`
   - **Settled** — `adr:0016-a-page-is-its-slug-wherever-it-sits`. The gap was wider than it looked: `listEntityPages` read only the *top level* of `wiki/`, so `wiki/projects/`, `wiki/people/` and `wiki/topics/` — the layout this plan's own diagram describes — were invisible too, not just codewiki. A page is now addressed by its slug wherever it sits under `wiki/`; a folder is organisation and a link is a name, which is what makes `[[wikilink]]` work in the first place. Slug uniqueness is the one rule that model needs, and it is a finding (`page.duplicate-slug`) rather than something resolved by silently picking one. Codewiki lives at `wiki/codewiki/`; a top-level `codewiki/` is no longer gated and is reported as misplaced.
-- [ ] 7.6 (Unit) Expose the checks in the UI, with the correction path described per finding
+- [x] 7.6 (Unit) Expose the checks in the UI, with the correction path described per finding
+  - Rendering, not new checking, exactly as the deferral said. Every finding already carries its `fix`, and the panel puts it where the person reading the problem is.
   - Deferred to group 8, which is where the UI is. The findings already carry the correction path — `fix` on every one — so this is rendering, not new checking.
 - [x] 7.7 (Unit) Expose the same checks as `ow check`, so an agent and a CI job can run them without the application
 
@@ -264,15 +268,23 @@ of record.
   - A **broken** wikilink becomes a marked span rather than a link to nowhere — the reader should see the page is missing at the point they would have clicked, which is what 7.1 reports too.
   - A page is resolved by slug through the index, never by joining a slug onto a path. `adr:0016-a-page-is-its-slug-wherever-it-sits` makes the index the only thing that knows where a page is, so the correct implementation is also the one that does no path arithmetic on untrusted input.
   - Following a link after going back discards the forward history, exactly as a browser does. Anything else and Back stops meaning "where I came from".
-- [ ] 8.6 (Unit) Open the source at the right instant when a provenance link is clicked — audio at the timestamp, a document at the page
-- [ ] 8.7 (Unit) Edit a page's markdown with preview and save, going through the group 5 validations
-- [ ] 8.8 (Unit) Refuse to overwrite a page changed on disk since it was loaded, instead of losing the change silently
-- [ ] 8.9 (Unit) Create, rename and delete a page from the UI, fixing the wikilinks that pointed at it
+- [x] 8.6 (Unit) Open the source at the right instant when a provenance link is clicked — audio at the timestamp, a document at the page
+  - Audio is **seeked to the instant** rather than started at zero — that difference is the whole task. A citation the recording does not contain says so instead, which is the same answer 5.4 gives when it refuses one.
+- [x] 8.7 (Unit) Edit a page's markdown with preview and save, going through the group 5 validations
+  - Goes through `gateWrite`, the same entrance the agent’s writes use. An editor that validated its own way would be a fourth caller quietly disagreeing with the hook about what a well-formed page is — and the store’s denial reasons are shown verbatim, because 9.13 says the message has three mouths and they have to say the same thing.
+- [x] 8.8 (Unit) Refuse to overwrite a page changed on disk since it was loaded, instead of losing the change silently
+  - **Staleness is checked before the gate**: the two have different answers, one being *look at what changed* and the other *fix this field*.
+  - A correction the store itself made is not somebody else’s edit (5.8), so this is `isStoreOnlyChange` and not a string comparison — and the editor takes back what *landed*, not what it sent, or its next save would look stale against a change it did not make.
+  - It refuses and shows both versions. It does not merge and does not overwrite: at that moment both still exist, and the only unrecoverable outcome is picking one silently.
+- [x] 8.9 (Unit) Create, rename and delete a page from the UI, fixing the wikilinks that pointed at it
+  - A rename repoints what pointed at the page and is **one operation**, so undo puts the rename and every repointed link back together. The page’s `id` follows its slug keeping its type, or 5.1 would refuse every later save of it.
+  - A **delete does not** rewrite the links. They are the record that something was expected to be there, and 7.1 reports them; a rename knows where the reader should go instead, and a delete does not.
 - [x] 8.10 (Unit) Watch the folder and reflect changes on screen live, whichever wrote them — the agent, a hook, or the user in another editor
   - `awaitWriteFinish` is not tuning. `fs.watch` reports a file the moment it appears, which on a copy is halfway through being written — and a page read halfway through has no frontmatter, which the screen would render as broken.
   - It watches `wiki/` and `raw/` and not `.state/`, which is not content. A change rebuilds the index, because a new page changes which wikilinks resolve; the open page is re-read only when it is the one that moved.
   - A watcher that errors stops updating rather than taking the window with it: a project on a network share raises EPERM for reasons that have nothing to do with this application.
-- [ ] 8.11 (Unit) An operation history with undo, fed by 2.4, and honest about covering only what was observed
+- [x] 8.11 (Unit) An operation history with undo, fed by 2.4, and honest about covering only what was observed
+  - Honest about covering only what was observed, in the panel itself: a page written through a harness with no hooks is not in the log, and a history presenting itself as complete would make *undo* silently mean *undo some of it*.
 - [ ] 8.12 (Unit) Choose the content language at onboarding and change it afterwards — English by default, Brazilian Portuguese and Spanish alongside it — held in the project settings of 2.7 and reaching exactly two places: the transcription hint of 4.15, and the generated `CLAUDE.md` of 9.4, which is regenerated on change because it is generated and the skills are not
 
 ## 9 — The CLI, MCP and the agent's contract
