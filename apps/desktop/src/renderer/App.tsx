@@ -169,11 +169,18 @@ export function App(): React.JSX.Element {
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     setDragging(false);
-    const paths = [...event.dataTransfer.files]
-      .map((file) => (file as File & { path?: string }).path ?? "")
-      .filter(Boolean);
-    if (paths.length === 0) return;
-    void bridge()
+    // `File.path` was removed in Electron 32, so the path comes from the
+    // preload via `webUtils.getPathForFile`. Reading `file.path` here produced
+    // an empty list and returned silently — the opposite of the task.
+    const ow = bridge();
+    const paths = [...event.dataTransfer.files].map((file) => ow.pathForFile(file)).filter(Boolean);
+    if (paths.length === 0) {
+      setDropped([
+        { name: "that drop", ok: false, reason: "nothing in it looked like a file on disk" },
+      ]);
+      return;
+    }
+    void ow
       .drop(paths)
       .then((outcomes) => {
         setDropped(outcomes);

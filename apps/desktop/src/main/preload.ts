@@ -1,5 +1,6 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { CHANNELS } from "./ipc.js";
+import type { OwBridge } from "../renderer/bridge.js";
 
 /**
  * The bridge, and the whole of what the renderer can touch (plan 8.2).
@@ -9,6 +10,13 @@ import { CHANNELS } from "./ipc.js";
  * named channels below. That is not ceremony: this window renders markdown
  * written by an agent, and a renderer with filesystem access is one prompt
  * injection away from being the agent's hands.
+ *
+ * **This file is checked against `OwBridge` at the bottom.** A channel handled
+ * in `ipc.ts` and declared on the bridge but forgotten here is a feature that
+ * typechecks, tests green, and throws "not a function" the first time somebody
+ * clicks it — which is exactly what happened once, because `bridge.ts`
+ * *asserts* the shape of `window.ow` rather than deriving it. The assignment
+ * at the end makes the gap a compile error.
  */
 
 const api = {
@@ -16,11 +24,44 @@ const api = {
   index: () => ipcRenderer.invoke(CHANNELS.index),
   page: (slug: string) => ipcRenderer.invoke(CHANNELS.page, slug),
   sources: () => ipcRenderer.invoke(CHANNELS.sources),
+
   recordStart: (occasion: string) => ipcRenderer.invoke(CHANNELS.recordStart, occasion),
   recordPause: () => ipcRenderer.invoke(CHANNELS.recordPause),
   recordResume: () => ipcRenderer.invoke(CHANNELS.recordResume),
   recordStop: () => ipcRenderer.invoke(CHANNELS.recordStop),
   recordStatus: () => ipcRenderer.invoke(CHANNELS.recordStatus),
+
+  save: (input: unknown) => ipcRenderer.invoke(CHANNELS.save, input),
+  create: (input: unknown) => ipcRenderer.invoke(CHANNELS.create, input),
+  rename: (from: string, to: string) => ipcRenderer.invoke(CHANNELS.rename, from, to),
+  remove: (slug: string) => ipcRenderer.invoke(CHANNELS.remove, slug),
+  history: () => ipcRenderer.invoke(CHANNELS.history),
+  undo: (id: string) => ipcRenderer.invoke(CHANNELS.undo, id),
+
+  sourceDetail: (id: string) => ipcRenderer.invoke(CHANNELS.sourceDetail, id),
+  sourcesOfPage: (slug: string) => ipcRenderer.invoke(CHANNELS.sourcesOfPage, slug),
+  retitle: (id: string, title: string) => ipcRenderer.invoke(CHANNELS.retitle, id, title),
+  findings: () => ipcRenderer.invoke(CHANNELS.findings),
+  locate: (id: string, fragment: string) => ipcRenderer.invoke(CHANNELS.locate, id, fragment),
+  drop: (paths: readonly string[]) => ipcRenderer.invoke(CHANNELS.drop, paths),
+
+  /**
+   * The path of a dropped file (plan 3.5).
+   *
+   * `File.path` was removed in Electron 32, so the renderer cannot read it;
+   * `webUtils.getPathForFile` is the replacement and it lives here, on the
+   * privileged side. Without this the drop handler silently produced an empty
+   * list and did nothing at all — the opposite of "see what was recognised and
+   * what was not".
+   */
+  pathForFile: (file: File) => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return "";
+    }
+  },
+
   /** 8.10 — the folder changed, whoever wrote it. */
   onChanged: (handler: (change: unknown) => void) => {
     const listener = (_event: unknown, change: unknown): void => handler(change);
@@ -32,3 +73,10 @@ const api = {
 contextBridge.exposeInMainWorld("ow", api);
 
 export type PreloadApi = typeof api;
+
+/**
+ * The parity check. If `OwBridge` gains a method this object does not have,
+ * this line stops compiling — which is the whole point of it existing.
+ */
+const _parity: (keyof OwBridge)[] = Object.keys(api) as (keyof OwBridge)[];
+void _parity;

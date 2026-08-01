@@ -37,6 +37,8 @@ export interface OwBridge {
   findings(): Promise<Finding[]>;
   locate(id: string, fragment: string): Promise<SourceLocation>;
   drop(paths: readonly string[]): Promise<DropOutcome[]>;
+  /** 3.5 — `File.path` was removed in Electron 32; the preload knows the path. */
+  pathForFile(file: File): string;
 
   onChanged(handler: (change: ProjectChange) => void): () => void;
 }

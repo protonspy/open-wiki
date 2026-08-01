@@ -86,7 +86,20 @@ export function Editor({
         </div>
       ) : null}
 
-      {conflict !== null ? <Conflict onDisk={conflict} onTake={(next) => setBase(next)} /> : null}
+      {conflict !== null ? (
+        <Conflict
+          onDisk={conflict}
+          onTakeTheirs={() => {
+            setMarkdown(conflict);
+            setBase(conflict);
+            setConflict(null);
+          }}
+          onKeepMine={() => {
+            setBase(conflict);
+            setConflict(null);
+          }}
+        />
+      ) : null}
 
       <div className="editor__panes">
         <textarea
@@ -105,25 +118,35 @@ export function Editor({
  * What 8.8 shows instead of losing the change.
  *
  * It does not merge and it does not overwrite. The editor's job is to make the
- * conflict visible and let the person decide, because the one thing that must
+ * conflict visible and let the person choose, because the one thing that must
  * not happen is a silent loss — and both versions still exist at this point.
+ *
+ * **The two buttons do what they say.** "Load theirs" replaces the buffer, so
+ * the other writer's version is what is on screen and what a later save would
+ * write. "Keep mine" only re-bases, arming this buffer to win. An earlier
+ * version had one button labelled as the first and behaving as the second,
+ * which is the silent loss with a reassuring label on it.
  */
 function Conflict({
   onDisk,
-  onTake,
+  onTakeTheirs,
+  onKeepMine,
 }: {
   onDisk: string;
-  onTake: (next: string) => void;
+  onTakeTheirs: () => void;
+  onKeepMine: () => void;
 }): React.JSX.Element {
   return (
     <div className="error">
       <strong>This page changed on disk since you opened it.</strong>
-      <p>
-        Nothing has been overwritten. Copy anything you need out of your version, then take the one
-        on disk as the new starting point.
-      </p>
+      <p>Nothing has been overwritten. Both versions still exist — choose which one continues.</p>
       <pre>{onDisk}</pre>
-      <button onClick={() => onTake(onDisk)}>Use the version on disk as my base</button>
+      <div className="editor__bar">
+        <button onClick={onTakeTheirs}>Load their version (discards my edits)</button>
+        <button className="danger" onClick={onKeepMine}>
+          Keep mine (overwrites theirs on the next save)
+        </button>
+      </div>
     </div>
   );
 }

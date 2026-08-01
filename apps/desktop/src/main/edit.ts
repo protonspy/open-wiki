@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   appendOperation,
@@ -8,6 +8,7 @@ import {
   isStoreOnlyChange,
   listOperations,
   listPages,
+  NON_ENTITY_PAGES,
   pagesEqual,
   readManifest,
   recordWrite,
@@ -19,6 +20,7 @@ import {
   type Operation,
   type PageRef,
 } from "@open-wiki/access";
+import { writeAtomic } from "@open-wiki/audio";
 import { NoSuchPageError } from "./api.js";
 
 /**
@@ -61,6 +63,39 @@ export const savePageToday: Clock = () => new Date().toISOString().slice(0, 10);
 
 function pageRef(projectRoot: string, slug: string): PageRef | undefined {
   return listPages(projectRoot).find((page) => page.slug === slug);
+}
+
+/**
+ * A page's name, and nothing else.
+ *
+ * The renderer supplies this — from a `prompt()`, or from anything that
+ * reaches the bridge — and it is used to *build* a path rather than to look
+ * one up, which makes it the one input in this module that is not resolved
+ * through the index. Unvalidated it was a hole with teeth: `../CLAUDE` renamed
+ * a page over the project's `CLAUDE.md`, and `../.claude/rules/autonomy` over
+ * a rule file, which is instruction injection into the agent that has tool
+ * access to this machine. `adr:0013` and 9.6 put a guard on exactly that, and
+ * a rename that never called the gate walked around it.
+ *
+ * The shape is the store's own: what `deriveId` produces and what 5.1's `id`
+ * accepts. Refusing anything else here means the path built from it cannot
+ * contain a separator, a `..`, or a drive letter, whatever the caller sent.
+ */
+const SLUG = /^[a-z0-9]+(?:[-.][a-z0-9]+)*$/;
+
+export class InvalidSlugError extends Error {
+  constructor(slug: string) {
+    super(
+      `"${slug}" is not a page name. Use lower-case letters, digits and hyphens — ` +
+        `a name is not a path, and the store's own ids have the same shape.`,
+    );
+    this.name = "InvalidSlugError";
+  }
+}
+
+export function assertSlug(slug: string): string {
+  if (!SLUG.test(slug)) throw new InvalidSlugError(slug);
+  return slug;
 }
 
 /**
@@ -119,6 +154,9 @@ export interface CreateInput {
   markdown: string;
 }
 
+/** Where `registerInIndex` writes, and therefore part of a create's operation. */
+const INDEX_PAGE = "wiki/index.md";
+
 export class PageExistsError extends Error {
   constructor(slug: string) {
     super(`a page named "${slug}" already exists`);
@@ -128,6 +166,10 @@ export class PageExistsError extends Error {
 
 /** Create a page (plan 8.9). It goes through the gate like every other write. */
 export function createPage(projectRoot: string, input: CreateInput, today: Clock): SaveResult {
+  // Before the path is built. `gateWrite` classifies by where a write lands
+  // and has *no opinion* about anything outside `wiki/` — so a traversal slug
+  // both escaped the wiki and skipped every check the gate exists to apply.
+  assertSlug(input.slug);
   if (pageRef(projectRoot, input.slug)) throw new PageExistsError(input.slug);
   const path = `wiki/${input.slug}.md`;
   const decision = gateWrite({
@@ -140,7 +182,15 @@ export function createPage(projectRoot: string, input: CreateInput, today: Clock
     return { saved: false, reason: "invalid", problems: decision.reasons };
   }
   const markdown = decision.action === "accept" ? decision.content : input.markdown;
-  const operation = writePage(projectRoot, path, markdown, "editor");
+  // The index is part of the operation, not a write beside it. `writePage`
+  // snapshots the one page it writes, and `registerInIndex` then touches
+  // `index.md` — so undoing a create removed the page and left the index
+  // entry pointing at it, which is a broken wikilink the undo created.
+  const operation = appendOperation(projectRoot, {
+    ...snapshotOf(projectRoot, [path, INDEX_PAGE]),
+    origin: "editor",
+  });
+  atomicWrite(projectRoot, path, markdown);
   recordWrite(projectRoot, {
     slug: input.slug,
     action: "created",
@@ -157,19 +207,50 @@ export interface RenameResult {
   operationId: string;
 }
 
+export class InvalidRenameError extends Error {
+  constructor(
+    to: string,
+    readonly problems: string[],
+  ) {
+    super(`renaming to "${to}" would produce a page the store refuses: ${problems.join("; ")}`);
+    this.name = "InvalidRenameError";
+  }
+}
+
+/** The real path, or the path itself when nothing is there yet. */
+function realpathOf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
 /**
  * Point a page's `id` at its new slug, keeping its type.
  *
  * The schema is `type:slug` (plan 5.1), so replacing the whole value would
  * make the page typeless and the gate would refuse every later save of it.
- * Only the first `id:` in the frontmatter block is touched — a body that
- * happens to contain the word is not frontmatter.
+ *
+ * **The frontmatter block is split off first, and the substitution runs only
+ * inside it.** A regex that reached across the closing `---` did two things
+ * wrong: on a page with no `id` in its frontmatter it rewrote the first `id:`
+ * it found in the *prose* and swallowed the rest of that line, and on a long
+ * page it retried at every line starting `---`, which is quadratic — a
+ * megabyte page froze the main process for half a minute, and page content is
+ * exactly what arrives with a clone.
  */
 export function renameId(markdown: string, to: string): string {
-  return markdown.replace(
-    /^(---[\s\S]*?\bid:[ \t]*["']?)([A-Za-z0-9_-]+:)?[^"'\n]*(["']?)/m,
-    (_whole, head: string, type = "", quote: string) => `${head}${type}${to}${quote}`,
+  const match = /^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n?)([\s\S]*)$/.exec(markdown);
+  if (!match) return markdown;
+  const [, open, front, close, body] = match as unknown as [string, string, string, string, string];
+  // Anchored to the start of a line *within the block*, so `source-id:` and a
+  // value containing `id:` are both left alone.
+  const rewritten = front.replace(
+    /^([ \t]*id:[ \t]*["']?)([A-Za-z0-9_-]+:)?([^"'\r\n]*)(["']?)/m,
+    (_whole, head: string, type = "", _old: string, quote: string) => `${head}${type}${to}${quote}`,
   );
+  return `${open}${rewritten}${close}${body}`;
 }
 
 // `[[old]]` and `[[old|label]]`, with the target matched exactly.
@@ -189,6 +270,10 @@ function escapeForRegExp(text: string): string {
  * page is the one person who knew they all meant it.
  */
 export function renamePage(projectRoot: string, from: string, to: string): RenameResult {
+  // Both ends. `to` builds a path, and `from` builds the regex that rewrites
+  // every page linking to it.
+  assertSlug(from);
+  assertSlug(to);
   const ref = pageRef(projectRoot, from);
   if (!ref) throw new NoSuchPageError(from);
   if (pageRef(projectRoot, to)) throw new PageExistsError(to);
@@ -198,21 +283,49 @@ export function renamePage(projectRoot: string, from: string, to: string): Renam
   // The page keeps its folder: a rename changes the name, not the shelf.
   const target = ref.path.replace(/[^/]+\.md$/, `${to}.md`);
 
+  // The page's own `id` has to follow its slug, or 5.1 refuses it forever.
+  const renamed = renameId(markdown, to);
+
+  // Through the gate, like every other write. Without this a rename was the
+  // one door into the store that no validation stood behind — and the thing
+  // it most needed to check was itself: a name that is not a slug produces an
+  // `id` the schema refuses, so every later save of the renamed page fails,
+  // which is precisely what `renameId` exists to prevent.
+  const decision = gateWrite({
+    projectRoot,
+    filePath: target,
+    content: renamed,
+    date: savePageToday(),
+  });
+  if (decision.action === "deny") throw new InvalidRenameError(to, decision.reasons);
+  const settled = decision.action === "accept" ? decision.content : renamed;
+
   // Everything that has to change, snapshotted as one operation — undo puts
   // the rename and every repointed link back together, which is what makes it
   // a rename rather than a page plus a scattering of edits.
   const touched = [ref.path, target];
   const repointed: string[] = [];
   const rewrites: Array<{ path: string; content: string }> = [];
-  for (const page of listPages(projectRoot)) {
-    if (page.slug === from) continue;
-    const file = assertWithin(projectRoot, join(projectRoot, page.path));
+  // `listPages` deliberately excludes `index.md`, `changelog.md` and `log.md`
+  // — they are not entity pages. They do carry wikilinks, and `index.md` is
+  // guaranteed to link to this page because `registerInIndex` put it there, so
+  // a repoint that skipped them left a broken link in the one file certain to
+  // have one.
+  // `NON_ENTITY_PAGES` are bare filenames; they live at the top of `wiki/`.
+  const linkers = [
+    ...listPages(projectRoot).map((p) => p.path),
+    ...NON_ENTITY_PAGES.map((name) => `wiki/${name}`),
+  ];
+  for (const path of linkers) {
+    if (path === ref.path) continue;
+    const file = assertWithin(projectRoot, join(projectRoot, path));
+    if (!existsSync(file)) continue;
     const body = readFileSync(file, "utf8");
     const next = body.replace(wikilinkTo(from), `[[${to}$1`);
     if (next !== body) {
-      rewrites.push({ path: page.path, content: next });
-      touched.push(page.path);
-      repointed.push(page.slug);
+      rewrites.push({ path, content: next });
+      touched.push(path);
+      repointed.push(path.replace(/^wiki\//, "").replace(/\.md$/, ""));
     }
   }
 
@@ -221,13 +334,15 @@ export function renamePage(projectRoot: string, from: string, to: string): Renam
     origin: "editor",
   });
 
-  // The page's own `id` has to follow its slug, or 5.1 refuses it forever.
-  // An id is `type:slug`, so only the part after the colon moves — carrying
-  // the type across is what keeps the page the kind of thing it was.
-  const renamed = renameId(markdown, to);
-  atomicWrite(projectRoot, target, renamed);
+  atomicWrite(projectRoot, target, settled);
   for (const rewrite of rewrites) atomicWrite(projectRoot, rewrite.path, rewrite.content);
-  rmSync(source, { force: true });
+  // Only when the target is a different file. On Windows — the platform this
+  // product supports — the filesystem is case-insensitive, so renaming
+  // `fenix` to `Fenix` writes *onto* the source, and removing the source
+  // afterwards deleted the page outright.
+  if (realpathOf(source) !== realpathOf(join(projectRoot, target))) {
+    rmSync(source, { force: true });
+  }
 
   recordWrite(projectRoot, {
     slug: to,
@@ -294,17 +409,11 @@ export function retitleSource(projectRoot: string, id: string, title: string): v
   const manifest = readManifest(projectRoot, id);
   const rawDir = join(projectRoot, "raw");
   const file = assertWithin(rawDir, join(rawDir, id, "manifest.json"));
-  const temp = `${file}.tmp`;
-  try {
-    writeFileSync(temp, `${JSON.stringify({ ...manifest, title }, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
-    renameSync(temp, file);
-  } catch (e) {
-    rmSync(temp, { force: true });
-    throw e;
-  }
+  // The package's own hardened writer rather than a third copy of temp-plus-
+  // rename: a fixed `${file}.tmp` is a name an attacker can plant at, and two
+  // concurrent retitles of one source would share it — the loser's cleanup
+  // deleting the winner's in-flight file.
+  writeAtomic(file, `${JSON.stringify({ ...manifest, title }, null, 2)}\n`);
 }
 
 /**

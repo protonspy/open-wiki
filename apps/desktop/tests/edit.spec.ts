@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NoSuchPageError } from "../src/main/api.js";
 import {
   createPage,
+  InvalidRenameError,
+  InvalidSlugError,
+  renameId,
   deletePage,
   history,
   isStale,
@@ -378,5 +381,94 @@ describe("retitleSource (6.7)", () => {
 
   it("refuses an id that is not a source", () => {
     expect(() => retitleSource(root, "../../elsewhere", "x")).toThrow();
+  });
+});
+
+describe("a page name is a name, not a path", () => {
+  it("refuses a rename that would climb out of the wiki", () => {
+    // `../CLAUDE` renamed a page over the project's CLAUDE.md, and
+    // `../.claude/rules/autonomy` over a rule file — instruction injection
+    // into the agent that has tool access to this machine. 9.6 puts a guard on
+    // exactly that, and a rename that never called the gate walked around it.
+    write("fenix", page("fenix"));
+    for (const to of ["../CLAUDE", "../.claude/rules/autonomy", "a/b", "..", "Nome Com Espaco"]) {
+      expect(() => renamePage(root, "fenix", to)).toThrow(InvalidSlugError);
+    }
+    expect(existsSync(join(root, "wiki", "fenix.md"))).toBe(true);
+  });
+
+  it("refuses a create that would climb out of the wiki", () => {
+    // `gateWrite` classifies by where a write lands and has no opinion about
+    // anything outside `wiki/`, so a traversal slug both escaped the wiki and
+    // skipped every check the gate exists to apply.
+    for (const slug of ["../docs/pwned", "../../outside", "a/b"]) {
+      expect(() => createPage(root, { slug, markdown: page("x") }, today)).toThrow(
+        InvalidSlugError,
+      );
+    }
+  });
+
+  it("puts a renamed page through the gate like every other write", () => {
+    // Without it, a rename was the one door into the store with no validation
+    // behind it.
+    write("fenix", page("fenix", "see [[ghost]]\n"));
+    expect(() => renamePage(root, "fenix", "phoenix")).toThrow(InvalidRenameError);
+    expect(existsSync(join(root, "wiki", "fenix.md"))).toBe(true);
+  });
+});
+
+describe("renameId", () => {
+  it("moves the slug and keeps the type", () => {
+    expect(renameId(page("fenix"), "phoenix")).toContain("topic:phoenix");
+  });
+
+  it("does not touch prose that happens to contain the word", () => {
+    // A regex reaching across the closing `---` rewrote the first `id:` it
+    // found in the body and swallowed the rest of that line.
+    const md = "---\ntype: topic\n---\n\nBody mentions id: topic:old here.\n";
+    expect(renameId(md, "novo")).toContain("Body mentions id: topic:old here.");
+  });
+
+  it("does not rewrite a different key that ends in id", () => {
+    const md = "---\nsource-id: abc\nid: topic:old\n---\n\nbody\n";
+    const out = renameId(md, "novo");
+    expect(out).toContain("source-id: abc");
+    expect(out).toContain("id: topic:novo");
+  });
+
+  it("leaves a page with no frontmatter alone", () => {
+    expect(renameId("no frontmatter\n", "novo")).toBe("no frontmatter\n");
+  });
+
+  it("is fast on a long page", () => {
+    // The old pattern retried at every line beginning `---` and scanned the
+    // rest of the document each time. A megabyte page froze the main process.
+    const long = `---\nid: topic:old\n---\n\n${"---\n".repeat(50_000)}`;
+    const started = Date.now();
+    renameId(long, "novo");
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+});
+
+describe("undo puts back everything the operation touched", () => {
+  it("takes the index entry with a created page", () => {
+    // `writePage` snapshots the page; `registerInIndex` then writes index.md.
+    // Undo removed the page and left the entry pointing at it — a broken
+    // wikilink the undo itself created.
+    const result = createPage(root, { slug: "novo", markdown: page("novo") }, today);
+    expect(result.saved).toBe(true);
+    undoOperation(root, result.saved ? result.operationId : "");
+    expect(existsSync(join(root, "wiki", "novo.md"))).toBe(false);
+    expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).not.toContain("[[novo]]");
+  });
+
+  it("repoints the index when a page is renamed", () => {
+    // `listPages` excludes index.md, so a repoint that used it alone left a
+    // broken link in the one file guaranteed to have one.
+    createPage(root, { slug: "fenix", markdown: page("fenix") }, today);
+    renamePage(root, "fenix", "phoenix");
+    const index = readFileSync(join(root, "wiki", "index.md"), "utf8");
+    expect(index).toContain("[[phoenix]]");
+    expect(index).not.toContain("[[fenix]]");
   });
 });
