@@ -73,10 +73,12 @@ export { formatDenial } from "./gate/errors.js";
 // Sources (group 3)
 export {
   readManifest,
+  parseManifest,
   listSources,
   sourceExists,
   TakenIdError,
   MissingSourceError,
+  InvalidManifestError,
   type SourceManifest,
   type SourceKind,
 } from "./sources/manifest.js";
@@ -112,6 +114,7 @@ export {
   watchInbox,
   ensureInbox,
   inboxPath,
+  listInbox,
   INBOX,
   type InboxOutcome,
   type InboxWatcher,

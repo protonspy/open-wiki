@@ -7,6 +7,7 @@ import {
   extractProvenanceLinks,
   listSourceStates,
   readWiki,
+  sourceExists,
   sourceState,
   type Finding,
   type SourceState,
@@ -71,11 +72,21 @@ export interface PageSource {
   /** The source's title, or the id itself when there is nothing to read it from. */
   title: string;
   /**
-   * Null when no source of that id is there. The citation is shown anyway: a
+   * Null when the source cannot be described. The citation is shown anyway: a
    * page pointing at a source nobody can open is exactly what 7.3 reports, and
    * hiding it here would leave the reader believing the page is sourced.
    */
   kind: SourceState["kind"] | null;
+  /**
+   * Why it could not be described, when `kind` is null.
+   *
+   * Absent and unreadable are **not the same finding and do not have the same
+   * fix** — one is a citation pointing at nothing, the other a source that is
+   * there with a manifest nobody can read. Saying "there is no source named x"
+   * about a directory the reader can see would send them looking for the wrong
+   * problem, and 7.3 would be reporting something else about the same id.
+   */
+  reason?: string;
   /**
    * Where clicking opens it — the start of a recording, the first page of a
    * document. The fragment goes back through `locateCitation` (8.6), so the
@@ -125,8 +136,18 @@ function describeSource(projectRoot: string, id: string): PageSource {
       // so both go through `locateCitation` as an ordinary citation would.
       fragment: state.kind === "recording" ? "0:00" : "p1",
     };
-  } catch {
-    return { id, title: id, kind: null, fragment: "p1" };
+  } catch (e) {
+    return {
+      id,
+      title: id,
+      kind: null,
+      fragment: "p1",
+      reason: sourceExists(projectRoot, id)
+        ? // It is there and could not be read — a malformed `manifest.json`,
+          // a permission error. The message names which.
+          `"${id}" is there but could not be read: ${e instanceof Error ? e.message : String(e)}`
+        : `there is no source named "${id}"`,
+    };
   }
 }
 

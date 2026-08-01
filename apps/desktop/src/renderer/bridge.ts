@@ -44,6 +44,9 @@ export interface OwBridge {
   findings(): Promise<Finding[]>;
   locate(id: string, fragment: string): Promise<SourceLocation>;
   drop(paths: readonly string[]): Promise<DropOutcome[]>;
+  /** 3.7 — what is sitting in the doorway, and taking it when asked. */
+  inboxWaiting(): Promise<string[]>;
+  inboxDrain(): Promise<DropOutcome[]>;
   credential(): Promise<CredentialState>;
   saveCredential(input: SaveCredentialInput): Promise<CredentialCheck>;
   language(): Promise<Language>;

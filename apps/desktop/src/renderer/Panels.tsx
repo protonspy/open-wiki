@@ -34,8 +34,15 @@ export function PageSources({
   const [sources, setSources] = useState<PageSource[] | null>(null);
 
   useEffect(() => {
-    // Guarded, because following a link is faster than a walk over the wiki:
-    // without it the previous page's answer lands on the page now open.
+    // **Cleared first.** The component survives navigation — same instance, no
+    // `key` — so without this the previous page's sources stay on screen under
+    // the new page's title and body until the walk over the wiki returns. For a
+    // component whose whole job is saying where the page in front of you came
+    // from, attributing one page's provenance to another is the one wrong
+    // answer available.
+    setSources(null);
+    // Guarded as well, and against a different failure: a slow answer for the
+    // page we have left arriving after the fast one for the page we are on.
     let live = true;
     void bridge()
       .sourcesOfPage(slug)
@@ -59,7 +66,7 @@ export function PageSources({
         <span key={source.id}>
           {i > 0 ? ", " : ""}
           {source.kind === null ? (
-            <span className="wikilink--broken" title={`there is no source named "${source.id}"`}>
+            <span className="wikilink--broken" title={source.reason ?? source.id}>
               {source.id}
             </span>
           ) : (

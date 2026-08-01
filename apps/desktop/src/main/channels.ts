@@ -33,6 +33,9 @@ export const CHANNELS = {
   findings: "check:findings",
   locate: "sources:locate",
   drop: "sources:drop",
+  /** What is sitting in `raw/_inbox/` (3.7), and taking it when asked. */
+  inboxWaiting: "sources:inbox-waiting",
+  inboxDrain: "sources:inbox-drain",
 
   // The credential (8.3), the launcher (8.4), the content language (8.12) and
   // the run 6.3 starts.

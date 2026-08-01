@@ -47,6 +47,53 @@ export class MissingSourceError extends Error {
   }
 }
 
+export class InvalidManifestError extends Error {
+  constructor(
+    public readonly id: string,
+    detail: string,
+  ) {
+    super(`the manifest of "${id}" is not one: ${detail}`);
+    this.name = "InvalidManifestError";
+  }
+}
+
+/**
+ * Parse a manifest, checking its shape rather than asserting it.
+ *
+ * `manifest.json` is a file in a project directory, so it **arrives with a
+ * clone** — it is not something this application necessarily wrote. `JSON.parse`
+ * returns `any` and casting it to `SourceManifest` checks nothing, so a `title`
+ * that is an object reached the screen as a React child and blanked the whole
+ * window: there is no error boundary, and every page citing that source went
+ * with it. A refusal naming the source is recoverable; a blank window is not.
+ *
+ * **The id comes from the directory, never from the file.** `adr:0011` freezes an
+ * id as the directory name, so a manifest claiming a different one is claiming
+ * something it does not get to decide.
+ */
+export function parseManifest(id: string, text: string): SourceManifest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new InvalidManifestError(id, "it does not parse as JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new InvalidManifestError(id, "it is not a JSON object");
+  }
+  const record = parsed as Record<string, unknown>;
+  const title = record["title"];
+  const kind = record["kind"];
+  if (typeof title !== "string") {
+    throw new InvalidManifestError(id, "`title` is missing or is not a string");
+  }
+  if (kind !== "file" && kind !== "recording") {
+    throw new InvalidManifestError(id, '`kind` is neither "file" nor "recording"');
+  }
+  const original = record["original"];
+  return { id, title, kind, original: typeof original === "string" ? original : "" };
+}
+
 /**
  * The confined path of a source's manifest; throws if the id escapes `raw/`.
  *
@@ -61,11 +108,14 @@ function manifestPath(projectRoot: string, id: string): string {
   return assertWithin(rawDir, join(rawDir, id, "manifest.json"));
 }
 
-/** Read a source's manifest. Throws `MissingSourceError` if it is not there. */
+/**
+ * Read a source's manifest. Throws `MissingSourceError` if it is not there, and
+ * `InvalidManifestError` if what is there is not a manifest.
+ */
 export function readManifest(projectRoot: string, id: string): SourceManifest {
   const file = manifestPath(projectRoot, id);
   if (!existsSync(file)) throw new MissingSourceError(id);
-  return JSON.parse(readFileSync(file, "utf8"));
+  return parseManifest(id, readFileSync(file, "utf8"));
 }
 
 /** True when a source directory with this id exists under `raw/`. */

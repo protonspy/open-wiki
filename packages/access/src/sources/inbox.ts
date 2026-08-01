@@ -206,6 +206,37 @@ export interface WatchInboxOptions {
    */
   stabilityThreshold?: number;
   pollInterval?: number;
+  /**
+   * Ingest what is **already sitting in the doorway** when watching starts.
+   * Defaults to true, which is what a script draining a directory wants.
+   *
+   * The desktop application passes `false`, and the reason is a threat rather
+   * than a preference. `raw/` arrives with a `git clone`, so a repository can
+   * ship `raw/_inbox/x.pdf`; with initial ingestion on, opening that project
+   * would parse a stranger's bytes in the privileged main process and delete
+   * the file out of the user's working tree, with no click anywhere. The
+   * doorway exists for an agent handing something over **during a session** —
+   * that is what an event is — and a directory that came out of a clone is not
+   * that. What is already there is listed instead, and taken only when asked.
+   */
+  ingestExisting?: boolean;
+}
+
+/**
+ * The names sitting in the doorway right now.
+ *
+ * A read, so a caller that does not ingest on sight can still say what is
+ * waiting. Bare filenames, never paths: the inbox is flat and the caller has no
+ * business reaching below it.
+ */
+export function listInbox(projectRoot: string): string[] {
+  const dir = inboxPath(projectRoot);
+  if (!existsSync(dir)) return [];
+  try {
+    return readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -298,7 +329,9 @@ export async function watchInbox(
 
   const watcher = watch(dir, {
     depth: 0, // the doorway is flat
-    ignoreInitial: false, // whatever is already sitting there is work to do
+    // What is already sitting there is work to do — unless the caller said it
+    // would rather be told than have it done, which is `ingestExisting`.
+    ignoreInitial: options.ingestExisting === false,
     awaitWriteFinish: {
       stabilityThreshold: stabilityMs,
       pollInterval: options.pollInterval ?? 100,

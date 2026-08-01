@@ -120,15 +120,18 @@ export function App(): React.JSX.Element {
     };
   }, [location.slug, refreshIndex, reload]);
 
-  // 3.7 — the doorway. A file an agent wrote into `raw/_inbox/` becomes a
-  // source with nobody clicking anything, so the window reports it in the same
-  // place a drop is reported: arriving material the user did not initiate is
-  // still material they have to be able to see arrive, or a refusal is silence.
+  // 3.7 — the doorway. A file an agent wrote into `raw/_inbox/` while this
+  // window was open becomes a source with nobody clicking anything, so the
+  // window reports it where a drop is reported: material the user did not
+  // initiate is still material they have to see arrive, or a refusal is silence.
+  //
+  // No `reloadKey` bump. The ingest writes under `raw/`, which 8.10's watcher
+  // already reports — and that path coalesces, where thirty files arriving here
+  // would be thirty un-coalesced walks of the whole project.
   useEffect(() => {
     if (!hasBridge()) return;
     return bridge().onInbox((outcome) => {
-      setDropped((current) => [...(current ?? []), outcome]);
-      setReloadKey((n) => n + 1);
+      setDropped((current) => append(current, outcome));
     });
   }, []);
 
@@ -202,7 +205,9 @@ export function App(): React.JSX.Element {
     void ow
       .drop(paths)
       .then((outcomes) => {
-        setDropped(outcomes);
+        // Appended, not replaced: an inbox arrival the user has not dismissed
+        // is a report, and a drop is no reason to discard it.
+        setDropped((current) => [...(current ?? []), ...outcomes]);
         setReloadKey((n) => n + 1);
       })
       .catch((e: unknown) => setError(message(e)));
@@ -264,6 +269,14 @@ export function App(): React.JSX.Element {
         {error ? <p className="error">{error}</p> : null}
         {recordError ? <p className="error">{recordError}</p> : null}
         {dropped ? <Dropped outcomes={dropped} onDismiss={() => setDropped(null)} /> : null}
+        <InboxWaiting
+          reloadKey={reloadKey}
+          onTaken={(outcomes) => {
+            setDropped((current) => [...(current ?? []), ...outcomes]);
+            setReloadKey((n) => n + 1);
+          }}
+          onError={setError}
+        />
         {dragging ? <p className="empty">Drop files to add them as sources.</p> : null}
 
         {location.view === "wiki" && !location.slug ? (
@@ -538,4 +551,88 @@ function Frontmatter({ page }: { page: PageView }): React.JSX.Element | null {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Add an outcome, unless it repeats the one before it (plan 3.7).
+ *
+ * `watchInbox` deduplicates its own refusals, but a watcher error does not go
+ * through that — a directory raising EPERM raises it again and again, and an
+ * identical line appended thirty times is a banner nobody can read past.
+ */
+function append(current: DropOutcome[] | null, outcome: DropOutcome): DropOutcome[] {
+  const list = current ?? [];
+  const last = list[list.length - 1];
+  if (last && sameOutcome(last, outcome)) return list;
+  return [...list, outcome];
+}
+
+function sameOutcome(a: DropOutcome, b: DropOutcome): boolean {
+  if (a.name !== b.name || a.ok !== b.ok) return false;
+  return a.ok && b.ok ? a.id === b.id : !a.ok && !b.ok && a.reason === b.reason;
+}
+
+/**
+ * What is sitting in `raw/_inbox/` and was not taken on sight (plan 3.7).
+ *
+ * **Asked for, not pushed.** What was already in the doorway when the window
+ * opened would be announced before the renderer had subscribed and vanish, so
+ * the renderer asks — and it is left alone until somebody says to take it,
+ * because `raw/` arrives with a clone and a file that came out of `git clone`
+ * is not an agent handing something over.
+ */
+function InboxWaiting({
+  reloadKey,
+  onTaken,
+  onError,
+}: {
+  reloadKey: number;
+  onTaken: (outcomes: DropOutcome[]) => void;
+  onError: (message: string) => void;
+}): React.JSX.Element | null {
+  const [names, setNames] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    if (!hasBridge()) return;
+    void bridge()
+      .inboxWaiting()
+      .then(setNames)
+      .catch(() => setNames([]));
+  }, []);
+
+  useEffect(load, [load, reloadKey]);
+
+  const take = useCallback(async () => {
+    setBusy(true);
+    try {
+      onTaken(await bridge().inboxDrain());
+      load();
+    } catch (e) {
+      onError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [load, onTaken, onError]);
+
+  if (names.length === 0) return null;
+
+  return (
+    <div className="empty">
+      <div className="editor__bar">
+        <strong>
+          {names.length} {names.length === 1 ? "file is" : "files are"} waiting in raw/_inbox
+        </strong>
+        <span className="chrome__spacer" />
+        <button onClick={() => void take()} disabled={busy}>
+          {busy ? "Adding…" : "Add them"}
+        </button>
+      </div>
+      <ul>
+        {names.map((name) => (
+          <li key={name}>{name}</li>
+        ))}
+      </ul>
+    </div>
+  );
 }

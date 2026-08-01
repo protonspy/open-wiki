@@ -17,7 +17,8 @@ import {
   type SaveInput,
   type SaveResult,
 } from "./edit.js";
-import { ingestDrop, type DropOutcome } from "./ingest.js";
+import { asDropOutcome, ingestDrop, type DropOutcome } from "./ingest.js";
+import { drainInbox, listInbox, type InboxOutcome } from "@open-wiki/access";
 import {
   createProject,
   credentialState,
@@ -83,9 +84,23 @@ export interface Deps {
    */
   projectRoot: string | null;
   recorder?: RecorderControl;
+  /** The window's inbox watcher (3.7), when its initial scan has finished. */
+  inbox?: InboxControl;
   /** Injected so a test does not depend on today's date. */
   now?: () => Date;
 }
+
+/** What a window offers of its inbox watcher — draining, and nothing else. */
+export interface InboxControl {
+  drain(): Promise<InboxOutcome[]>;
+}
+
+/**
+ * How long a file's size must hold steady before an explicit drain reads it.
+ * The same wait `watchInbox` applies, because a file half-copied is half a
+ * source whichever path reached it.
+ */
+export const INBOX_STABILITY_MS = 400;
 
 /** What a window reports when nothing is being recorded. */
 export const IDLE_STATUS: RecorderStatus = {
@@ -137,6 +152,16 @@ export interface DesktopApi {
   findings(): Finding[];
   locate(id: string, fragment: string): SourceLocation;
   drop(paths: readonly string[]): Promise<DropOutcome[]>;
+  /**
+   * What is waiting in the doorway (plan 3.7), and taking it.
+   *
+   * **Asked for rather than pushed**, which is what makes the report reliable:
+   * a window reports live arrivals over `CHANNELS.inbox`, but what was already
+   * there when the window opened would be announced before the renderer had
+   * subscribed and vanish. The renderer asks instead, whenever it likes.
+   */
+  inboxWaiting(): string[];
+  inboxDrain(): Promise<DropOutcome[]>;
 
   credential(): CredentialState;
   saveCredential(input: SaveCredentialInput): Promise<CredentialCheck>;
@@ -218,6 +243,18 @@ export function createApi(deps: Deps): DesktopApi {
     findings: () => findings(root()),
     locate: (id, fragment) => locateCitation(root(), id, fragment),
     drop: (paths) => ingestDrop(root(), paths),
+    inboxWaiting: () => listInbox(root()),
+    // Through the window's watcher when there is one, so an explicit drain and
+    // an event cannot both read the same file and both try to register the same
+    // id. Standalone otherwise — a drain must still work in the window between
+    // opening and the watcher finishing its initial scan.
+    async inboxDrain() {
+      const projectRoot = root();
+      const outcomes = deps.inbox
+        ? await deps.inbox.drain()
+        : await drainInbox(projectRoot, { stabilityMs: INBOX_STABILITY_MS });
+      return outcomes.map(asDropOutcome);
+    },
 
     credential: () => credentialState(root()),
     saveCredential: (input) => saveCredential(root(), input),
@@ -313,6 +350,10 @@ export async function dispatch(
       // The renderer hands over paths Chromium gave it for a drop. Anything
       // that is not a string is not a path.
       return api.drop((Array.isArray(args[0]) ? args[0] : []).filter((p) => typeof p === "string"));
+    case CHANNELS.inboxWaiting:
+      return api.inboxWaiting();
+    case CHANNELS.inboxDrain:
+      return api.inboxDrain();
 
     default:
       throw new Error(`unknown channel "${channel}"`);

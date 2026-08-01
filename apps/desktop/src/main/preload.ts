@@ -47,6 +47,8 @@ const api = {
   findings: () => ipcRenderer.invoke(CHANNELS.findings),
   locate: (id: string, fragment: string) => ipcRenderer.invoke(CHANNELS.locate, id, fragment),
   drop: (paths: readonly string[]) => ipcRenderer.invoke(CHANNELS.drop, paths),
+  inboxWaiting: () => ipcRenderer.invoke(CHANNELS.inboxWaiting),
+  inboxDrain: () => ipcRenderer.invoke(CHANNELS.inboxDrain),
 
   credential: () => ipcRenderer.invoke(CHANNELS.credential),
   saveCredential: (input: unknown) => ipcRenderer.invoke(CHANNELS.saveCredential, input),

@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   readManifest,
+  parseManifest,
   listSources,
   sourceExists,
   TakenIdError,
+  InvalidManifestError,
   type SourceManifest,
 } from "../src/sources/manifest.js";
 import { registerSource } from "../src/sources/register.js";
@@ -140,5 +142,46 @@ describe("readManifest / listSources / sourceExists (3.1 read side)", () => {
     writeFileSync(join(root, "raw", "loose.txt"), "junk");
     const ids = listSources(root);
     expect(ids).not.toContain("loose.txt");
+  });
+});
+
+describe("parseManifest — a manifest arrives with a clone, so its shape is checked", () => {
+  it("accepts a well-formed manifest", () => {
+    expect(
+      parseManifest("a.pdf", '{"id":"a.pdf","title":"A","kind":"file","original":"a.pdf"}'),
+    ).toEqual({ id: "a.pdf", title: "A", kind: "file", original: "a.pdf" });
+  });
+
+  it("refuses a title that is not a string, rather than passing it on", () => {
+    // This is the one that mattered: `JSON.parse` returns `any`, the cast
+    // checked nothing, and an object title reached the screen as a React child
+    // and blanked the whole window — taking every page citing that source.
+    expect(() => parseManifest("a.pdf", '{"title":{},"kind":"file"}')).toThrow(
+      InvalidManifestError,
+    );
+    expect(() => parseManifest("a.pdf", '{"kind":"file"}')).toThrow(InvalidManifestError);
+  });
+
+  it("refuses a kind that is neither of the two", () => {
+    expect(() => parseManifest("a.pdf", '{"title":"A","kind":"video"}')).toThrow(
+      InvalidManifestError,
+    );
+  });
+
+  it("refuses what does not parse, and what parses to the wrong thing", () => {
+    for (const text of ["not json", "[]", "null", '"a string"']) {
+      expect(() => parseManifest("a.pdf", text), text).toThrow(InvalidManifestError);
+    }
+  });
+
+  it("takes the id from the directory and never from the file", () => {
+    // `adr:0011` freezes an id as the directory name, so a manifest claiming a
+    // different one is claiming something it does not get to decide.
+    expect(parseManifest("a.pdf", '{"id":"../elsewhere","title":"A","kind":"file"}').id) //
+      .toBe("a.pdf");
+  });
+
+  it("defaults a missing original rather than refusing — a recording has none", () => {
+    expect(parseManifest("weekly", '{"title":"W","kind":"recording"}').original).toBe("");
   });
 });

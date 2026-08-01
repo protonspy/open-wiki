@@ -1,14 +1,14 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { CHANNELS, createApi, dispatch } from "./ipc.js";
+import { CHANNELS, createApi, dispatch, INBOX_STABILITY_MS } from "./ipc.js";
 import { PUSH_CHANNELS } from "./channels.js";
 import { asDropOutcome, inboxFailure } from "./ingest.js";
 import { resolveProject } from "./project.js";
 import { RecorderSession, resolveRecorder, spawnTransport } from "./recorder.js";
 import { applyPackagedBinaries } from "./resources.js";
 import { serveQueries } from "@open-wiki/access/socket";
-import { watchInbox, type InboxWatcher } from "@open-wiki/access";
+import { drainInbox, watchInbox, type InboxOutcome, type InboxWatcher } from "@open-wiki/access";
 import { isOpenableExternally } from "../renderer/navigation.js";
 import { watchProject } from "./watcher.js";
 
@@ -69,16 +69,52 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     },
   };
 
-  const api = createApi({ projectRoot, recorder });
+  // 3.7 — the doorway's watcher, which arrives asynchronously; see below.
+  let inbox: InboxWatcher | null = null;
+  let closed = false;
+
+  // The window's own watcher once its initial scan has finished, so an explicit
+  // drain and an event cannot both read the same file and both try to register
+  // the same id. Standalone until then: a drain must still work in the seconds
+  // between the window opening and the scan completing.
+  const inboxDrain = (root: string): Promise<InboxOutcome[]> =>
+    inbox ? inbox.drain() : drainInbox(root, { stabilityMs: INBOX_STABILITY_MS });
+
+  const api = createApi({
+    projectRoot,
+    recorder,
+    ...(projectRoot ? { inbox: { drain: () => inboxDrain(projectRoot) } } : {}),
+  });
   for (const channel of Object.values(CHANNELS)) {
     if (PUSH_CHANNELS.has(channel)) continue; // main → renderer only
     ipcMain.handle(channel, (_event, ...args: unknown[]) => dispatch(api, channel, args));
   }
 
-  /** Tell the window something, unless it has gone. */
+  /**
+   * Tell the window something.
+   *
+   * **Buffered until the document has loaded.** `webContents.send` before that
+   * is dropped on the floor with no queue and no error, and the things pushed
+   * here are reports — a file that arrived, a watcher that died. A report that
+   * silently goes nowhere is the failure this channel exists to prevent.
+   */
+  let loaded = false;
+  const waiting: Array<{ channel: string; payload: unknown }> = [];
   const send = (channel: string, payload: unknown): void => {
-    if (!window.isDestroyed()) window.webContents.send(channel, payload);
+    if (window.isDestroyed()) return;
+    if (!loaded) {
+      waiting.push({ channel, payload });
+      return;
+    }
+    window.webContents.send(channel, payload);
   };
+  window.webContents.once("did-finish-load", () => {
+    loaded = true;
+    for (const message of waiting) {
+      if (!window.isDestroyed()) window.webContents.send(message.channel, message.payload);
+    }
+    waiting.length = 0;
+  });
 
   // 9.14 — the CLI asks here rather than starting a process, when this
   // window already has the project open. Read and validate only; the socket
@@ -101,16 +137,28 @@ function createWindow(projectRoot: string | null): BrowserWindow {
   // a window that blocked on it would be a window that does not open. So the
   // handle arrives late, and a window closed before it does has to close it
   // anyway or the watcher outlives its window.
-  let inbox: InboxWatcher | null = null;
-  let closed = false;
+  //
+  // **`ingestExisting: false`.** What is already in the doorway when a window
+  // opens is listed and left alone; only what arrives while it is open is taken
+  // on sight. `raw/` comes with a clone, so the alternative is a repository
+  // shipping `raw/_inbox/x.pdf` and this application parsing a stranger's bytes
+  // in the main process — and deleting the file out of the user's tree — before
+  // anybody clicked anything.
   if (projectRoot) {
-    void watchInbox(projectRoot, {
-      onOutcome: (outcome) => send(CHANNELS.inbox, asDropOutcome(outcome)),
-      onError: (error) => send(CHANNELS.inbox, inboxFailure(error)),
-    })
+    void watchInbox(
+      projectRoot,
+      {
+        onOutcome: (outcome) => send(CHANNELS.inbox, asDropOutcome(outcome)),
+        onError: (error) => send(CHANNELS.inbox, inboxFailure(error)),
+      },
+      { ingestExisting: false },
+    )
       .then((started) => {
-        if (closed) void started.close();
-        else inbox = started;
+        // `return`, not `void`: a discarded promise here escapes the `.catch`
+        // below and becomes an unhandled rejection in the main process.
+        if (closed) return started.close();
+        inbox = started;
+        return undefined;
       })
       .catch((error: unknown) => {
         send(
