@@ -1,5 +1,5 @@
 import { basename, relative, resolve } from "node:path";
-import { assertWithin, OutsideProjectError } from "../paths.js";
+import { assertWithin, resolveReal, OutsideProjectError } from "../paths.js";
 import { isConfigWrite, configWriteReason } from "./guard.js";
 import { completeFrontmatter } from "../store/complete.js";
 import { resolveWikilinks } from "../store/wikilinks.js";
@@ -36,15 +36,30 @@ export interface GateInput {
   date: string;
 }
 
-/** The project-relative posix path of a page, or null when it is not a gated page. */
+/**
+ * The project-relative posix path of a page, or null when it is not a gated page.
+ *
+ * The classification folds case. Windows is case-insensitive by default and is
+ * the only platform the product supports, so `Wiki/Page.MD` and `wiki/page.md`
+ * are the same file — matching the literal casing would put the gate one
+ * keystroke away from being skipped. Folding errs toward gating, which is the
+ * safe direction on a case-sensitive filesystem too: at worst a page is
+ * validated that need not have been, never one waved through.
+ */
 function gatedPageRel(projectRoot: string, filePath: string): string | null {
   const rel = relative(resolve(projectRoot), resolve(projectRoot, filePath)).replace(/\\/g, "/");
   if (rel === "" || rel.startsWith("..")) return null;
-  if (!rel.endsWith(".md")) return null;
-  if (!rel.startsWith("wiki/") && !rel.startsWith("codewiki/")) return null;
+  const folded = rel.toLowerCase();
+  if (!folded.endsWith(".md")) return null;
+  if (!folded.startsWith("wiki/") && !folded.startsWith("codewiki/")) return null;
   // Non-entity pages are themselves, not validated against the schema.
-  if ((NON_ENTITY_PAGES as readonly string[]).includes(basename(rel))) return null;
+  if ((NON_ENTITY_PAGES as readonly string[]).includes(basename(folded))) return null;
   return rel;
+}
+
+/** A page's slug: its filename without the `.md`, whatever case that carries. */
+function slugOf(rel: string): string {
+  return basename(rel).replace(/\.md$/i, "");
 }
 
 export function gateWrite(input: GateInput): GateDecision {
@@ -56,8 +71,9 @@ export function gateWrite(input: GateInput): GateDecision {
   // shared by both doors (the PreToolUse hook and the `ow write` verb), so it
   // lives here rather than in either caller. `allow` is "no opinion", not
   // "write anywhere": a non-gated file outside the project is denied too.
+  let landsAt: string;
   try {
-    assertWithin(projectRoot, resolve(projectRoot, filePath));
+    landsAt = assertWithin(projectRoot, resolve(projectRoot, filePath));
   } catch (e) {
     if (e instanceof OutsideProjectError) {
       return { action: "deny", reasons: [e.message] };
@@ -65,14 +81,22 @@ export function gateWrite(input: GateInput): GateDecision {
     throw e;
   }
 
-  if (isConfigWrite(filePath, projectRoot)) {
+  // Classify by where the write *lands*, not by the name it was asked for.
+  // `assertWithin` returns the real path, and everything below compares against
+  // the real project root, so a junction inside `wiki/` that points at
+  // `.claude/` is seen for what it is. Classifying the nominal path instead
+  // would read `wiki/link/settings.md` as a wiki page and write it straight
+  // through the config guard.
+  const realRoot = resolveReal(projectRoot);
+
+  if (isConfigWrite(landsAt, realRoot)) {
     return { action: "deny", reasons: [configWriteReason(filePath)] };
   }
 
-  const rel = gatedPageRel(projectRoot, filePath);
+  const rel = gatedPageRel(realRoot, landsAt);
   if (rel === null) return { action: "allow" };
 
-  const slug = basename(rel, ".md");
+  const slug = slugOf(rel);
   const completed = completeFrontmatter(content, date);
 
   const reasons: string[] = [];

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { assertWithin, OutsideProjectError } from "../paths.js";
 
 /**
  * Read a source — any entry in `raw/`, an uploaded file or a recording
@@ -36,16 +37,37 @@ export class MissingSourceError extends Error {
   }
 }
 
+/**
+ * The confined path of a source's manifest; throws if the id escapes `raw/`.
+ *
+ * An id is not a path. It reaches here straight out of a page's prose — a
+ * citation like `src://../../elsewhere#p1` parses as an id — so confining is
+ * this module's job and not the caller's. `raw/` is the root, not the project:
+ * a source that resolved to somewhere else inside the project would still not
+ * be a source.
+ */
+function manifestPath(projectRoot: string, id: string): string {
+  const rawDir = join(projectRoot, "raw");
+  return assertWithin(rawDir, join(rawDir, id, "manifest.json"));
+}
+
 /** Read a source's manifest. Throws `MissingSourceError` if it is not there. */
 export function readManifest(projectRoot: string, id: string): SourceManifest {
-  const file = join(projectRoot, "raw", id, "manifest.json");
+  const file = manifestPath(projectRoot, id);
   if (!existsSync(file)) throw new MissingSourceError(id);
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
 /** True when a source directory with this id exists under `raw/`. */
 export function sourceExists(projectRoot: string, id: string): boolean {
-  return existsSync(join(projectRoot, "raw", id, "manifest.json"));
+  try {
+    return existsSync(manifestPath(projectRoot, id));
+  } catch (e) {
+    // An id that escapes `raw/` names no source. The caller gets `false` and
+    // renders "points at no source", which is both true and the whole answer.
+    if (e instanceof OutsideProjectError) return false;
+    throw e;
+  }
 }
 
 /**

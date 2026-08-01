@@ -1,5 +1,6 @@
 import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { assertWithin } from "../paths.js";
 import { getOperation } from "./log.js";
 
 /**
@@ -22,10 +23,15 @@ export function undo(projectRoot: string, id: string): void {
   if (!op) throw new UnknownOperationError(id);
   const snapDir = join(projectRoot, ".state", "snapshots", op.snapshotId);
   for (const page of op.pages) {
-    const live = join(projectRoot, page.path);
+    // The paths come off the operation log on disk, so they are input, not
+    // fact: confine both ends before restoring or removing anything. Undo is
+    // the one operation that deletes, and a `..` in a log entry must not turn
+    // it into a delete of something the project never owned.
+    const live = assertWithin(projectRoot, join(projectRoot, page.path));
     if (page.existed) {
+      const restored = assertWithin(snapDir, join(snapDir, page.path));
       mkdirSync(dirname(live), { recursive: true });
-      copyFileSync(join(snapDir, page.path), live);
+      copyFileSync(restored, live);
     } else {
       rmSync(live, { force: true });
     }

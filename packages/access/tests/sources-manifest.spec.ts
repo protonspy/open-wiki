@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { readManifest, listSources, sourceExists, TakenIdError, type SourceManifest } from "../src/sources/manifest.js";
 import { registerSource } from "../src/sources/register.js";
 import { EmptyNameError } from "../src/sources/id.js";
+import { OutsideProjectError } from "../src/paths.js";
 
 function tempProject() {
   const root = mkdtempSync(join(tmpdir(), "ow-src-"));
@@ -108,6 +109,21 @@ describe("readManifest / listSources / sourceExists (3.1 read side)", () => {
 
   it("sourceExists is false for an unknown id", () => {
     expect(sourceExists(root, "nope")).toBe(false);
+  });
+
+  it("an id that escapes raw/ names no source — a citation is not a path", () => {
+    // The id arrives out of a page's prose: `src://../../elsewhere#p1` parses
+    // as the id `../../elsewhere`. Answering "yes, that exists" would make the
+    // gate an existence oracle for any manifest.json on the machine, and would
+    // let a page cite something that is not a source at all.
+    writeFileSync(join(root, "manifest.json"), JSON.stringify({ id: "x", title: "outside raw" }), "utf8");
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(join(root, ".claude", "manifest.json"), JSON.stringify({ id: "y" }), "utf8");
+
+    for (const id of ["..", "../.claude", "../../..", join("..", "..")]) {
+      expect(sourceExists(root, id), id).toBe(false);
+      expect(() => readManifest(root, id), id).toThrow(OutsideProjectError);
+    }
   });
 
   it("listSources ignores a stray file dropped in raw/ that is not a source dir", () => {

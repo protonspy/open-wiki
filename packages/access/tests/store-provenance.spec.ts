@@ -24,6 +24,19 @@ describe("resolveProvenance (5.4)", () => {
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+  it("refuses a citation whose id climbs out of raw/ — an id is not a path", () => {
+    // `parseLink` takes everything before the `#` as the id, so a page can put
+    // a traversal there. Answering it against the filesystem outside `raw/`
+    // would make an accepted page an existence oracle for the machine.
+    const issues = resolveProvenance(root, [
+      "src://../../etc#p1",
+      "src://..#p1",
+      "rec://../../..#14:32",
+    ]);
+    expect(issues).toHaveLength(3);
+    for (const issue of issues) expect(issue.reason).toContain("points at no source");
+  });
+
   it("reports nothing when every citation points at an existing source", () => {
     const sources = ["src://arquitetura-fenix.pdf#p12", "rec://fenix-weekly-2026-07-31#14:32"];
     expect(resolveProvenance(root, sources)).toEqual([]);

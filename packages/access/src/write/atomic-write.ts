@@ -29,11 +29,16 @@ export function snapshot(projectRoot: string, pagePaths: string[]): Snapshot {
   mkdirSync(dir, { recursive: true });
   const pages: SnapshotPage[] = [];
   for (const rel of pagePaths) {
-    const abs = join(projectRoot, rel);
+    // Confine before touching the filesystem. A page path is data — it arrives
+    // from a tool payload here, and from the operation log on disk in `undo` —
+    // so a `..` or a junction inside it must not reach `copyFileSync`. The gate
+    // checks the same thing earlier for the writes it sees; this is the write
+    // path's own guarantee, which is what makes it one for callers it has not met.
+    const abs = assertWithin(projectRoot, join(projectRoot, rel));
     const existed = existsSync(abs);
     pages.push({ path: rel, existed });
     if (existed) {
-      const dest = join(dir, rel);
+      const dest = assertWithin(dir, join(dir, rel));
       mkdirSync(dirname(dest), { recursive: true });
       copyFileSync(abs, dest);
     }

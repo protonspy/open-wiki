@@ -1,10 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { snapshot, atomicWrite, writePage } from "../src/write/atomic-write.js";
 import { listOperations, getOperation } from "../src/write/log.js";
 import { undo, UnknownOperationError } from "../src/write/undo.js";
+import { OutsideProjectError } from "../src/paths.js";
 
 function tempProject() {
   const root = mkdtempSync(join(tmpdir(), "ow-write-"));
@@ -122,5 +123,48 @@ describe("undo (2.5)", () => {
     undo(root, opA.id);
     expect(readFileSync(join(root, "wiki", "a.md"), "utf8")).toBe("a0");
     expect(readFileSync(join(root, "wiki", "b.md"), "utf8")).toBe("b1");
+  });
+});
+
+describe("the write path confines its own paths (2.6)", () => {
+  let root: string;
+  let outside: string;
+  beforeEach(() => {
+    root = tempProject();
+    outside = mkdtempSync(join(tmpdir(), "ow-write-outside-"));
+    writeFileSync(join(outside, "victim.md"), "not the project's\n", "utf8");
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  /** The project-relative path that reaches `outside/victim.md` by climbing out. */
+  function escapingRel(): string {
+    return join("..", relative(dirname(root), join(outside, "victim.md")));
+  }
+
+  it("snapshot refuses a page path that climbs out of the project", () => {
+    expect(() => snapshot(root, [escapingRel()])).toThrow(OutsideProjectError);
+    expect(readFileSync(join(outside, "victim.md"), "utf8")).toBe("not the project's\n");
+  });
+
+  it("undo refuses a logged path that climbs out — the log is input, not fact", () => {
+    // The operation log lives on disk inside the project, so its paths are data
+    // by the time undo reads them. Undo is the one operation that deletes, and
+    // a tampered entry must not turn it into a delete of something the project
+    // never owned.
+    const op = writePage(root, join("wiki", "page.md"), "# Page\n", "cli");
+    const log = join(root, ".state", "log.jsonl");
+    const lines = readFileSync(log, "utf8")
+      .split("\n")
+      .filter((l) => l.trim() !== "")
+      .map((l) => JSON.parse(l) as { id: string; pages: unknown });
+    const entry = lines.find((o) => o.id === op.id)!;
+    entry.pages = [{ path: escapingRel(), existed: false }];
+    writeFileSync(log, lines.map((l) => JSON.stringify(l)).join("\n") + "\n", "utf8");
+
+    expect(() => undo(root, op.id)).toThrow(OutsideProjectError);
+    expect(existsSync(join(outside, "victim.md"))).toBe(true);
   });
 });

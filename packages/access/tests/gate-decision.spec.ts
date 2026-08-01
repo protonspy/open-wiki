@@ -205,6 +205,57 @@ describe("gateWrite — path confinement (2.6, the review's HIGH finding)", () =
       rmSync(outside, { recursive: true, force: true });
     }
   });
+
+  it("denies a write through a junction that stays inside the project but lands on the config", () => {
+    // The escaping junction above is refused by containment. This one does not
+    // escape — `wiki/link` points at `.claude/`, which is inside the project —
+    // so containment has no opinion and the *classification* is what has to
+    // catch it. Reading the nominal path would call this a wiki page and write
+    // it straight through the guard the gate exists to hold.
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    const link = join(root, "wiki", "link");
+    try {
+      symlinkSync(join(root, ".claude"), link, "junction");
+    } catch {
+      return; // no junction privilege; a different failure from this logic
+    }
+    const d = gateWrite({
+      projectRoot: root,
+      filePath: join(link, "settings.md"),
+      content: page(GOOD_FM),
+      date: DATE,
+    });
+    expect(d.action).toBe("deny");
+    if (d.action === "deny") expect(d.reasons.join(" ")).toContain("configuration");
+  });
+
+  it("gates a page whatever case its path is written in", () => {
+    // On Windows these name the same files as `wiki/fenix.md`. A pass-through
+    // would land an unvalidated page in the wiki, so the gate must have an
+    // opinion about all of them.
+    for (const filePath of ["Wiki/fenix.md", "wiki/fenix.MD", "WIKI/FENIX.MD", "CodeWiki/x.md"]) {
+      const d = gateWrite({ projectRoot: root, filePath, content: page(GOOD_FM), date: DATE });
+      expect(d.action, filePath).not.toBe("allow");
+    }
+  });
+
+  it("takes the slug from the filename without the extension, whatever its case", () => {
+    // `basename(rel, ".md")` leaves `.MD` attached, which would make the slug
+    // `Fenix.MD` and fail the id/filename agreement for the wrong reason.
+    const d = gateWrite({
+      projectRoot: root,
+      filePath: "wiki/fenix.MD",
+      content: page(GOOD_FM),
+      date: DATE,
+    });
+    expect(d.action).toBe("accept");
+  });
+
+  it("still passes through the non-entity pages when their case differs", () => {
+    expect(
+      gateWrite({ projectRoot: root, filePath: "wiki/INDEX.MD", content: "# Index\n", date: DATE }),
+    ).toEqual({ action: "allow" });
+  });
 });
 
 describe("formatDenial (9.13)", () => {
