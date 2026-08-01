@@ -23,7 +23,10 @@ export function runWrite(
   const decision = gateWrite({ projectRoot, filePath, content, date });
 
   if (decision.action === "deny") {
-    return { ok: false, reason: formatDenial(relativePath(projectRoot, filePath), decision.reasons) };
+    return {
+      ok: false,
+      reason: formatDenial(relativePath(projectRoot, filePath), decision.reasons),
+    };
   }
 
   const rel = relativePath(projectRoot, filePath);

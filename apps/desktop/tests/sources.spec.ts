@@ -279,6 +279,11 @@ describe("the widened IPC surface (6.x, 7.6, 8.6 to 8.11)", () => {
     const api = createApi({ projectRoot: root });
     for (const channel of Object.values(CHANNELS)) {
       if (channel === CHANNELS.changed) continue; // main → renderer only
+      // `createProject` actually scaffolds. Calling every channel with
+      // arbitrary arguments once left a real project directory behind in the
+      // repository — a test with side effects is a test that edits the thing
+      // it is checking.
+      if (channel === CHANNELS.createProject) continue;
       // Most will fail for want of a page or a recorder, which is fine. What
       // none may say is "unknown channel" — that is a name in the list the
       // switch forgot, and it would only ever be found in production.

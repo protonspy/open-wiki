@@ -1,7 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { generateClaudeMd } from "./claude-md.js";
-import type { Language } from "@open-wiki/access";
 
 const HOOKS_FILE = join(".claude", "hooks", "hooks.json");
 
@@ -65,9 +63,9 @@ function upsertEntry(
   return list;
 }
 
-/** Write the generated project CLAUDE.md (9.4). Overwrites — it is generated. */
-export function writeClaudeMd(projectRoot: string, language: Language): string {
-  const file = join(projectRoot, "CLAUDE.md");
-  writeFileSync(file, generateClaudeMd(language), "utf8");
-  return file;
-}
+/**
+ * Re-exported, not reimplemented. The generator moved to `@open-wiki/access`
+ * beside `scaffoldSkills` — 9.3 and 9.4 are one act, and 8.12 has to
+ * regenerate it from the desktop application when the language changes.
+ */
+export { writeClaudeMd } from "@open-wiki/access";

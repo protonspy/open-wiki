@@ -9,6 +9,8 @@ import { History, linkTarget, type Location } from "./navigation.js";
 import { Findings, History as HistoryPanel, SourceAt } from "./Panels.js";
 import { RecordingIndicator } from "./RecordingIndicator.js";
 import { useRecording, type RecordingState } from "./recording.js";
+import { Launcher } from "./Launcher.js";
+import { Settings } from "./Settings.js";
 import { Sources } from "./Sources.js";
 
 /**
@@ -32,6 +34,8 @@ const COALESCE_MS = 120;
  */
 export function App(): React.JSX.Element {
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  /** Null until the first answer arrives; false once we know there is none. */
+  const [hasProject, setHasProject] = useState<boolean | null>(null);
   const [index, setIndex] = useState<WikiIndex>({ pages: [], slugs: [] });
   const [page, setPage] = useState<PageView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +89,10 @@ export function App(): React.JSX.Element {
     }
     void bridge()
       .project()
-      .then(setProject)
+      .then((info) => {
+        setProject(info);
+        setHasProject(info !== null);
+      })
       .catch((e: unknown) => setError(message(e)));
     void refreshIndex();
   }, [refreshIndex]);
@@ -189,6 +196,21 @@ export function App(): React.JSX.Element {
       .catch((e: unknown) => setError(message(e)));
   }, []);
 
+  // 8.4 — a window opened outside a project shows the launcher. Nothing else
+  // on screen would work: every other channel refuses without a project.
+  if (hasProject === false) {
+    return (
+      <div className="app">
+        <header className="chrome">
+          <span className="chrome__project">open-wiki</span>
+        </header>
+        <main className="main">
+          <Launcher />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div
       className={dragging ? "app app--dragging" : "app"}
@@ -211,7 +233,7 @@ export function App(): React.JSX.Element {
           >
             →
           </button>
-          {(["wiki", "sources", "checks", "history"] as const).map((view) => (
+          {(["wiki", "sources", "checks", "history", "settings"] as const).map((view) => (
             <button
               key={view}
               aria-current={location.view === view}
@@ -276,6 +298,7 @@ export function App(): React.JSX.Element {
         ) : null}
         {location.view === "checks" ? <Findings reloadKey={reloadKey} /> : null}
         {location.view === "history" ? <HistoryPanel reloadKey={reloadKey} /> : null}
+        {location.view === "settings" ? <Settings /> : null}
       </main>
 
       {openSource ? (

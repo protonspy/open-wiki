@@ -71,13 +71,22 @@ describe("ow gate pre (9.5)", () => {
   }
 
   it("prints the completed content as updatedInput", () => {
-    const out = parse(gateOutput("pre", payload(page("fenix", "Fenix", `See src://${sourceId}#p1.\n`)), root, DATE));
+    const out = parse(
+      gateOutput("pre", payload(page("fenix", "Fenix", `See src://${sourceId}#p1.\n`)), root, DATE),
+    );
     expect(out.hookSpecificOutput.permissionDecision).toBe("allow");
     expect(out.hookSpecificOutput.updatedInput!.content).toContain(`updated: ${DATE}`);
   });
 
   it("prints a denial the agent can act on", () => {
-    const out = parse(gateOutput("pre", payload(page("bogus", "Bogus", "See src://nope#p1.\n"), "bogus"), root, DATE));
+    const out = parse(
+      gateOutput(
+        "pre",
+        payload(page("bogus", "Bogus", "See src://nope#p1.\n"), "bogus"),
+        root,
+        DATE,
+      ),
+    );
     expect(out.hookSpecificOutput.permissionDecision).toBe("deny");
     expect(out.hookSpecificOutput.permissionDecisionReason).toContain("nope");
   });
@@ -99,7 +108,12 @@ describe("ow gate pre (9.5)", () => {
     const elsewhere = mkdtempSync(join(tmpdir(), "ow-gate-elsewhere-"));
     try {
       const out = parse(
-        gateOutput("pre", payload(page("fenix", "Fenix", `See src://${sourceId}#p1.\n`)), elsewhere, DATE),
+        gateOutput(
+          "pre",
+          payload(page("fenix", "Fenix", `See src://${sourceId}#p1.\n`)),
+          elsewhere,
+          DATE,
+        ),
       );
       expect(out.hookSpecificOutput.updatedInput!.content).toContain(`updated: ${DATE}`);
     } finally {
@@ -152,7 +166,10 @@ describe("ow gate post (9.5)", () => {
           tool_name: "Write",
           cwd: root,
           tool_use_id: "tu_1",
-          tool_input: { file_path: file, content: page("fenix", "Fenix", `See src://${sourceId}#p1.\n`) },
+          tool_input: {
+            file_path: file,
+            content: page("fenix", "Fenix", `See src://${sourceId}#p1.\n`),
+          },
         }),
         root,
         DATE,

@@ -3,12 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { z } from "zod";
 import { ProjectRegistry } from "@open-wiki/access/read";
-import {
-  indexStructure,
-  readPageWhole,
-  listSourcesState,
-  readSourceText,
-} from "./tools.js";
+import { indexStructure, readPageWhole, listSourcesState, readSourceText } from "./tools.js";
 
 /**
  * `ow mcp --project <name> --read-only` — the read-only MCP server (plan 9.7),

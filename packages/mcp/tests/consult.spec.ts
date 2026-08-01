@@ -50,10 +50,18 @@ describe("consult: a second project cites the first over MCP (9.16)", () => {
 
   beforeEach(async () => {
     rootA = tempProject();
-    const { id } = uploadTextSource(rootA, "Architecture Notes", "# Architecture\n\nFenix is a rebuild.\n");
+    const { id } = uploadTextSource(
+      rootA,
+      "Architecture Notes",
+      "# Architecture\n\nFenix is a rebuild.\n",
+    );
     sourceId = id;
     writePage(rootA, "fenix", "concept:fenix", `src://${sourceId}#p1`);
-    writeFileSync(join(rootA, "wiki", "index.md"), `# Index\n\n## Pages\n\n- [[fenix]] — Fenix\n`, "utf8");
+    writeFileSync(
+      join(rootA, "wiki", "index.md"),
+      `# Index\n\n## Pages\n\n- [[fenix]] — Fenix\n`,
+      "utf8",
+    );
 
     const server = createMcpServer(rootA, "project-a");
     const [a, b] = InMemoryTransport.createLinkedPair();
@@ -99,7 +107,10 @@ describe("consult: a second project cites the first over MCP (9.16)", () => {
   });
 
   it("refuses a page slug that escapes the project — even over MCP", async () => {
-    const res = await client.callTool({ name: "ow_read_page", arguments: { slug: "../../../etc/hosts" } });
+    const res = await client.callTool({
+      name: "ow_read_page",
+      arguments: { slug: "../../../etc/hosts" },
+    });
     expect(res.isError).toBe(true);
     expect(text(res)).toContain("outside the project");
   });

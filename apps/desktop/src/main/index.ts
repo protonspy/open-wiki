@@ -19,7 +19,7 @@ import { watchProject } from "./watcher.js";
 
 const here = fileURLToPath(import.meta.url);
 
-function createWindow(projectRoot: string): BrowserWindow {
+function createWindow(projectRoot: string | null): BrowserWindow {
   const window = new BrowserWindow({
     width: 1180,
     height: 820,
@@ -66,13 +66,16 @@ function createWindow(projectRoot: string): BrowserWindow {
     ipcMain.handle(channel, (_event, ...args: unknown[]) => dispatch(api, channel, args));
   }
 
-  // 8.10 — whoever wrote it, the screen follows.
-  const watcher = watchProject(projectRoot, (change) => {
-    if (!window.isDestroyed()) window.webContents.send(CHANNELS.changed, change);
-  });
+  // 8.10 — whoever wrote it, the screen follows. A launcher window has no
+  // project to watch.
+  const watcher = projectRoot
+    ? watchProject(projectRoot, (change) => {
+        if (!window.isDestroyed()) window.webContents.send(CHANNELS.changed, change);
+      })
+    : null;
 
   window.on("closed", () => {
-    void watcher.close();
+    void watcher?.close();
     session?.dispose();
     for (const channel of Object.values(CHANNELS)) ipcMain.removeHandler(channel);
   });
@@ -116,18 +119,10 @@ function createWindow(projectRoot: string): BrowserWindow {
 }
 
 void app.whenReady().then(() => {
-  const projectRoot = resolveProject({ argv: process.argv, cwd: process.cwd() });
-  if (!projectRoot) {
-    // 8.4's launcher is what belongs here. Until it exists, saying so beats
-    // opening the user's home directory as though it were a wiki.
-    process.stderr.write(
-      "open-wiki: no project here. Run `ow` inside a project directory, " +
-        "or `ow init` to create one.\n",
-    );
-    app.quit();
-    return;
-  }
-  createWindow(projectRoot);
+  // 8.4 — `ow` outside a project opens the launcher rather than guessing at
+  // one. A window with no project answers `null` to `project()`, and the
+  // renderer shows the list of known projects instead of a wiki.
+  createWindow(resolveProject({ argv: process.argv, cwd: process.cwd() }));
 });
 
 app.on("window-all-closed", () => app.quit());

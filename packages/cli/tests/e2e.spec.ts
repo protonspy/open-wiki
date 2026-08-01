@@ -59,7 +59,11 @@ describe("e2e: agent builds and cites a page (9.15)", () => {
   beforeEach(() => {
     root = tempProject();
     // A single uploaded markdown source — the MVP's "one uploaded markdown file".
-    const { id } = uploadTextSource(root, "Architecture Notes", "# Architecture\n\nFenix is a rebuild.\n");
+    const { id } = uploadTextSource(
+      root,
+      "Architecture Notes",
+      "# Architecture\n\nFenix is a rebuild.\n",
+    );
     sourceId = id;
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -142,7 +146,12 @@ describe("e2e: agent builds and cites a page (9.15)", () => {
     writeViaHook(root, "fenix", "Fenix", `Fenix is a rebuild — see ${c1}.\n`);
     // Verb path: lambda.
     const c2 = `src://${sourceId}#p1`;
-    runWrite(root, join(root, "wiki", "lambda.md"), page("lambda", "Lambda", "[]", `Lambda — see ${c2}.\n`), DATE);
+    runWrite(
+      root,
+      join(root, "wiki", "lambda.md"),
+      page("lambda", "Lambda", "[]", `Lambda — see ${c2}.\n`),
+      DATE,
+    );
 
     // graph: two pages, neither orphaned.
     const graph = JSON.parse(runGraph(root, undefined));
@@ -203,7 +212,8 @@ function writeViaHook(root: string, slug: string, title: string, body: string): 
     root,
     DATE,
   );
-  const completed = (pre?.hookSpecificOutput.updatedInput as { content: string }).content ?? content;
+  const completed =
+    (pre?.hookSpecificOutput.updatedInput as { content: string }).content ?? content;
   writeFileSync(join(root, "wiki", `${slug}.md`), completed, "utf8");
   runPostToolUse(
     {

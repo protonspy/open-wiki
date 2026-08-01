@@ -14,7 +14,9 @@ function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "ow-consult-"));
 }
 
-function readMcp(root: string): { mcpServers: Record<string, { command: string; args: string[] }> } {
+function readMcp(root: string): {
+  mcpServers: Record<string, { command: string; args: string[] }>;
+} {
   return JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8")) as {
     mcpServers: Record<string, { command: string; args: string[] }>;
   };

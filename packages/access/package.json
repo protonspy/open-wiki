@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./read": "./src/read.ts"
+    "./read": "./src/read.ts",
+    "./secrets": "./src/config/secrets.ts"
   },
   "scripts": {
     "test": "vitest run",
