@@ -1,5 +1,6 @@
 import { relative, sep } from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
+import { areaOf, isOpenPage, type ChangeKind, type ProjectChange } from "../shared/changes.js";
 
 /**
  * Watching the project and reflecting it on screen live (plan 8.10).
@@ -15,15 +16,13 @@ import chokidar, { type FSWatcher } from "chokidar";
  * render as broken (`docs/stack.md`, on chokidar).
  */
 
-export type ChangeKind = "added" | "changed" | "removed";
-
-export interface ProjectChange {
-  kind: ChangeKind;
-  /** Project-relative, with forward slashes — what a page id looks like. */
-  path: string;
-  /** Which part of the project it landed in. */
-  area: "wiki" | "raw" | "other";
-}
+/**
+ * Re-exported for the main process and the tests, which reach the whole of this
+ * concern through one module. **The renderer must import them from
+ * `../shared/changes.js` instead** — reaching them through here drags chokidar
+ * into a browser bundle, which is a build failure rather than a preference.
+ */
+export { areaOf, isOpenPage, type ChangeKind, type ProjectChange };
 
 export interface WatchOptions {
   /** Milliseconds of quiet before a write counts as finished. */
@@ -33,11 +32,6 @@ export interface WatchOptions {
 /** The two directories a screen renders. `.state/` is not content (plan 2.1). */
 const WATCHED = ["wiki", "raw"];
 
-export function areaOf(relativePath: string): ProjectChange["area"] {
-  const head = relativePath.split("/")[0];
-  return head === "wiki" || head === "raw" ? head : "other";
-}
-
 /** A project-relative, forward-slashed path, or `null` when it escaped. */
 export function toProjectPath(projectRoot: string, absolute: string): string | null {
   const rel = relative(projectRoot, absolute);
@@ -45,20 +39,6 @@ export function toProjectPath(projectRoot: string, absolute: string): string | n
   // `..foo`. The separator is what makes it mean "above here".
   if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`)) return null;
   return rel.split(sep).join("/");
-}
-
-/**
- * Whether a change is the open page moving (plan 8.10).
- *
- * By slug against the index, not by matching the path's tail. A page is its
- * slug wherever it sits (`adr:0016`), so `wiki/projects/fenix.md` and
- * `wiki/fenix.md` are the same page — and a suffix match would also fire for
- * `wiki/not-fenix.md` on a project where somebody named a page that way.
- */
-export function isOpenPage(change: ProjectChange, openSlug: string | undefined): boolean {
-  if (!openSlug || change.area !== "wiki") return false;
-  const file = change.path.split("/").pop() ?? "";
-  return file === `${openSlug}.md`;
 }
 
 export function describeChange(

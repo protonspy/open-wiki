@@ -11,7 +11,7 @@ import type {
 } from "../main/settings.js";
 import type { PageSource, SourceLocation, SourceRow } from "../main/sources.js";
 import type { TranscribeOutcome } from "../main/transcribe-run.js";
-import type { ProjectChange } from "../main/watcher.js";
+import type { ProjectChange } from "../shared/changes.js";
 
 /**
  * What the preload put on `window`, typed (plan 8.2).
