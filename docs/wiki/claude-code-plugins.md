@@ -2,11 +2,13 @@
 
 A plugin is a self-contained directory that adds skills, agents, hooks, MCP servers and
 LSP servers to Claude Code, installed with one command instead of assembled by hand. It
-matters here because this product's whole interface is an MCP server plus a written
-convention, and a plugin is the only shipping format that carries both at once.
+matters here because this product's interface is a written convention plus a read-only MCP
+server, and a plugin is the only shipping format that carries both at once.
 
-Read against `adr:0003-mcp-as-the-only-bridge-to-the-llm`, which is what makes the MCP
-server the product rather than an accessory.
+Read against `adr:0013-the-project-directory-is-the-unit`, which moved the local wiki out
+of MCP's reach and left the protocol one job: consulting *another* project. Much of what
+follows was distilled when the plan still had an HTTP server with a token, and the sections
+below say where that no longer applies.
 
 ## The shape on disk
 
@@ -47,7 +49,7 @@ servers only in specific fields — `command`, `args` and `env` for stdio server
 Installation copies the plugin into a cache, so nothing may reference a path outside its
 own directory. `../shared` does not survive the copy.
 
-## `headersHelper` — the finding that changes a task
+## `headersHelper` — a finding this project no longer needs
 
 An HTTP MCP server in a plugin can name a command that produces its headers:
 
@@ -68,14 +70,12 @@ ten-second timeout, and for a plugin-provided server runs with its working direc
 to the plugin root. It runs fresh on every connection, and since v2.1.193 Claude Code
 re-runs it and retries once when a tool call comes back `401` or `403`.
 
-**This removes the pasted configuration.** Task 9.13 exists because the MCP token is
-generated per workspace and has to reach the harness somehow, and pasting a JSON block
-containing a bearer token is the current answer. With a helper, the plugin ships a static
-file that contains no secret; the helper reads the token from the application's own
-`config.json` — the same file `adr:0007-plaintext-credentials-in-the-config` already
-puts it in — and hands it over at connection time. Rotating the token then needs no edit
-anywhere, and a token that changed while a harness was connected recovers on the retry
-instead of failing until someone notices.
+**This solved a problem the product then stopped having.** It was distilled to remove the
+pasted bearer token of what was task 9.13, back when the server ran over HTTP on the
+loopback. `adr:0013-the-project-directory-is-the-unit` replaced that with stdio, spawned by
+the harness — and a stdio server has no headers, no port and no token to deliver. The
+mechanism is recorded here because it is a real Claude Code capability and the next person
+to reach for an HTTP MCP server will want it; it is not something this plan uses.
 
 One constraint to design around: a plugin's `headersHelper` cannot read the plugin's own
 `${user_config.*}` values, because the command goes through a shell. The helper has to
@@ -118,28 +118,58 @@ it is checked into the repository and reaches everyone who clones it — and the
 servers it declares go through per-server approval, LSP servers wait for workspace trust,
 and background monitors do not load at all.
 
-For this product the marketplace route is the one that matters, because the audience
-installs a desktop application and is not cloning anything.
+Both routes now matter, which was not true when this page was written. The audience installs
+a desktop application, so the marketplace reaches them — but after
+`adr:0013-the-project-directory-is-the-unit` they also work in repositories where
+`.claude/` and `.mcp.json` are committed and reach everyone who clones, and
+`npx open-wiki init` targets someone with nothing installed at all.
 
-## What this does not solve
+## What a plugin carries, and the two things it does not
 
-A plugin distributes the skill and the server *configuration*. It does not distribute the
-server: the MCP endpoint is the desktop application, which the user still installs from
-`adr:0009-distribution-through-github-releases`. So the plugin is worth exactly one thing
-— removing the paste step and the copy of the token that comes with it.
+| Component | In a plugin? |
+|---|---|
+| Skills, agents, hooks, LSP servers, MCP servers | yes |
+| Executables in `bin/`, added to the Bash `PATH` | yes |
+| Background monitors | yes |
+| Default settings | only the `agent` and `subagentStatusLine` keys |
+| **Permission rules — `allow`, `ask`, `deny`** | **no** |
+| **`additionalDirectories`** | **no** |
 
-It also raises a question this project has not answered. `adr:0003-mcp-as-the-only-bridge-to-the-llm`
-puts the page convention in a `CLAUDE.md` generated inside each project folder, and a
-plugin skill is a second place the same convention could live — versioned with the
-product and updated by an upgrade, rather than regenerated per folder. Two homes for one
-convention is the drift that ADR warned about, so one of them has to become a pointer to
-the other.
+The two absences are the ones that reach this plan.
+
+**A plugin cannot ship the deny rule**, so nothing the product distributes can be what
+stops an agent writing `wiki/` outside the validations. If the write gate of task 9.5 turns
+out to be `Edit(wiki/**)` in `deny`, that rule has to be written into the user's own
+settings — by `ow init`, or by the user — and the plugin can only carry the hooks beside
+it. Hooks it can carry, which is why the hook-based gate is the one a plugin could deliver
+whole.
+
+**`bin/` on the `PATH` is worth more than it looks.** A plugin can put a CLI in front of
+the agent without the desktop application being installed, which is the same reach
+`npx open-wiki` has and the reason
+`adr:0014-typescript-everywhere-except-audio-capture` cares that the CLI runs standalone.
+
+What a plugin still does not distribute is the wiki itself: an MCP server consulting
+`fenix` needs `fenix` checked out somewhere on that machine, and the registry is what turns
+a committed project *name* into that local path.
+
+The question this page used to leave open — whether the convention lives in a generated
+`CLAUDE.md` or in a skill — was closed by `adr:0015-the-convention-ships-as-skills`. It is
+a skill, scaffolded by `ow init`, and the `CLAUDE.md` points at it.
 
 ## Sources
 
 - <https://code.claude.com/docs/en/plugins-reference>
 - <https://code.claude.com/docs/en/plugin-marketplaces>
 - <https://code.claude.com/docs/en/mcp>
+- <https://code.claude.com/docs/en/hooks>
 - <https://github.com/ivan-magda/claude-code-plugin-template>
 
-Read 2026-07-31, against Claude Code v2.1.x.
+Read 2026-07-31, against Claude Code v2.1.x. Revisited 2026-08-01 for what a plugin cannot
+carry, and for the hook mechanics the write gate rests on: a `PreToolUse` hook receives the
+tool's complete `tool_input` — including `content` for `Write` and the strings for `Edit` —
+and can answer `permissionDecision: deny` with a reason the agent reads, or `updatedInput`
+to replace the arguments before the tool runs. So a write can be refused before it lands,
+and it can also be *completed* before it lands. Both facts were recorded wrongly on a first
+pass — first as "the hook cannot see the content", then as "the hook cannot change it" — and
+several documents were written against each before either was checked.

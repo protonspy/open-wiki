@@ -5,5 +5,6 @@ from here; a page that is not is a page nobody will find again.
 
 ## Distribution and integration
 
-- [[claude-code-plugins]] — how a Claude Code plugin is built, installed and distributed,
-  and the one thing shipping one would buy this product.
+- [[claude-code-plugins]] — how a Claude Code plugin is built, installed and distributed;
+  the two things it cannot carry, which is why the product cannot ship its own write gate
+  whole; and the hook mechanics that gate rests on.
