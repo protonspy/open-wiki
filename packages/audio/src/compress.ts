@@ -33,6 +33,12 @@ export interface CompressionInput {
   /** The recorder's own map, which is where the pauses live. */
   recorderSegments: readonly RecorderSegment[];
   minSilenceNs?: number;
+  /**
+   * One output sample in nanoseconds. Boundaries are snapped onto it so the
+   * map and the encoder are built from the same integers; zero disables the
+   * snap, which is what a test that is not about the grid wants.
+   */
+  sampleGridNs?: number;
 }
 
 export interface CompressionPlan {
@@ -98,6 +104,28 @@ export function keepsFrom(cuts: readonly Interval[], durationNs: number): Interv
 }
 
 /**
+ * Move every boundary onto an output-sample boundary.
+ *
+ * The encoder cuts on whole samples of the 16 kHz output stream, so a cut list
+ * carrying boundaries between samples describes something ffmpeg cannot do —
+ * and the map built from it would be off by a fraction of a sample at every
+ * join, in a direction nothing controls. Snapping here, before the map is
+ * built, means the map and the file are computed from the same integers.
+ *
+ * Boundaries move outward — start down, end up — so snapping only ever keeps
+ * audio. Keeps are separated by at least `MIN_SILENCE_MS`, four orders of
+ * magnitude more than one sample, so outward movement cannot make two of them
+ * touch.
+ */
+export function snapToSampleGrid(keeps: readonly Interval[], gridNs: number): Interval[] {
+  if (gridNs <= 0) return [...keeps];
+  return keeps.map((keep) => ({
+    startNs: Math.floor(keep.startNs / gridNs) * gridNs,
+    endNs: Math.ceil(keep.endNs / gridNs) * gridNs,
+  }));
+}
+
+/**
  * The cut list and the segments that describe where everything ended up.
  *
  * The composition is the delicate part. A kept stretch is split wherever the
@@ -110,7 +138,16 @@ export function keepsFrom(cuts: readonly Interval[], durationNs: number): Interv
 export function planCompression(input: CompressionInput): CompressionPlan {
   const minNs = input.minSilenceNs ?? msToNs(MIN_SILENCE_MS);
   const cuts = sharedSilence(input.perTrackSilence, minNs);
-  const keeps = keepsFrom(cuts, input.recordedDurationNs);
+  const gridNs = input.sampleGridNs ?? 0;
+  // Snapped against a duration that is itself on the grid: an end rounded up
+  // past the last whole sample would ask the encoder for audio the file does
+  // not contain.
+  const durationNs =
+    gridNs > 0 ? Math.floor(input.recordedDurationNs / gridNs) * gridNs : input.recordedDurationNs;
+  const keeps = snapToSampleGrid(keepsFrom(cuts, durationNs), gridNs).map((keep) => ({
+    startNs: Math.max(0, keep.startNs),
+    endNs: Math.min(durationNs, keep.endNs),
+  }));
 
   const segments: TimeMapSegment[] = [];
   let compressedStartNs = 0;

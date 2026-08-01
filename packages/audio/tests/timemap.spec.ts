@@ -3,6 +3,7 @@ import {
   compressedDurationNs,
   containsInstant,
   formatInstant,
+  isTimeMap,
   parseInstant,
   toCompressedNs,
   toRecordedNs,
@@ -69,6 +70,50 @@ describe("toWallMs", () => {
 
   it("refuses an instant on an empty map", () => {
     expect(toWallMs({ ...map, segments: [], compressedDurationNs: 0 }, 0)).toBeNull();
+  });
+
+  it("gives the final instant to the last segment that recorded something", () => {
+    // `crates/recorder/src/timemap.rs` uses the last *recording* segment for
+    // this rule. Taking the last index instead would give the recording's
+    // final instant to nobody whenever the map ends on an empty segment — the
+    // two halves of one map disagreeing about their own boundary.
+    const trailing: TimeMap = {
+      ...map,
+      segments: [
+        ...map.segments,
+        { compressedStartNs: s(25), durationNs: 0, recordedStartNs: s(30), wallStartMs: 1_090_000 },
+      ],
+    };
+    expect(toWallMs(trailing, s(25))).toBe(1_090_000);
+  });
+});
+
+describe("isTimeMap", () => {
+  it("accepts a map this version can answer from", () => {
+    expect(isTimeMap(map)).toBe(true);
+  });
+
+  it("refuses an object that merely parsed", () => {
+    // `{}` casts to TimeMap as happily as a real map does, and then throws
+    // inside the reader — which would take `ow check` down for a whole project
+    // over one corrupt file in one recording directory.
+    expect(isTimeMap({})).toBe(false);
+    expect(isTimeMap(null)).toBe(false);
+    expect(isTimeMap("a map")).toBe(false);
+    expect(isTimeMap([])).toBe(false);
+  });
+
+  it("refuses a version it was not written to read", () => {
+    expect(isTimeMap({ ...map, version: 2 })).toBe(false);
+  });
+
+  it("refuses segments that are not made of numbers", () => {
+    expect(isTimeMap({ ...map, segments: [{ compressedStartNs: "0" }] })).toBe(false);
+    expect(isTimeMap({ ...map, segments: [null] })).toBe(false);
+  });
+
+  it("refuses a length that is not finite", () => {
+    expect(isTimeMap({ ...map, compressedDurationNs: Number.NaN })).toBe(false);
   });
 });
 

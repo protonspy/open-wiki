@@ -3,15 +3,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FfmpegResult, FfmpegRunner } from "../src/ffmpeg.js";
-import { MIC_OPUS, preprocessRecording, SYSTEM_OPUS } from "../src/preprocess.js";
 import {
+  MIC_OPUS,
+  preprocessRecording,
+  SYSTEM_OPUS,
+  TimeMapDisagreesError,
+} from "../src/preprocess.js";
+import {
+  InvalidManifestError,
   NotARecordingError,
   readRecorderManifest,
   recordedDurationNs,
   recorderSegments,
   type RecorderManifest,
 } from "../src/recording.js";
-import { toWallMs, type TimeMap } from "../src/timemap.js";
+import { formatInstant, toWallMs, type TimeMap } from "../src/timemap.js";
 
 const SECOND = 1_000_000_000;
 const s = (n: number): number => n * SECOND;
@@ -66,6 +72,42 @@ describe("readRecorderManifest", () => {
     writeFileSync(join(dir, "manifest.json"), JSON.stringify({ kind: "file" }), "utf8");
     expect(() => readRecorderManifest(dir)).toThrow(NotARecordingError);
   });
+
+  it("refuses a track whose file climbs out of the recording's directory", () => {
+    // `raw/` is content: it arrives with a clone, a shared drive, a restored
+    // backup. This field becomes an ffmpeg input path, and the encode of it
+    // lands back inside `raw/` as a citable source.
+    const m = manifest();
+    m.tracks.mic.file = "../../../secrets.wav";
+    write(m);
+    expect(() => readRecorderManifest(dir)).toThrow(InvalidManifestError);
+  });
+
+  it("refuses a track whose file is an absolute path", () => {
+    const m = manifest();
+    m.tracks.system.file = "C:\\Windows\\System32\\config\\SAM";
+    write(m);
+    expect(() => readRecorderManifest(dir)).toThrow(InvalidManifestError);
+  });
+
+  it("refuses a track with no frame count to speak of", () => {
+    const m = manifest();
+    (m.tracks.mic as { frames: unknown }).frames = "lots";
+    write(m);
+    expect(() => readRecorderManifest(dir)).toThrow(InvalidManifestError);
+  });
+
+  it("refuses a manifest that names no tracks", () => {
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({ kind: "recording" }), "utf8");
+    expect(() => readRecorderManifest(dir)).toThrow(InvalidManifestError);
+  });
+
+  it("tolerates a missing time map rather than refusing the recording", () => {
+    const m = manifest();
+    delete (m as Partial<RecorderManifest>).time_map;
+    write(m);
+    expect(readRecorderManifest(dir).time_map.segments).toEqual([]);
+  });
 });
 
 describe("recordedDurationNs", () => {
@@ -84,6 +126,15 @@ describe("recordedDurationNs", () => {
     m.tracks.mic.sample_rate = 0;
     m.tracks.system.sample_rate = 0;
     expect(recordedDurationNs(m)).toBe(0);
+  });
+
+  it("refuses a frame count that implies more audio than a day", () => {
+    // The number sizes an allocation downstream: `planChunks` emits one object
+    // per chunk, so a manifest claiming 1e24 frames asks for ~1e16 of them and
+    // takes the process out on memory before the loop ends.
+    const m = manifest();
+    m.tracks.mic.frames = 1e24;
+    expect(() => recordedDurationNs(m)).toThrow(InvalidManifestError);
   });
 });
 
@@ -123,26 +174,53 @@ describe("recorderSegments", () => {
 });
 
 describe("preprocessRecording", () => {
-  /** ffmpeg that reports silence on the probe and succeeds on the encode. */
-  function fakeFfmpeg(silenceLog: string): { run: FfmpegRunner; calls: string[][] } {
-    const calls: string[][] = [];
-    const run: FfmpegRunner = async (args): Promise<FfmpegResult> => {
-      calls.push([...args]);
-      const probing = args.includes("-f") && args.includes("null");
-      return { code: 0, stdout: "", stderr: probing ? silenceLog : "" };
-    };
-    return { run, calls };
-  }
-
   const silent5to10 = [
     "[silencedetect @ 1] silence_start: 5",
     "[silencedetect @ 1] silence_end: 10 | silence_duration: 5",
   ].join("\n");
 
+  /**
+   * ffmpeg standing in for the real one. It answers three shapes of call: the
+   * silence probe (`-f null -`), the encode (`-c:a`), and the duration probe
+   * (`-i` alone). The filter graph each encode was handed is captured by
+   * reading the script *while the process is notionally running*, which is the
+   * only moment it exists.
+   */
+  function fakeFfmpeg(options: { silence?: string[]; durationNs?: number } = {}) {
+    const graphs = new Map<string, string>();
+    let probe = 0;
+    const durationNs = options.durationNs ?? s(15);
+    const run: FfmpegRunner = async (args): Promise<FfmpegResult> => {
+      if (args.includes("null")) {
+        const log = options.silence?.[probe] ?? options.silence?.[0] ?? "";
+        probe += 1;
+        return { code: 0, stdout: "", stderr: log };
+      }
+      const script = args.indexOf("-filter_complex_script");
+      if (args.includes("-c:a")) {
+        const output = args[args.length - 1]!;
+        graphs.set(output, script >= 0 ? readFileSync(args[script + 1]!, "utf8") : "");
+        return { code: 0, stdout: "", stderr: "" };
+      }
+      return { code: 1, stdout: "", stderr: `  Duration: ${probeText(durationNs)}` };
+    };
+    return { run, graphs };
+  }
+
+  /** `HH:MM:SS.mm`, the form ffmpeg prints. */
+  function probeText(ns: number): string {
+    const totalMs = Math.round(ns / 1_000_000);
+    const h = Math.floor(totalMs / 3_600_000);
+    const m = Math.floor(totalMs / 60_000) % 60;
+    const sec = Math.floor(totalMs / 1000) % 60;
+    const cs = Math.floor((totalMs % 1000) / 10);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${pad(h)}:${pad(m)}:${pad(sec)}.${pad(cs)}`;
+  }
+
   it("writes a time map whose instants account for the silence it removed", async () => {
     write(manifest());
-    const { run } = fakeFfmpeg(silent5to10);
-    const map = await preprocessRecording(run, dir);
+    const map = await preprocessRecording(fakeFfmpeg({ silence: [silent5to10] }).run, dir);
 
     expect(map.compressedDurationNs).toBe(s(15));
     // Compressed 6 s is recorded 11 s, 11 s after the recording began.
@@ -151,53 +229,72 @@ describe("preprocessRecording", () => {
 
   it("writes timemap.json beside the recording", async () => {
     write(manifest());
-    await preprocessRecording(fakeFfmpeg(silent5to10).run, dir);
+    await preprocessRecording(fakeFfmpeg({ silence: [silent5to10] }).run, dir);
     const onDisk = JSON.parse(readFileSync(join(dir, "timemap.json"), "utf8")) as TimeMap;
     expect(onDisk.version).toBe(1);
     expect(onDisk.segments).toHaveLength(2);
     expect(onDisk.chunks.length).toBeGreaterThan(0);
   });
 
-  it("encodes both tracks with the same cut list", async () => {
+  it("leaves no temporary file where a half-written map could be read as one", async () => {
     write(manifest());
-    const { run, calls } = fakeFfmpeg(silent5to10);
+    await preprocessRecording(fakeFfmpeg({ silence: [silent5to10] }).run, dir);
+    expect(existsSync(join(dir, "timemap.json.tmp"))).toBe(false);
+  });
+
+  it("gives both tracks the identical cut list", async () => {
+    // `adr:0017-one-compressed-clock-for-both-tracks`. Cutting each track on
+    // its own silence gives the two files different lengths and makes
+    // `rec://<id>#14:32` ambiguous — so the two graphs have to be equal, not
+    // merely both present.
+    write(manifest());
+    const { run, graphs } = fakeFfmpeg({ silence: [silent5to10] });
     await preprocessRecording(run, dir);
 
-    const filters = calls
-      .filter((c) => c.includes("-filter_script:a"))
-      .map((c) => c[c.indexOf("-filter_script:a") + 1]!);
-    expect(filters).toHaveLength(2);
-    // The scripts are removed after each encode, so what is compared is the
-    // filter each track was handed — read inside the runner would be cleaner
-    // but the point is that there were two encodes, one per track.
-    expect(calls.filter((c) => c[c.length - 1]!.endsWith(MIC_OPUS))).toHaveLength(1);
-    expect(calls.filter((c) => c[c.length - 1]!.endsWith(SYSTEM_OPUS))).toHaveLength(1);
+    const mic = graphs.get(join(dir, MIC_OPUS));
+    const system = graphs.get(join(dir, SYSTEM_OPUS));
+    expect(mic).toBeTruthy();
+    expect(mic).toBe(system);
+    expect(mic).toContain("end_sample=80000");
   });
 
   it("leaves the WAV files alone — discarding them is 4.14, after transcription", async () => {
     write(manifest());
-    await preprocessRecording(fakeFfmpeg(silent5to10).run, dir);
+    await preprocessRecording(fakeFfmpeg({ silence: [silent5to10] }).run, dir);
     expect(existsSync(join(dir, "mic.wav"))).toBe(true);
     expect(existsSync(join(dir, "system.wav"))).toBe(true);
   });
 
   it("cuts nothing when only one track was silent", async () => {
     write(manifest());
-    // Both probes get the same log here, so instead assert the shared-silence
-    // rule through a run where the tracks disagree.
-    const calls: string[][] = [];
-    let probe = 0;
-    const run: FfmpegRunner = async (args) => {
-      calls.push([...args]);
-      if (args.includes("null")) {
-        probe += 1;
-        return { code: 0, stdout: "", stderr: probe === 1 ? silent5to10 : "" };
-      }
-      return { code: 0, stdout: "", stderr: "" };
-    };
-    const map = await preprocessRecording(run, dir);
+    const map = await preprocessRecording(
+      fakeFfmpeg({ silence: [silent5to10, ""], durationNs: s(20) }).run,
+      dir,
+    );
     expect(map.compressedDurationNs).toBe(s(20));
     expect(map.segments).toHaveLength(1);
+  });
+
+  it("refuses to write a map that disagrees with the file it describes", async () => {
+    // The one step nothing here can test is the step where ffmpeg is actually
+    // run. A map that is wrong is worse than no map: the citation resolves,
+    // opens the audio, and plays the wrong moment.
+    write(manifest());
+    const { run } = fakeFfmpeg({ silence: [silent5to10], durationNs: s(19) });
+    await expect(preprocessRecording(run, dir)).rejects.toThrow(TimeMapDisagreesError);
+    expect(existsSync(join(dir, "timemap.json"))).toBe(false);
+  });
+
+  it("says both lengths when it refuses", async () => {
+    write(manifest());
+    const { run } = fakeFfmpeg({ silence: [silent5to10], durationNs: s(19) });
+    await expect(preprocessRecording(run, dir)).rejects.toThrow(formatInstant(s(15)));
+  });
+
+  it("accepts the few milliseconds an Opus container legally adds", async () => {
+    write(manifest());
+    const { run } = fakeFfmpeg({ silence: [silent5to10], durationNs: s(15) + 20_000_000 });
+    await expect(preprocessRecording(run, dir)).resolves.toBeTruthy();
   });
 
   it("fails loudly when ffmpeg cannot read the recording", async () => {

@@ -41,10 +41,15 @@ export function planChunks(
   segments: readonly TimeMapSegment[],
   options: ChunkOptions = {},
 ): Chunk[] {
-  const targetNs = options.targetNs ?? DEFAULT_TARGET_NS;
-  const maxNs = options.maxNs ?? DEFAULT_MAX_NS;
   const first = segments[0];
   if (!first) return [];
+  // A non-positive maximum makes the split loop below advance by nothing and
+  // never terminate — an option that hangs rather than failing, which is the
+  // worst way for a bad value to arrive. Fall back rather than throw: the
+  // caller wanted chunks, and refusing to produce any would strand a recording
+  // over a tuning parameter.
+  const maxNs = positive(options.maxNs, DEFAULT_MAX_NS);
+  const targetNs = Math.min(positive(options.targetNs, DEFAULT_TARGET_NS), maxNs);
 
   const chunks: Chunk[] = [];
   let startNs = first.compressedStartNs;
@@ -72,4 +77,8 @@ export function planChunks(
   }
   if (boundaryNs > startNs) close(boundaryNs);
   return chunks;
+}
+
+function positive(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback;
 }

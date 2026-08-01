@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   containsInstant,
   formatInstant,
+  isTimeMap,
   parseInstant,
   TIMEMAP_FILE,
   type TimeMap,
@@ -108,18 +109,25 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
  * as one and must not be answered against a file outside the sources
  * directory.
  *
- * Both failures — an id that escaped, and a map that will not parse — read as
- * no map. Neither can make a citation resolve falsely, and refusing an
- * otherwise valid page because a JSON file got truncated would be the check
- * doing more harm than the thing it looks for. An escaped id has already been
- * reported by `sourceExists` above.
+ * Every failure reads as no map: an id that escaped, a file that will not
+ * parse, and — the one a cast would have missed — a file that parses into
+ * something that is not a time map. `{}` casts to `TimeMap` as happily as a
+ * real map does and then throws inside the reader, which would take down `ow
+ * check` for the whole project over one corrupt file in one recording
+ * directory. `isTimeMap` is the check the cast is not.
+ *
+ * None of those can make a citation resolve falsely, and refusing an otherwise
+ * valid page because a JSON file got truncated would be this check doing more
+ * harm than the thing it looks for. An escaped id has already been reported by
+ * `sourceExists` above.
  */
 function readTimeMap(projectRoot: string, id: string): TimeMap | null {
   try {
     const rawDir = join(projectRoot, "raw");
     const file = assertWithin(rawDir, join(rawDir, id, TIMEMAP_FILE));
     if (!existsSync(file)) return null;
-    return JSON.parse(readFileSync(file, "utf8")) as TimeMap;
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+    return isTimeMap(parsed) ? parsed : null;
   } catch {
     return null;
   }

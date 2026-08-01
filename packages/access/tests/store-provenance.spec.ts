@@ -137,5 +137,20 @@ describe("resolveProvenance (5.4)", () => {
       );
       expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"])).toEqual([]);
     });
+
+    it("falls back on a map that parses into something that is not one", () => {
+      // The failure a cast misses. `{}` casts to TimeMap as happily as a real
+      // map does and then throws inside the reader — and this runs per page in
+      // `ow check` and on every write in the gate, so one corrupt file in one
+      // recording directory would take down the whole project's check.
+      for (const content of ["{}", "[]", '"a map"', "null", '{"version":2,"segments":[]}']) {
+        writeFileSync(
+          join(root, "raw", "fenix-weekly-2026-07-31", "timemap.json"),
+          content,
+          "utf8",
+        );
+        expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"])).toEqual([]);
+      }
+    });
   });
 });

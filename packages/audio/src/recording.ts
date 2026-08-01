@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { RecorderSegment } from "./compress.js";
 
 /**
@@ -44,12 +44,70 @@ export class NotARecordingError extends Error {
   }
 }
 
+export class InvalidManifestError extends Error {
+  constructor(reason: string) {
+    super(`the recorder manifest is not usable: ${reason}`);
+    this.name = "InvalidManifestError";
+  }
+}
+
+/**
+ * Nothing this product records runs longer than a day, and a frame count that
+ * implies more than that is a corrupt or hostile file rather than a very long
+ * meeting. The cap matters because the number reaches `planChunks`, which
+ * emits one object per chunk: a manifest claiming 1e24 frames asks for ~1e16
+ * chunks and takes the process out on memory before the loop ends.
+ */
+const MAX_RECORDING_NS = 24 * 60 * 60 * 1_000_000_000;
+
+/**
+ * Read the manifest the recorder wrote, and check it says something a machine
+ * can act on.
+ *
+ * **A cast is not a check.** This file sits in the user's project directory,
+ * under `raw/`, which is content — it arrives with a clone, a shared drive, a
+ * restored backup. The two fields that matter are the ones that leave this
+ * module: `tracks.*.file` becomes an ffmpeg input path, and the frame counts
+ * become a duration that sizes an allocation.
+ */
 export function readRecorderManifest(dir: string): RecorderManifest {
   const file = join(dir, RECORDER_MANIFEST);
   if (!existsSync(file)) throw new NotARecordingError(dir);
   const parsed = JSON.parse(readFileSync(file, "utf8")) as RecorderManifest;
   if (parsed.kind !== "recording") throw new NotARecordingError(dir);
+  if (typeof parsed.tracks !== "object" || parsed.tracks === null) {
+    throw new InvalidManifestError("it names no tracks");
+  }
+  checkTrack("mic", parsed.tracks.mic);
+  checkTrack("system", parsed.tracks.system);
+  if (typeof parsed.time_map !== "object" || parsed.time_map === null) {
+    parsed.time_map = { segments: [] };
+  }
+  if (!Array.isArray(parsed.time_map.segments)) parsed.time_map.segments = [];
   return parsed;
+}
+
+function checkTrack(name: string, track: RecorderTrackInfo | undefined): void {
+  if (typeof track !== "object" || track === null) {
+    throw new InvalidManifestError(`the ${name} track is missing`);
+  }
+  // A bare filename, not a path. The recorder only ever writes `mic.wav` and
+  // `system.wav` beside the manifest, and anything else here would become an
+  // ffmpeg input outside the recording's own directory — read as audio and
+  // written back into `raw/` as a citable source.
+  if (typeof track.file !== "string" || track.file !== basename(track.file) || !track.file) {
+    throw new InvalidManifestError(
+      `the ${name} track names "${String(track.file)}", which is not a file beside the manifest`,
+    );
+  }
+  for (const [field, value] of [
+    ["sample_rate", track.sample_rate],
+    ["frames", track.frames],
+  ] as const) {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new InvalidManifestError(`the ${name} track's ${field} is not a count`);
+    }
+  }
 }
 
 const NS_PER_MS = 1_000_000;
@@ -65,7 +123,16 @@ const NS_PER_SECOND = 1_000_000_000;
  * safe reading of "by construction" if a build ever fails to honour it.
  */
 export function recordedDurationNs(manifest: RecorderManifest): number {
-  return Math.max(trackDurationNs(manifest.tracks.mic), trackDurationNs(manifest.tracks.system));
+  const ns = Math.max(
+    trackDurationNs(manifest.tracks.mic),
+    trackDurationNs(manifest.tracks.system),
+  );
+  if (ns > MAX_RECORDING_NS) {
+    throw new InvalidManifestError(
+      `it claims ${Math.round(ns / NS_PER_SECOND / 3600)} hours of audio, which is not a meeting`,
+    );
+  }
+  return ns;
 }
 
 function trackDurationNs(track: RecorderTrackInfo): number {

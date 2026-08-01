@@ -84,23 +84,58 @@ function defaultRepoRoot(): string {
 }
 
 /**
+ * How much of a stream is kept. ffmpeg emits a warning per damaged frame, so a
+ * long corrupt input drives stderr into the hundreds of megabytes — and the
+ * only consumers are `silencedetect` lines and `tail()`, neither of which
+ * wants more than this. Keeping the *end* is what matters: the reason a run
+ * failed is the last thing printed.
+ */
+export const MAX_CAPTURED_BYTES = 4 * 1024 * 1024;
+
+/** Encoding an hour of audio takes minutes; a run past this is not working. */
+export const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
  * Run ffmpeg once and collect its output.
  *
  * It never rejects on a non-zero exit — the caller decides, because
  * `silencedetect` runs against `-f null -` and a probe that found nothing is
- * not a failure. It rejects only when the process could not be started at all.
+ * not a failure, and `probeDurationNs` deliberately runs an invocation that
+ * exits one. It rejects only when the process could not be started at all.
+ *
+ * The timeout is what stops an input ffmpeg cannot make progress on from
+ * hanging the pipeline. A killed child still closes, so the caller sees a
+ * non-zero exit rather than a promise that never settles.
  */
-export function spawnFfmpeg(exe: string): FfmpegRunner {
+export function spawnFfmpeg(exe: string, timeoutMs = DEFAULT_TIMEOUT_MS): FfmpegRunner {
   return (args) =>
     new Promise<FfmpegResult>((resolvePromise, rejectPromise) => {
-      const child = spawn(exe, [...args], { windowsHide: true });
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (d: Buffer) => (stdout += d.toString("utf8")));
-      child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
+      const child = spawn(exe, [...args], {
+        windowsHide: true,
+        timeout: timeoutMs,
+        killSignal: "SIGKILL",
+      });
+      const stdout = keepTail();
+      const stderr = keepTail();
+      child.stdout.on("data", (d: Buffer) => stdout.push(d.toString("utf8")));
+      child.stderr.on("data", (d: Buffer) => stderr.push(d.toString("utf8")));
       child.on("error", rejectPromise);
-      child.on("close", (code) => resolvePromise({ code: code ?? -1, stderr, stdout }));
+      child.on("close", (code) =>
+        resolvePromise({ code: code ?? -1, stderr: stderr.text(), stdout: stdout.text() }),
+      );
     });
+}
+
+/** A bounded accumulator that keeps the last `MAX_CAPTURED_BYTES` of a stream. */
+function keepTail(): { push: (chunk: string) => void; text: () => string } {
+  let held = "";
+  return {
+    push(chunk) {
+      held += chunk;
+      if (held.length > MAX_CAPTURED_BYTES) held = held.slice(held.length - MAX_CAPTURED_BYTES);
+    },
+    text: () => held,
+  };
 }
 
 /** Run ffmpeg and throw unless it exited zero. */

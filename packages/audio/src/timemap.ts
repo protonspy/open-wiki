@@ -72,13 +72,20 @@ export function compressedDurationNs(segments: readonly TimeMapSegment[]): numbe
  * the last one. Owning the boundary at both ends would put every citation that
  * lands exactly on a cut at the wrong side of it, by the whole length of the
  * cut — which is the failure this module exists to prevent.
+ *
+ * "The last one" means the last segment that recorded anything, matching
+ * `crates/recorder/src/timemap.rs`. Taking the last *index* instead would give
+ * the recording's final instant to nobody whenever the map ends on an empty
+ * segment — the two halves of one map disagreeing about their own boundary
+ * rule.
  */
 function locate(
   segments: readonly TimeMapSegment[],
   ns: number,
   startOf: (s: TimeMapSegment) => number,
 ): { segment: TimeMapSegment; offsetNs: number } | null {
-  const last = segments.length - 1;
+  const last = lastRecordingIndex(segments);
+  if (last < 0) return null;
   for (let i = 0; i <= last; i++) {
     const segment = segments[i]!;
     if (segment.durationNs === 0) continue;
@@ -88,6 +95,40 @@ function locate(
     if (owns) return { segment, offsetNs };
   }
   return null;
+}
+
+/** The index of the last segment that recorded anything, or -1. */
+function lastRecordingIndex(segments: readonly TimeMapSegment[]): number {
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i]!.durationNs > 0) return i;
+  }
+  return -1;
+}
+
+/**
+ * Whether a parsed JSON value is a time map this version can answer from.
+ *
+ * A cast is not a check. `timemap.json` is a file on disk in a directory the
+ * user owns, so it can be truncated, hand-edited, or written by a later
+ * version of this product — and `{}` casts to `TimeMap` just as happily as a
+ * real map does, then throws inside `locate` and takes the whole of `ow check`
+ * down with it. Every consumer goes through here.
+ */
+export function isTimeMap(value: unknown): value is TimeMap {
+  if (typeof value !== "object" || value === null) return false;
+  const map = value as Partial<TimeMap>;
+  if (map.version !== 1) return false;
+  if (!Number.isFinite(map.compressedDurationNs)) return false;
+  if (!Array.isArray(map.segments)) return false;
+  return map.segments.every(
+    (s) =>
+      typeof s === "object" &&
+      s !== null &&
+      Number.isFinite(s.compressedStartNs) &&
+      Number.isFinite(s.durationNs) &&
+      Number.isFinite(s.recordedStartNs) &&
+      Number.isFinite(s.wallStartMs),
+  );
 }
 
 /** The wall-clock instant a compressed instant happened at, in milliseconds. */

@@ -92,6 +92,33 @@ describe("planChunks", () => {
     expect(planChunks([], { targetNs: s(600), maxNs: s(900) })).toEqual([]);
   });
 
+  it("falls back rather than looping forever on a maximum of zero", () => {
+    // The split loop advances by `maxNs`. At zero it advances by nothing and
+    // the array grows until the process dies — an option that hangs instead of
+    // failing, which is the worst way for a bad value to arrive.
+    const chunks = planChunks(segments([s(2000)]), { targetNs: s(600), maxNs: 0 });
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks[chunks.length - 1]!.compressedEndNs).toBe(s(2000));
+  });
+
+  it("falls back on a negative or non-finite maximum", () => {
+    for (const maxNs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const chunks = planChunks(segments([s(2000)]), { maxNs });
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks[chunks.length - 1]!.compressedEndNs).toBe(s(2000));
+    }
+  });
+
+  it("never lets the target exceed the maximum", () => {
+    const chunks = planChunks(segments([s(100), s(100), s(100)]), {
+      targetNs: s(10_000),
+      maxNs: s(150),
+    });
+    for (const chunk of chunks) {
+      expect(chunk.compressedEndNs - chunk.compressedStartNs).toBeLessThanOrEqual(s(150));
+    }
+  });
+
   it("emits no empty chunk", () => {
     for (const chunk of planChunks(segments([s(600), s(600)]), {
       targetNs: s(600),

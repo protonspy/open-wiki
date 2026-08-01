@@ -3,6 +3,7 @@ import {
   keepsFrom,
   planCompression,
   sharedSilence,
+  snapToSampleGrid,
   type RecorderSegment,
 } from "../src/compress.js";
 
@@ -88,7 +89,47 @@ describe("keepsFrom", () => {
   });
 });
 
+describe("snapToSampleGrid", () => {
+  const GRID = 62_500; // one sample at 16 kHz
+
+  it("moves boundaries outward, so snapping only ever keeps audio", () => {
+    expect(snapToSampleGrid([{ startNs: 100_000, endNs: 200_000 }], GRID)).toEqual([
+      { startNs: 62_500, endNs: 250_000 },
+    ]);
+  });
+
+  it("leaves a boundary already on the grid where it is", () => {
+    expect(snapToSampleGrid([{ startNs: 0, endNs: 125_000 }], GRID)).toEqual([
+      { startNs: 0, endNs: 125_000 },
+    ]);
+  });
+
+  it("does nothing when there is no grid to snap to", () => {
+    const keeps = [{ startNs: 100_000, endNs: 200_000 }];
+    expect(snapToSampleGrid(keeps, 0)).toEqual(keeps);
+  });
+});
+
 describe("planCompression", () => {
+  it("puts every boundary on a whole output sample when given a grid", () => {
+    // The encoder cuts on whole samples. A map built from boundaries between
+    // samples describes something ffmpeg cannot do, and the two disagree by a
+    // fraction of a sample at every join, in a direction nothing controls.
+    const plan = planCompression({
+      perTrackSilence: [
+        [{ startNs: 5_000_010_000, endNs: 10_000_010_000 }],
+        [{ startNs: 5_000_010_000, endNs: 10_000_010_000 }],
+      ],
+      recordedDurationNs: s(20),
+      recorderSegments: unpaused(s(20)),
+      sampleGridNs: 62_500,
+    });
+    for (const segment of plan.segments) {
+      expect(segment.compressedStartNs % 62_500).toBe(0);
+      expect(segment.durationNs % 62_500).toBe(0);
+    }
+  });
+
   it("maps a compressed instant past a cut back to the right wall instant", () => {
     // 20 s captured from wall 1_000_000 ms, with 5 s..10 s cut. Compressed 6 s
     // is recorded 11 s, which happened 11 s after the start.
@@ -130,6 +171,51 @@ describe("planCompression", () => {
         wallStartMs: 1_070_000,
       },
     ]);
+  });
+
+  it("composes both removals when a shared silence spans a pause", () => {
+    // The case task 4.7 is `(TDD)` for, and the one every other test here
+    // misses by exercising one removal at a time. Captured [0,10) at wall T
+    // and [10,20) at T+70s, with both tracks silent across [8s,12s) — so the
+    // cut straddles the pause. What survives is [0,8) and [12,20): the second
+    // piece starts at compressed 8 s, comes from recorded 12 s, and happened
+    // at T + 70 s + 2 s. Getting the composition wrong puts it at T + 12 s,
+    // which is plausible, off by a minute, and invisible to any test that
+    // removes only silence or only a pause.
+    const plan = planCompression({
+      perTrackSilence: [[{ startNs: s(8), endNs: s(12) }], [{ startNs: s(8), endNs: s(12) }]],
+      recordedDurationNs: s(20),
+      recorderSegments: [
+        { recordedStartNs: 0, durationNs: s(10), wallStartMs: 1_000_000 },
+        { recordedStartNs: s(10), durationNs: s(10), wallStartMs: 1_070_000 },
+      ],
+    });
+    expect(plan.segments).toEqual([
+      { compressedStartNs: 0, durationNs: s(8), recordedStartNs: 0, wallStartMs: 1_000_000 },
+      {
+        compressedStartNs: s(8),
+        durationNs: s(8),
+        recordedStartNs: s(12),
+        wallStartMs: 1_072_000,
+      },
+    ]);
+  });
+
+  it("keeps the compressed clock continuous across a cut that straddles a pause", () => {
+    const plan = planCompression({
+      perTrackSilence: [[{ startNs: s(8), endNs: s(12) }], [{ startNs: s(8), endNs: s(12) }]],
+      recordedDurationNs: s(20),
+      recorderSegments: [
+        { recordedStartNs: 0, durationNs: s(10), wallStartMs: 1_000_000 },
+        { recordedStartNs: s(10), durationNs: s(10), wallStartMs: 1_070_000 },
+      ],
+    });
+    let expected = 0;
+    for (const segment of plan.segments) {
+      expect(segment.compressedStartNs).toBe(expected);
+      expected += segment.durationNs;
+    }
+    expect(expected).toBe(s(16));
   });
 
   it("gives both tracks the same cut list", () => {
