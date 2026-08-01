@@ -1,6 +1,6 @@
 ---
 autonomy: auto
-ci: no-wait
+ci: wait
 ---
 
 # Open Wiki — desktop
@@ -116,11 +116,13 @@ fenix/                          a project — usually a repository the user alre
 
 - [x] 3.1 (TDD) Register a source in `raw/<id>/` with a `manifest.json` carrying its title, the original preserved, and the directory marked immutable once written — the id is derived from the source's name and frozen there, per `adr:0011-sources-are-named-by-what-they-are`
 - [x] 3.2 (Unit) Upload Markdown and plain text: copy into `raw/` and normalise to `text.md`
-- [ ] 3.3 (Unit) Upload a PDF: extract the text to `text.md`, keeping the page number as a provenance anchor
-- [ ] 3.4 (Unit) Upload a DOCX: extract the text and the heading hierarchy to `text.md`
+- [x] 3.3 (Unit) Upload a PDF: extract the text to `text.md`, keeping the page number as a provenance anchor
+- [x] 3.4 (Unit) Upload a DOCX: extract the text and the heading hierarchy to `text.md`
+  - Requirement gap a review surfaced, to settle in group 7 with the rest of provenance: a DOCX records no pagination, so this writes the heading hierarchy and **no** page anchor — inventing a `p<N>` would be a number that looks like provenance and points nowhere. But 5.4 already shipped, and its `FILE_FRAGMENT` accepts only `p<N>` for a `src://` citation. So a DOCX source is citable only as `src://<id>#p1`, which resolves to the source but to no place inside its `text.md`. Closing it means either a fragment form for a structural anchor (a heading slug, checked against the headings in `text.md`) or accepting that a DOCX is cited whole. The MVP does not depend on it: the path that matters end to end is markdown and PDF.
 - [ ] 3.5 (Unit) Drag files onto the window and see what was recognised and what was not
 - [x] 3.6 (TDD) Derive the id: lowercase, accents folded, anything outside `[a-z0-9]` collapsed to one `-`, and refuse a filename already taken in this project instead of inventing a suffix
-- [ ] 3.7 (Unit) Watch `raw/_inbox/` and ingest what lands there through the same path as 3.1 — the way an agent hands over material it fetched, now that no MCP tool ingests. The inbox is the one mutable thing under `raw/`: it is a doorway, emptied by ingestion, and it is not a source, so nothing enumerates it, cites it or reports it uncited
+- [x] 3.7 (Unit) Watch `raw/_inbox/` and ingest what lands there through the same path as 3.1 — the way an agent hands over material it fetched, now that no MCP tool ingests. The inbox is the one mutable thing under `raw/`: it is a doorway, emptied by ingestion, and it is not a source, so nothing enumerates it, cites it or reports it uncited
+  - The watcher is built and tested but **nothing runs it yet** — 8.2's shell is what will hold it open. Until then the doorway works through `drainInbox`, called by hand. A reader should not take the ticked box to mean a file dropped into `raw/_inbox/` is picked up by a running process today.
 
 ## 4 — Sources: audio recording
 

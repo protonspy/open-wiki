@@ -81,18 +81,34 @@ export {
 } from "./sources/manifest.js";
 export { registerSource, type RegisterInput } from "./sources/register.js";
 export { deriveId, isIdTaken, EmptyNameError } from "./sources/id.js";
+export { uploadTextSource, writeSourceText, normaliseText } from "./sources/ingest.js";
 export {
-  uploadTextSource,
-  writeSourceText,
-  normaliseText,
-} from "./sources/ingest.js";
+  uploadPdfSource,
+  extractPdfPages,
+  renderPdfText,
+  pageAnchor,
+  type PdfPage,
+} from "./sources/pdf.js";
+export { uploadDocxSource, extractDocxMarkdown, htmlToMarkdown } from "./sources/docx.js";
+export {
+  ingestSource,
+  recogniseSource,
+  recognisedExtensions,
+  type SourceFormat,
+  type IngestOutcome,
+} from "./sources/upload.js";
+export {
+  drainInbox,
+  watchInbox,
+  ensureInbox,
+  inboxPath,
+  INBOX,
+  type InboxOutcome,
+  type InboxWatcher,
+  type WatchInboxOptions,
+} from "./sources/inbox.js";
 export { resolveProvenance, extractProvenanceLinks } from "./store/provenance.js";
 export { completeFrontmatter } from "./store/complete.js";
 export { recordWrite, type WriteEntry, type WriteAction } from "./store/record.js";
-export {
-  listEntityPages,
-  isIndexed,
-  findOrphans,
-  readIndex,
-} from "./store/index.js";
+export { listEntityPages, isIndexed, findOrphans, readIndex } from "./store/index.js";
 export { registerInIndex } from "./store/index-write.js";

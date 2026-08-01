@@ -11,6 +11,16 @@ import { assertWithin, OutsideProjectError } from "../paths.js";
  * the MCP process imports (plan 9.9) pulls no write code.
  */
 
+/**
+ * The doorway under `raw/` (plan 3.7). Its name lives here — the leaf every
+ * source module already imports — because it is load-bearing in four places at
+ * once: the scaffolder creates it, `listSources` must skip it, `isIdTaken` must
+ * not treat it as a taken id, and the inbox itself reads it. Four copies of one
+ * string mean a rename breaks the quietest of them, and the quietest is
+ * `listSources` starting to return `_inbox` as a citable source.
+ */
+export const INBOX = "_inbox";
+
 export type SourceKind = "file" | "recording";
 
 export interface SourceManifest {
@@ -80,7 +90,7 @@ export function listSources(projectRoot: string): string[] {
   if (!existsSync(raw)) return [];
   const ids: string[] = [];
   for (const entry of readdirSync(raw)) {
-    if (entry === "_inbox") continue;
+    if (entry === INBOX) continue;
     const dir = join(raw, entry);
     if (!statSync(dir).isDirectory()) continue;
     if (!existsSync(join(dir, "manifest.json"))) continue;

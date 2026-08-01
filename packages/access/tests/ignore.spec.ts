@@ -39,15 +39,56 @@ describe("ignore entries (2.8)", () => {
     expect(body).toContain(".state/");
   });
 
-  it("does not clobber a block the user has edited (still recognised as present)", () => {
+  it("ignores raw/_inbox/, which holds material nobody has read yet", () => {
     writeIgnore(root);
-    // Simulate the user opting in to committing opus by editing inside the block.
-    const body = readFileSync(join(root, ".gitignore"), "utf8");
-    const edited = body.replace("raw/**/*.opus\n", "");
-    writeFileSync(join(root, ".gitignore"), edited);
-    writeIgnore(root); // should not re-add opus or duplicate
+    expect(readFileSync(join(root, ".gitignore"), "utf8")).toContain("raw/_inbox/");
+  });
+
+  it("brings a project scaffolded by an earlier version up to date", () => {
+    // The block used to be skipped whenever it was already present, so a rule
+    // added later never reached a project created earlier — while `scaffold`
+    // still created the new *directory* in it. For `raw/_inbox/` that is
+    // exactly backwards: the doorway appears, and the unreviewed material an
+    // agent drops in it is committed by anyone running `git add -A`.
+    const old = [OPEN_BLOCK, ".state/", "raw/**/*.wav", CLOSE_BLOCK].join("\n");
+    writeFileSync(join(root, ".gitignore"), `node_modules/\n\n${old}\n`);
+
+    writeIgnore(root);
+
     const after = readFileSync(join(root, ".gitignore"), "utf8");
-    expect(after.split(OPEN_BLOCK).length).toBe(2);
-    expect(after).not.toContain("raw/**/*.opus");
+    expect(after).toContain("raw/_inbox/");
+    expect(after.split(OPEN_BLOCK).length).toBe(2); // still exactly one block
+    expect(after.startsWith("node_modules/\n")).toBe(true); // the user's lines survive
+  });
+
+  it("leaves everything outside the markers alone, above and below", () => {
+    const above = "node_modules/\n";
+    const below = "!raw/_inbox/keep-this.md\n";
+    writeIgnore(root);
+    writeFileSync(
+      join(root, ".gitignore"),
+      `${above}${readFileSync(join(root, ".gitignore"), "utf8")}${below}`,
+    );
+
+    writeIgnore(root);
+
+    const body = readFileSync(join(root, ".gitignore"), "utf8");
+    expect(body.startsWith(above)).toBe(true);
+    // A negation below the block is how opting in is expressed now: git takes
+    // the last matching pattern, and a line outside the markers is never
+    // rewritten. That is a thing the file can state, unlike an edit inside the
+    // block, which the tool could not tell from a mistake.
+    expect(body.trimEnd().endsWith("!raw/_inbox/keep-this.md")).toBe(true);
+    expect(body.split(OPEN_BLOCK).length).toBe(2);
+  });
+
+  it("appends a whole block when only half a marker is present", () => {
+    // A truncated block is not something to guess at: append a real one and
+    // leave the damaged text where it is for the user to see.
+    writeFileSync(join(root, ".gitignore"), `${OPEN_BLOCK}\n.state/\n`);
+    writeIgnore(root);
+    const body = readFileSync(join(root, ".gitignore"), "utf8");
+    expect(body).toContain(CLOSE_BLOCK);
+    expect(body).toContain("raw/_inbox/");
   });
 });
