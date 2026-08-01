@@ -1,9 +1,32 @@
 import { join } from "node:path";
-import { recordingId } from "@open-wiki/access";
-import type { SourceState } from "@open-wiki/access/read";
+import { recordingId, type Operation } from "@open-wiki/access";
+import type { Finding, SourceState } from "@open-wiki/access/read";
 import type { PageView, ProjectInfo, WikiIndex } from "./api.js";
 import { projectInfo, readPage, sources, wikiIndex } from "./api.js";
+import {
+  createPage,
+  deletePage,
+  history,
+  renamePage,
+  retitleSource,
+  savePage,
+  savePageToday,
+  undoOperation,
+  type CreateInput,
+  type RenameResult,
+  type SaveInput,
+  type SaveResult,
+} from "./edit.js";
+import { ingestDrop, type DropOutcome } from "./ingest.js";
 import type { RecorderSession, RecorderStatus } from "./recorder.js";
+import {
+  findings,
+  locateCitation,
+  sourceDetail,
+  sourcesOfPage,
+  type SourceLocation,
+  type SourceRow,
+} from "./sources.js";
 
 /**
  * The one list of things the renderer can ask for, and the only place the
@@ -25,6 +48,23 @@ export const CHANNELS = {
   recordResume: "record:resume",
   recordStop: "record:stop",
   recordStatus: "record:status",
+
+  // Editing (8.7, 8.8, 8.9) and the history behind it (8.11).
+  save: "wiki:save",
+  create: "wiki:create",
+  rename: "wiki:rename",
+  remove: "wiki:delete",
+  history: "history:list",
+  undo: "history:undo",
+
+  // Sources (6.2 to 6.7), the checks (7.6), and what a citation opens (8.6).
+  sourceDetail: "sources:detail",
+  sourcesOfPage: "sources:of-page",
+  retitle: "sources:retitle",
+  findings: "check:findings",
+  locate: "sources:locate",
+  drop: "sources:drop",
+
   /** Main → renderer, for 8.10. */
   changed: "project:changed",
 } as const;
@@ -89,6 +129,20 @@ export interface DesktopApi {
   recordResume(): Promise<void>;
   recordStop(): Promise<void>;
   recordStatus(): Promise<RecorderStatus>;
+
+  save(input: SaveInput): SaveResult;
+  create(input: CreateInput): SaveResult;
+  rename(from: string, to: string): RenameResult;
+  remove(slug: string): { operationId: string };
+  history(): Operation[];
+  undo(id: string): void;
+
+  sourceDetail(id: string): SourceRow;
+  sourcesOfPage(slug: string): string[];
+  retitle(id: string, title: string): void;
+  findings(): Finding[];
+  locate(id: string, fragment: string): SourceLocation;
+  drop(paths: readonly string[]): Promise<DropOutcome[]>;
 }
 
 export function createApi(deps: Deps): DesktopApi {
@@ -135,6 +189,20 @@ export function createApi(deps: Deps): DesktopApi {
       const session = deps.recorder?.peek();
       return session ? session.status() : IDLE_STATUS;
     },
+
+    save: (input) => savePage(deps.projectRoot, input, savePageToday),
+    create: (input) => createPage(deps.projectRoot, input, savePageToday),
+    rename: (from, to) => renamePage(deps.projectRoot, from, to),
+    remove: (slug) => deletePage(deps.projectRoot, slug),
+    history: () => history(deps.projectRoot),
+    undo: (id) => undoOperation(deps.projectRoot, id),
+
+    sourceDetail: (id) => sourceDetail(deps.projectRoot, id),
+    sourcesOfPage: (slug) => sourcesOfPage(deps.projectRoot, slug),
+    retitle: (id, title) => retitleSource(deps.projectRoot, id, title),
+    findings: () => findings(deps.projectRoot),
+    locate: (id, fragment) => locateCitation(deps.projectRoot, id, fragment),
+    drop: (paths) => ingestDrop(deps.projectRoot, paths),
   };
 }
 
@@ -167,6 +235,35 @@ export async function dispatch(
       return api.recordStop();
     case CHANNELS.recordStatus:
       return api.recordStatus();
+
+    case CHANNELS.save:
+      return api.save(args[0] as SaveInput);
+    case CHANNELS.create:
+      return api.create(args[0] as CreateInput);
+    case CHANNELS.rename:
+      return api.rename(String(args[0] ?? ""), String(args[1] ?? ""));
+    case CHANNELS.remove:
+      return api.remove(String(args[0] ?? ""));
+    case CHANNELS.history:
+      return api.history();
+    case CHANNELS.undo:
+      return api.undo(String(args[0] ?? ""));
+
+    case CHANNELS.sourceDetail:
+      return api.sourceDetail(String(args[0] ?? ""));
+    case CHANNELS.sourcesOfPage:
+      return api.sourcesOfPage(String(args[0] ?? ""));
+    case CHANNELS.retitle:
+      return api.retitle(String(args[0] ?? ""), String(args[1] ?? ""));
+    case CHANNELS.findings:
+      return api.findings();
+    case CHANNELS.locate:
+      return api.locate(String(args[0] ?? ""), String(args[1] ?? ""));
+    case CHANNELS.drop:
+      // The renderer hands over paths Chromium gave it for a drop. Anything
+      // that is not a string is not a path.
+      return api.drop((Array.isArray(args[0]) ? args[0] : []).filter((p) => typeof p === "string"));
+
     default:
       throw new Error(`unknown channel "${channel}"`);
   }

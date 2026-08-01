@@ -7,6 +7,7 @@
  * resolve a provenance instant, so the read surface the MCP process imports
  * (plan 9.9) never gains the ability to run a subprocess.
  */
+export * from "./atomic.js";
 export * from "./chunks.js";
 export * from "./compress.js";
 export * from "./encode.js";

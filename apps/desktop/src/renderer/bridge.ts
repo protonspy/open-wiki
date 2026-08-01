@@ -1,5 +1,9 @@
+import type { Finding, Operation } from "@open-wiki/access";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
+import type { CreateInput, RenameResult, SaveInput, SaveResult } from "../main/edit.js";
+import type { DropOutcome } from "../main/ingest.js";
 import type { RecorderStatus } from "../main/recorder.js";
+import type { SourceLocation, SourceRow } from "../main/sources.js";
 import type { ProjectChange } from "../main/watcher.js";
 
 /**
@@ -13,12 +17,29 @@ export interface OwBridge {
   project(): Promise<ProjectInfo>;
   index(): Promise<WikiIndex>;
   page(slug: string): Promise<PageView>;
-  sources(): Promise<unknown[]>;
+  sources(): Promise<SourceRow[]>;
   recordStart(occasion: string): Promise<{ id: string; dir: string }>;
   recordPause(): Promise<void>;
   recordResume(): Promise<void>;
   recordStop(): Promise<void>;
   recordStatus(): Promise<RecorderStatus>;
+
+  save(input: SaveInput): Promise<SaveResult>;
+  create(input: CreateInput): Promise<SaveResult>;
+  rename(from: string, to: string): Promise<RenameResult>;
+  remove(slug: string): Promise<{ operationId: string }>;
+  history(): Promise<Operation[]>;
+  undo(id: string): Promise<void>;
+
+  sourceDetail(id: string): Promise<SourceRow>;
+  sourcesOfPage(slug: string): Promise<string[]>;
+  retitle(id: string, title: string): Promise<void>;
+  findings(): Promise<Finding[]>;
+  locate(id: string, fragment: string): Promise<SourceLocation>;
+  drop(paths: readonly string[]): Promise<DropOutcome[]>;
+  /** 3.5 — `File.path` was removed in Electron 32; the preload knows the path. */
+  pathForFile(file: File): string;
+
   onChanged(handler: (change: ProjectChange) => void): () => void;
 }
 
