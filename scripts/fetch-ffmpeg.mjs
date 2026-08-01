@@ -63,9 +63,19 @@ async function download(url, dest) {
 
 function extract(zip, dest) {
   // Windows 10+ ships bsdtar, which reads zip. Avoids a JS unzip dependency.
-  const result = spawnSync("tar", ["-xf", zip, "-C", dest, "--strip-components=1"], {
-    stdio: "inherit",
-  });
+  //
+  // **Two components, and only the one member.** The archive is laid out as
+  // `ffmpeg-<version>-essentials_build/bin/ffmpeg.exe`, so stripping one leaf
+  // leaves `bin/ffmpeg.exe` and the check below fails — which is what happened,
+  // undetected, because nothing in this repository had ever run this script
+  // against a real download. Naming the member is also what makes the docstring
+  // above true: the zip carries ~110 MB of documentation and presets the
+  // installer has no use for.
+  const result = spawnSync(
+    "tar",
+    ["-xf", zip, "-C", dest, "--strip-components=2", "*/bin/ffmpeg.exe"],
+    { stdio: "inherit" },
+  );
   if (result.status !== 0) fail(`tar extraction failed (exit ${result.status})`);
   if (!existsSync(exePath)) fail(`extraction produced no ${exePath}`);
 }
