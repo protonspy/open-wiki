@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveProvenance } from "../src/store/provenance.js";
-import { registerSource } from "../src/sources/manifest.js";
+import { registerSource } from "../src/sources/register.js";
 
 function tempProject() {
   const root = mkdtempSync(join(tmpdir(), "ow-prov-"));

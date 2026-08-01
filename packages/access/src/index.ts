@@ -62,7 +62,7 @@ export {
 } from "./store/page.js";
 export { supersedePage, type SupersessionResult } from "./store/supersede.js";
 export { resolveWikilinks } from "./store/wikilinks.js";
-export { isStoreOnlyChange, STORE_MANAGED_FIELDS } from "./store/staleness.js";
+export { isStoreOnlyChange, pagesEqual, STORE_MANAGED_FIELDS } from "./store/staleness.js";
 
 // The write gate (group 9)
 export { gateWrite, type GateDecision, type GateInput } from "./gate/gate.js";
@@ -71,7 +71,6 @@ export { formatDenial } from "./gate/errors.js";
 
 // Sources (group 3)
 export {
-  registerSource,
   readManifest,
   listSources,
   sourceExists,
@@ -79,8 +78,8 @@ export {
   MissingSourceError,
   type SourceManifest,
   type SourceKind,
-  type RegisterInput,
 } from "./sources/manifest.js";
+export { registerSource, type RegisterInput } from "./sources/register.js";
 export { deriveId, isIdTaken, EmptyNameError } from "./sources/id.js";
 export {
   uploadTextSource,
@@ -93,6 +92,6 @@ export { recordWrite, type WriteEntry, type WriteAction } from "./store/record.j
 export {
   listEntityPages,
   isIndexed,
-  registerInIndex,
   findOrphans,
 } from "./store/index.js";
+export { registerInIndex } from "./store/index-write.js";

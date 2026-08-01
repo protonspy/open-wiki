@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { registerSource } from "./manifest.js";
+import { registerSource } from "./register.js";
 import { assertWithin } from "../paths.js";
 
 /**

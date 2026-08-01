@@ -2,7 +2,8 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listEntityPages, isIndexed, registerInIndex, findOrphans } from "../src/store/index.js";
+import { listEntityPages, isIndexed, findOrphans } from "../src/store/index.js";
+import { registerInIndex } from "../src/store/index-write.js";
 
 function tempProject() {
   const root = mkdtempSync(join(tmpdir(), "ow-idx-"));

@@ -2,14 +2,8 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  registerSource,
-  readManifest,
-  listSources,
-  sourceExists,
-  TakenIdError,
-  type SourceManifest,
-} from "../src/sources/manifest.js";
+import { readManifest, listSources, sourceExists, TakenIdError, type SourceManifest } from "../src/sources/manifest.js";
+import { registerSource } from "../src/sources/register.js";
 import { EmptyNameError } from "../src/sources/id.js";
 
 function tempProject() {

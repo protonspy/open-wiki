@@ -1,17 +1,16 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { assertWithin } from "../paths.js";
 import { NON_ENTITY_PAGES } from "./page.js";
 
 /**
- * Maintain `index.md` so every page is reachable from it (plan 5.7, and the
- * knowledge-base rule an orphan is a page nobody will find again). The store
- * registers a new page by adding a `[[slug]]` link, and flags a page that has
+ * Read the index and the entity pages (plan 5.7, and the knowledge-base rule an
+ * orphan is a page nobody will find again). The agent curates the index by
+ * topic; the store only guarantees reachability, and flags a page that has
  * become unreachable — one whose slug no link in the index points at.
  *
- * The agent curates the index by topic; the store only guarantees reachability:
- * a new page lands under a `## Pages` section the agent is expected to move, and
- * a page the agent unlinked surfaces here as an orphan for group 7 to report.
+ * The write that registers a page in the index lives in `index-write.ts`, so the
+ * read surface the MCP process imports (plan 9.9) pulls no write code.
  */
 
 const INDEX_HEADER =
@@ -36,40 +35,11 @@ export function isIndexed(indexText: string, slug: string): boolean {
   return new RegExp(`\\[\\[${slug}(\\||#|\\]\\])`).test(indexText);
 }
 
-function readIndex(projectRoot: string): string {
+/** Read the index, creating an empty one (header only) when absent. */
+export function readIndex(projectRoot: string): string {
   const file = assertWithin(projectRoot, join(projectRoot, "wiki", "index.md"));
   mkdirSync(join(projectRoot, "wiki"), { recursive: true });
   return existsSync(file) ? readFileSync(file, "utf8") : INDEX_HEADER;
-}
-
-/**
- * Register a page in the index if it is not already reachable. Adds a
- * `## Pages` section (the agent is expected to relocate the entry) and is
- * idempotent. Returns true if it added a link, false if the page was already
- * indexed.
- */
-export function registerInIndex(projectRoot: string, slug: string, title?: string): boolean {
-  const file = assertWithin(projectRoot, join(projectRoot, "wiki", "index.md"));
-  const text = readIndex(projectRoot);
-  if (isIndexed(text, slug)) return false;
-
-  const bullet = title ? `- [[${slug}]] — ${title}` : `- [[${slug}]]`;
-  const lines = text.split("\n");
-  const sectionIdx = lines.findIndex((l) => l === PAGES_SECTION);
-
-  let next: string;
-  if (sectionIdx >= 0) {
-    // Prepend the bullet as the first bullet of the section.
-    let insertAt = sectionIdx + 1;
-    while (insertAt < lines.length && lines[insertAt] === "") insertAt++;
-    lines.splice(insertAt, 0, bullet);
-    next = lines.join("\n");
-  } else {
-    const tail = text.endsWith("\n") ? text : `${text}\n`;
-    next = `${tail}${PAGES_SECTION}\n\n${bullet}\n`;
-  }
-  writeFileSync(file, next.endsWith("\n") ? next : `${next}\n`, "utf8");
-  return true;
 }
 
 /**
@@ -80,3 +50,5 @@ export function findOrphans(projectRoot: string): string[] {
   const indexText = readIndex(projectRoot);
   return listEntityPages(projectRoot).filter((slug) => !isIndexed(indexText, slug));
 }
+
+export { PAGES_SECTION };

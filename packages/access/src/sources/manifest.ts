@@ -1,16 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { deriveId, isIdTaken } from "./id.js";
 
 /**
- * A source is any entry in `raw/`: an uploaded file or a recording. It becomes
- * a directory `raw/<id>/` holding the preserved original and a `manifest.json`,
- * and the id is frozen there the moment it is written
+ * Read a source — any entry in `raw/`, an uploaded file or a recording
  * (`adr:0011-sources-are-named-by-what-they-are`). The readable title lives in
  * the manifest and may drift; the id never does.
  *
- * `raw/_inbox/` is a doorway, not a source — it is not enumerated, cited or
- * reported, so nothing here treats it as one.
+ * The write that registers a source lives in `register.ts`, so the read surface
+ * the MCP process imports (plan 9.9) pulls no write code.
  */
 
 export type SourceKind = "file" | "recording";
@@ -37,52 +34,6 @@ export class MissingSourceError extends Error {
     super(`no source "${id}" under raw/`);
     this.name = "MissingSourceError";
   }
-}
-
-/** The path of the original file inside a file source's directory. */
-function originalFile(id: string): string {
-  // `Arquitetura Fenix.pdf` → `source.pdf`; a name with no extension → `source`.
-  const dot = id.lastIndexOf(".");
-  const ext = dot > 0 ? id.slice(dot) : "";
-  return `source${ext}`;
-}
-
-export interface RegisterInput {
-  name: string;
-  kind: SourceKind;
-  content: Buffer | null;
-  /** Override the readable title (defaults to `name`). */
-  title?: string;
-}
-
-/**
- * Register a source: derive the id, refuse a taken one, create the directory,
- * preserve the original (for a file), and write the manifest. The directory is
- * immutable once written — re-registering the same id is refused, which is the
- * freeze the citations depend on.
- */
-export function registerSource(projectRoot: string, input: RegisterInput): { id: string } {
-  const id = deriveId(input.name);
-  if (isIdTaken(projectRoot, id)) throw new TakenIdError(id);
-
-  const dir = join(projectRoot, "raw", id);
-  mkdirSync(dir, { recursive: true });
-
-  if (input.kind === "file") {
-    if (input.content === null) {
-      throw new Error(`file source "${id}" has no content to preserve`);
-    }
-    writeFileSync(join(dir, originalFile(id)), input.content);
-  }
-
-  const manifest: SourceManifest = {
-    id,
-    title: input.title ?? input.name,
-    kind: input.kind,
-    original: input.kind === "file" ? input.name : "",
-  };
-  writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
-  return { id };
 }
 
 /** Read a source's manifest. Throws `MissingSourceError` if it is not there. */
