@@ -103,6 +103,20 @@ jobs:
 
       - run: pnpm run lint
 
+      # **The bundles, on every push.** `typecheck` and `lint` both pass on a
+      # renderer that cannot be built: `tsc` resolves `../main/watcher.js`
+      # happily, and only a bundler discovers that the module behind it drags
+      # chokidar and `node:stream` into a browser target. That is how the
+      # desktop application reached group 10 having never once been built —
+      # `build` ran nowhere but the release job, which needs a `v*` tag, so the
+      # first person to find out was the first release.
+      #
+      # Not `package`: electron-builder downloads a signing toolchain and needs
+      # the Rust binary, which is the `rust` job's business. The bundles are the
+      # part an ordinary source change breaks.
+      - name: The bundles build
+        run: pnpm --filter @open-wiki/desktop run build
+
   # Skipped until crates/ exists. No coverage gate here: the recorder is driven
   # through its JSON-RPC boundary, and a line count over WASAPI glue would
   # measure the wrong thing.

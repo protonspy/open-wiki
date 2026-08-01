@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type { DropOutcome } from "../main/ingest.js";
-import { isOpenPage } from "../main/watcher.js";
+// From `shared/`, never from `main/watcher.js`. That module starts a chokidar
+// watch, and importing it here pulled chokidar and `node:stream` into this
+// browser bundle — which vite externalises and rollup then fails on.
+import { isOpenPage } from "../shared/changes.js";
 import { bridge, hasBridge } from "./bridge.js";
 import { Editor } from "./Editor.js";
 import { renderPageBody } from "./markdown.js";
