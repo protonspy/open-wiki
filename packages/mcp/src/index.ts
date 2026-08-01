@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { z } from "zod";
 import { ProjectRegistry } from "@open-wiki/access/read";
 import {
@@ -101,6 +102,28 @@ export function createMcpServer(projectRoot: string, project: string): McpServer
 }
 
 /**
+ * Serve until the transport closes, then resolve with an exit code.
+ *
+ * `connect` resolves as soon as the transport is *listening*, not when it is
+ * done — so returning it is a server that exits before answering anything. The
+ * caller exits the process on the resolved code, so the wait has to be here.
+ * The harness closing its end of the pipe is what ends the session.
+ *
+ * Split out from `runMcpServer` so a test can hold both ends of an in-memory
+ * transport and watch the lifetime, without stdio or the registry.
+ */
+export async function serveUntilClosed(server: McpServer, transport: Transport): Promise<number> {
+  const closed = new Promise<void>((resolve) => {
+    // The protocol's own callback, not the transport's: `connect` takes
+    // ownership of the transport's handlers.
+    server.server.onclose = () => resolve();
+  });
+  await server.connect(transport);
+  await closed;
+  return 0;
+}
+
+/**
  * Run the server. Resolves with an exit code once the stdio transport closes.
  * Throws when the project name cannot be resolved — the CLI turns that into a
  * stderr message and a non-zero exit.
@@ -109,7 +132,5 @@ export async function runMcpServer(argv: string[]): Promise<number> {
   const { project } = parseMcpArgs(argv);
   const projectRoot = new ProjectRegistry().resolve(project);
   const server = createMcpServer(projectRoot, project);
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  return 0;
+  return serveUntilClosed(server, new StdioServerTransport());
 }

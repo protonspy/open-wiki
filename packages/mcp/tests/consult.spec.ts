@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { uploadTextSource } from "@open-wiki/access";
-import { createMcpServer } from "../src/index.js";
+import { createMcpServer, serveUntilClosed } from "../src/index.js";
 
 /**
  * The cross-project consult (plan 9.16): a second project with no wiki of its
@@ -102,6 +102,40 @@ describe("consult: a second project cites the first over MCP (9.16)", () => {
     const res = await client.callTool({ name: "ow_read_page", arguments: { slug: "../../../etc/hosts" } });
     expect(res.isError).toBe(true);
     expect(text(res)).toContain("outside the project");
+  });
+});
+
+describe("the server outlives its own startup (9.7)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = tempProject();
+    writePage(root, "fenix", "concept:fenix", "");
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("keeps serving after connect, and only finishes when the transport closes", async () => {
+    // The bug this pins: `connect` resolves as soon as the transport is
+    // listening. Returning that to a caller which exits on the resolved code
+    // kills the server before it answers anything — and `.mcp.json` spawns
+    // exactly that command, so no consult would ever get a reply.
+    const server = createMcpServer(root, "project-a");
+    const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+
+    let exitCode: number | undefined;
+    const serving = serveUntilClosed(server, serverSide).then((code) => (exitCode = code));
+
+    const client = new Client({ name: "lifetime-client", version: "0.0.0" });
+    await client.connect(clientSide);
+
+    // Still serving: a request placed well after startup is answered.
+    const res = await client.callTool({ name: "ow_read_page", arguments: { slug: "fenix" } });
+    expect(JSON.parse(text(res)).slug).toBe("fenix");
+    expect(exitCode, "the server returned before the transport closed").toBeUndefined();
+
+    // The harness closing its end is what ends the session.
+    await client.close();
+    await expect(serving).resolves.toBe(0);
+    expect(exitCode).toBe(0);
   });
 });
 
