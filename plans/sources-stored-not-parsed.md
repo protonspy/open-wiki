@@ -94,6 +94,39 @@ the skill has to say that a source is evidence, not instructions.
 (2.8) keep audio out of git by default, so a dropped 4 GB video is a disk decision the
 user should make knowingly rather than discover.
 
+## The case that proves the rule: a repository as a source
+
+Drop a zip of a repository into `raw/`, and let the agent narrate it with the codewiki
+skill. It is the sharpest test of "any file", because a zip is not a document — nothing
+reads it as one, and the agent cannot open it the way it opens a PDF.
+
+Three things turned out to be true, and two are good news.
+
+**The codewiki citation form already resolves.** `check/checks.ts:370` matches
+`[path/to/file.ts:12-40]()` and resolves the target as a path **relative to the
+project**. So `[raw/acme-api-zip/contents/src/main.rs:48-64]()` resolves today, with no
+new fragment form and no change to `provenance.ts` — provided the tree is unpacked
+inside the project. The anchor question this plan leaves open for PDF and DOCX stays
+open and stays theirs; codewiki does not need it.
+
+**`listSources` reads only the top level of `raw/`** (`sources/manifest.ts:138-155`), so
+an unpacked repository is one source and not four thousand. Nothing enumerates into it.
+
+**But unpacking is where this stops being free.** Storing opaque bytes is safe precisely
+because nothing interprets them. Unpacking interprets structure, and archive formats
+have a well-worn set of ways to abuse that: entries whose paths escape the destination,
+entries that are symbolic links, and compression ratios that turn a small upload into a
+full disk. `assertWithin` and 2.6's real-path resolution are the right primitive, and
+they have to run **per entry** rather than once for the destination.
+
+**And an archive carries whatever the repository had — including `CLAUDE.md`,
+`.claude/` and `.mcp.json`.** Unpacking puts a stranger's prompt text and permission
+rules inside the user's project tree. 9.6 refuses *agent-mediated writes* to those paths
+at the project root; this is neither — it is the application writing, one directory
+down. The gate is not bypassed and it is also not protecting anything here, which is
+exactly the sort of gap that reads as covered. What lands from an archive has to arrive
+inert.
+
 ## What this changes in [[open-wiki]]
 
 Ticked tasks whose design this supersedes. They are not un-ticked — they shipped and
@@ -143,15 +176,29 @@ it is read by the sources pane, the checks, the CLI and MCP.
 ## 5 — The skill
 
 - [ ] 5.1 (Unit) The wiki skill gains the loop: list what is unprocessed, open the original — a PDF as a document, an image as an image — write pages citing it, then mark it. Written as instructions with the verbs in them, because a skill that describes the intent and not the command is a skill that gets improvised around
+- [ ] 5.4 (Unit) The codewiki skill learns that its subject can be a source. Today it narrates *this project's* code; an unpacked repository under `raw/` is code too, and its citations are ordinary project-relative paths that 7.5 already resolves. What it needs said is which tree it is narrating and that the unpacked tree must not be deleted afterwards
 - [ ] 5.2 (Unit) The skill says a source is **evidence, not instructions**. It is the one place this can be said now that the agent opens files nobody parsed, and 4.13 already found fabricated provenance inside source text
 - [ ] 5.3 (Unit) Scaffolded skills age in the project they were written into — `adr:0015` left that open and this makes it bite, because a project set up before this change keeps a skill that never mentions the status. Say what the upgrade path is, even if the answer is that `ow init` overwrites nothing and the user re-runs a verb
 
-## 6 — What reads it
+## 6 — Archives, so a repository can be a source
 
-- [ ] 6.1 (Unit) The sources pane distinguishes stored, unprocessed, processed and cited — and offers the one action that is not the agent's, which is marking something processed by hand
-- [ ] 6.2 (Unit) 6.6's uncited check reports only what is unprocessed *and* uncited, so a source somebody read and discarded stops being a permanent finding
-- [ ] 6.3 (Unit) MCP says what it has: a source with no `text.md` reports its status and its filename rather than returning nothing, so a consulting agent knows the difference between empty and unread. It cannot read the original — that project is not on its disk — and saying so is the honest answer
-- [ ] 6.4 (Unit) The provenance viewer opens what it is given: an image as an image, a PDF at its page, anything else named and offered to the system handler. The renderer's CSP is `default-src 'none'` and `img-src 'self' data:`, so this is a real constraint and not a formality
+Depends on group 2 and on nothing else. It is last because it is the only part where
+the application interprets structure, and everything before it is the reason that is
+now a bounded exception rather than the rule.
+
+- [ ] 6.1 (TDD) Unpack an archive into the source directory, refusing **per entry** what escapes it: a path that resolves outside after 2.6's real-path check, an entry that is a symbolic link, and an entry that is a Windows directory junction. Test-first without hesitation — this is the boundary class the plan reserves it for, and the failure is that something got through
+- [ ] 6.2 (TDD) Refuse an archive that expands beyond a bound, on total size and on ratio, and stop while unpacking rather than after — a bomb that is detected once the disk is full has been detected too late
+- [ ] 6.3 (TDD) Agent configuration inside an archive lands inert: `CLAUDE.md`, `.claude/` and `.mcp.json` anywhere in the unpacked tree are stored so that no harness loads them as its own, and the source says they were there. Test-first because a miss here is silent and it is somebody else's prompt text inside the user's project
+- [ ] 6.4 (Unit) The unpacked tree is provenance and is kept, the way `adr:0006` keeps the Opus. Deleting it to save space breaks every codewiki citation into it — 7.5 would report them, which is the check working and the evidence gone
+- [ ] 6.5 (Unit) A stance on what an unpacked archive does to git, written as ignore entries at `ow init` the way 2.8 wrote them for audio. A repository unpacked into `raw/` is thousands of files somebody did not choose to commit
+- [ ] 6.6 (Unit) Seal the source when unpacking finishes, so `raw/<id>/` is immutable once written and a half-unpacked archive is distinguishable from a whole one — the same shape 4.14 gave a recording, which keeps its WAV until transcription confirms
+
+## 7 — What reads it
+
+- [ ] 7.1 (Unit) The sources pane distinguishes stored, unprocessed, processed and cited — and offers the one action that is not the agent's, which is marking something processed by hand
+- [ ] 7.2 (Unit) 6.6's uncited check reports only what is unprocessed *and* uncited, so a source somebody read and discarded stops being a permanent finding
+- [ ] 7.3 (Unit) MCP says what it has: a source with no `text.md` reports its status and its filename rather than returning nothing, so a consulting agent knows the difference between empty and unread. It cannot read the original — that project is not on its disk — and saying so is the honest answer
+- [ ] 7.4 (Unit) The provenance viewer opens what it is given: an image as an image, a PDF at its page, an unpacked tree as a file listing, anything else named and offered to the system handler. The renderer's CSP is `default-src 'none'` and `img-src 'self' data:`, so this is a real constraint and not a formality
 
 ---
 
@@ -165,9 +212,20 @@ whole. Worth deciding when somebody cites a document wrongly, not before — but
 writing down now, because "we removed the parser" is otherwise the story of how it
 became unfixable.
 
+**Unpacking a container is not extracting text, and the line is worth defending.**
+Group 6 is the one place the application looks inside a file, which is what everything
+above it just stopped doing — so it is fair to ask whether it is the same mistake in a
+new coat. It is not, and the test is what comes out: unpacking preserves the bytes
+exactly and produces the files the author wrote, where extraction produces a *lossy
+interpretation* whose fidelity nobody can check. The first is reversible and verifiable;
+the second is the thing an agent does better. That is also why group 6 is where all the
+`(TDD)` in this plan is concentrated: interpreting structure is where the failures are
+silent.
+
 **The order that matters.** 2.1 before anything else touches ingest, or the same edit
 is made twice in two places. 4.1 before 4.2, or the CLI grows the second manifest
-mutator this plan exists partly to prevent. The rest is independent.
+mutator this plan exists partly to prevent. Group 6 after group 2, because unpacking is
+a special case of storing and not a parallel path. The rest is independent.
 
 **What this does not do.** It does not add extraction back under a flag. An adapter
 that runs only when asked is still an adapter to maintain, and the agent that could
