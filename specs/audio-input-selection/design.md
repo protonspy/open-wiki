@@ -63,6 +63,35 @@ recording under the same name — the microphone is "the person at this machine"
 is what makes `me` and `remote` mean anything in the timeline (4.12). A dead track is
 recoverable evidence; a wrong track is not.
 
+## The pre-flight check
+
+Serves R5.1 through R5.6.
+
+It is the same capture path as a recording, run briefly and thrown away — not a second
+implementation of capture. `CaptureSource` is already the seam every test in this
+repository uses, so the classification (failed to open · opened and silent · opened and
+receiving) is testable on every platform even though the device underneath is not.
+
+**It must not become a recording.** No session id, no directory under `raw/`, no
+manifest — the check never enters the path that registers a source. That is a
+requirement (R5.4) rather than an implementation note, because the failure is invisible:
+a stray test capture under `raw/` looks exactly like a source somebody uploaded.
+
+**Releasing is the sharp edge.** `recorder.exe` opens both WASAPI devices at launch,
+which is why `ensure` and `peek` are already different methods. The check is a third
+caller of that lifecycle and the first that legitimately _wants_ the devices open — so
+it has to give them back on every path, including the one where opening failed halfway.
+Holding the microphone after a check, with the chrome saying nothing is being recorded,
+is the same defect the `peek`/`ensure` split was introduced to fix.
+
+**The loopback side is weaker than the microphone side, and honestly so.** A microphone
+test has a person who can speak into it. A render endpoint captures whatever is playing,
+so a silent machine and a broken loopback look identical. A closed loop — the
+application plays a tone and confirms it comes back — removes the ambiguity, but only
+when the tone goes to _the same endpoint being captured_, which means selecting the
+output sink rather than using the default. Where that holds it is the better test; where
+it does not, the honest report is "nothing is playing", not "not receiving".
+
 ## Risks
 
 **Pinning changes what 4.2 is for, and 4.2 is tested.** Its tests assert that a default
