@@ -143,16 +143,28 @@ fenix/                          a project — usually a repository the user alre
   - `timemap.json` is the artifact, and **5.4's dormant in-range check is live against it** — a citation past the end of a recording is now refused, naming how long the recording runs. A recording with no map yet keeps the weaker check, because an absent map cannot make a citation resolve falsely.
   - Durations are nanoseconds; **wall-clock instants are milliseconds**. Nanoseconds since the epoch is ~1.75e18 and JavaScript is exact only to 9.007e15, so the unit is chosen where the exactness is free rather than where it merely reads consistently.
   - Boundaries are snapped onto the 16 kHz output sample grid before the map is built, so the map and the encoder are computed from the same integers rather than agreeing by rounding.
-- [ ] 4.8 (Unit) A `SttProvider` interface with `groq` and `whispercpp` adapters, swappable by configuration
-- [ ] 4.9 (TDD) Transcribe chunks one at a time, writing each result to the journal before the next starts, so an application killed mid-run loses at most the chunk in flight — `adr:0012-transcription-is-a-journalled-serial-pipeline`
-- [ ] 4.10 (Unit) Seed the transcription vocabulary with the names already present in the project's pages — it is what stops the project's own name from coming out wrong
-- [ ] 4.11 (TDD) Reconstruct the absolute timestamps from the chunk offset and the time map
+- [x] 4.8 (Unit) A `SttProvider` interface with `groq` and `whispercpp` adapters, swappable by configuration
+  - Each declares the container it wants a chunk in. Groq takes FLAC because 15 minutes of 16 kHz mono PCM is ~28 MB against a 25 MB cap — the one chunk length 4.7 is allowed to produce is the one that would not fit. whisper.cpp takes WAV, which is what it reads natively.
+  - Neither the whisper.cpp binary nor its model is bundled. They are large and the size-against-accuracy choice is the user's, so the adapter refuses clearly rather than degrading to the provider the user chose *not* to use.
+- [x] 4.9 (TDD) Transcribe chunks one at a time, writing each result to the journal before the next starts, so an application killed mid-run loses at most the chunk in flight — `adr:0012-transcription-is-a-journalled-serial-pipeline`
+  - **Red observed** first: 28 assertion failures across `journal.spec.ts` and `absolute.spec.ts` against signature-only stubs.
+  - Both tracks are transcribed, so 4.12 can label `me` and `remote` by the track a passage came from. The journal's unit of work is one chunk of one track.
+  - A failure records and carries on — 6.3 offers "redo only what failed", which needs the rest attempted — but three failures in a row stop the run. That is the shape of a bad credential, and finding it out costs twenty requests on a paid provider otherwise.
+  - The journal's `chunks[].done` / `chunks[].error` are a **contract with `sources/state.ts`**, which reads the same file to render progress. A field rename here changes what a stalled recording looks like there.
+- [x] 4.10 (Unit) Seed the transcription vocabulary with the names already present in the project's pages — it is what stops the project's own name from coming out wrong
+  - Lives in `@open-wiki/access`, because it reads pages. Bounded and ranked: Whisper's prompt window holds only its last 224 tokens, so single unusual words come first and a title that is a sentence is dropped — it costs as much prompt as four names and helps with none of them.
+- [x] 4.11 (TDD) Reconstruct the absolute timestamps from the chunk offset and the time map
+  - Two additions, and doing only the first is the failure that looks right: every timestamp after the first chunk would be wrong by exactly the length of what came before it, and the transcript would still read perfectly.
+  - Segments are clamped into their chunk. Whisper over-runs — asked about ten seconds it sometimes answers about eleven — and the eleventh second belongs to the next chunk too, which puts the same words in the timeline twice.
 - [ ] 4.12 (Unit) Merge the two tracks into a `timeline.json` ordered by real time, labelling `me` and `remote` by the track they came from
 - [ ] 4.13 (Unit) Render the recording's `text.md` from the timeline, with each passage's instant as a provenance anchor
 - [ ] 4.14 (Unit) Discard the WAV as soon as transcription confirms success, keeping the Opus as the provenance file
-- [ ] 4.15 (Unit) Send the configured content language as the transcription hint rather than relying on the provider detecting it — `adr:0008-content-language-is-a-setting-english-by-default`
+- [x] 4.15 (Unit) Send the configured content language as the transcription hint rather than relying on the provider detecting it — `adr:0008-content-language-is-a-setting-english-by-default`
+  - `transcriptionInputs(projectRoot)` reads the language out of `ow.json` and the names out of the wiki, in one call. It deliberately carries **no credential**: `config/secrets.ts` says the CLI, the hooks and the MCP process must not read the key, because their stderr is consumed by an agent and travels to a model provider. Only the desktop application reads it, at the point it builds the provider — which is why there is no `ow transcribe` verb.
 - [ ] 4.16 (TDD) Ask what is being recorded before capture starts and build the id from it plus the date — `fenix-weekly-2026-07-31`, `-2` for a second the same day — falling back to the timestamp rather than blocking capture on an empty field
-- [ ] 4.17 (TDD) Resume from the journal on reopening, sending only what failed or never ran, and refuse a journal whose chunk boundaries, provider or model no longer match rather than stitching two segmentations into one timeline
+- [x] 4.17 (TDD) Resume from the journal on reopening, sending only what failed or never ran, and refuse a journal whose chunk boundaries, provider or model no longer match rather than stitching two segmentations into one timeline
+  - The dangerous mismatch is not a different chunk *count* — it is the same count cut in different places, where every offset inside every chunk means something else and the result reads perfectly. Boundaries are compared one by one, not summed.
+  - The refusal says what to do about it, and `restart: true` is how a caller takes the offer.
 - [ ] 4.18 (Unit) Write `timeline.vtt` beside `timeline.json`, so the recording can be followed in any player and taken away if the user stops using this application
 
 ## 5 — The wiki as a validated store

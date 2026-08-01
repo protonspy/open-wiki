@@ -87,6 +87,8 @@ export {
   type SourceState,
   type SourceStage,
 } from "./sources/state.js";
+export { projectVocabulary, rankNames, DEFAULT_VOCABULARY_LIMIT } from "./sources/vocabulary.js";
+export { transcriptionInputs, type TranscriptionInputs } from "./sources/transcription.js";
 export { uploadTextSource, writeSourceText, normaliseText } from "./sources/ingest.js";
 export {
   uploadPdfSource,
