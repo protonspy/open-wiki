@@ -61,14 +61,14 @@ than as the application in the draft.**
 ## Where the draft is stale, and what wins
 
 The draft is dated before the pivot recorded in
-`adr:0013-the-project-directory-is-the-unit`. Five things it draws are now wrong, and
+`adr:0013-the-project-directory-is-the-unit`. Four things it draws are wrong, and
 porting them faithfully would resurrect an architecture that was deliberately
-dropped. **The plan wins over the draft on all five**; the draft wins on everything
-visual.
+dropped. **The plan wins over the draft on those four**; the draft wins on everything
+visual — and on a fifth thing it turned out to be right about all along.
 
 | The draft draws | Settled reality | What gets built |
 | --- | --- | --- |
-| MCP as an HTTP server on `127.0.0.1:7331` with a Bearer token, agents connecting to it | stdio, read-only, spawned by the harness, serving a project **other** than the open one (`adr:0013`, 9.7, 9.9) | an MCP pane about **consulting** — which projects this one reads, written by `ow consult add` (9.8) — settled in a spec, because this is a requirements change and not a repaint |
+| MCP as an HTTP server on `127.0.0.1:7331` with a Bearer token, agents connecting to it | **the draft was right.** `adr:0018-mcp-over-http-serving-every-project` puts the address and the token back — one resident `ow serve`, one route, every permitted project | the pane broadly as drawn: running state, the address, the token to paste, connected agents |
 | `origin mcp` on writes in History | MCP cannot write at all (9.9) | origins are `editor`, `cli`, `hook`, `agent` |
 | Onboarding step 1: pick a **workspace folder** holding projects | a project *is* the directory `ow` opened; the registry is a cache, never truth (2.2, `adr:0013`) | step 1 picks or opens **a project**; there is no workspace |
 | Settings backed by a `config.json` with a workspace path | project settings in `ow.json`, closed schema, no local path; secrets only in the app data dir (2.7, `adr:0007`) | the sheet shows the two files it actually writes, and the draft's "show the file underneath" idea is kept |
@@ -161,18 +161,28 @@ The three panes whose behaviour is built and whose surface is a debug list.
 - [ ] 6.1 (Unit) The settings sheet as drawn, over the two files that actually exist — `ow.json` in the project, secrets in the app data directory — with the file shown underneath, which is the draft's point and is truer here than in the draft because there is no backend to ask
 - [ ] 6.2 (Unit) The history drawer, reached from the status bar rather than the rail, with the origin, the time, what changed, and Undo per line. Keeps 8.11's honesty note visible in the drawer: this covers what was observed
 - [ ] 6.3 (Unit) First run as the draft's four steps — project, language, transcription, done — with step 1 picking a project directory rather than a workspace, per the table above. The language step already exists in `Launcher.tsx` and moves here rather than being rewritten
-- [ ] 6.4 (Unit) The four dialogs of the "moments something can be lost" plate, each saying what will happen and each button saying the same thing as the sentence above it
+- [ ] 6.4 (Unit) The dialogs of the "moments something can be lost" plate, each saying what will happen and each button saying the same thing as the sentence above it. **Three, not the draft's four** — "Serve atlas instead of fenix?" was a consequence of one server holding one current project, and `adr:0018` serves every permitted project at once, so there is nothing to switch and nobody to disconnect
 
 ## 7 — The MCP pane
 
 → **`specs/mcp-pane/`**
 
-A spec because the draft's version of this pane contradicts `adr:0013` outright, so
-the requirements are the work and the visual port is the easy half. What the pane
-answers, once settled: which other projects this one consults, what `ow consult add`
-wrote into `.mcp.json`, and whether a consulted project still resolves — the
-registry being a cache means an entry can point nowhere, and 8.4 already decided
-such an entry is shown rather than hidden.
+Still a spec, but for the opposite reason it was one when this plan was written. The
+requirements stopped being contested — `adr:0018-mcp-over-http-serving-every-project`
+settled them — and what is left open is what the pane can honestly *show*, which
+depends on a server that does not exist yet.
+
+What it answers: whether `ow serve` is running and on which address, the token to
+paste into a harness and when it expires, which projects the caller may reach, and
+which agents are connected. A project whose directory moved is shown rather than
+hidden — the registry stays a cache, `resolve` raises rather than guesses, and 8.4
+already decided that such an entry is shown.
+
+**The server itself is not in this plan.** `ow serve`, the JWT and its rotation, the
+tool surface (`project_list`, and `project_id` on every other tool), the read-surface
+split that keeps read-only a property of the process, and the installer registering a
+service and — the part that gets forgotten — deregistering it on uninstall: that is a
+body of work of its own, and it blocks this pane rather than living inside it.
 
 ## 8 — UX beyond the draft
 
