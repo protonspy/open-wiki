@@ -115,7 +115,11 @@ describe("source state (6.1)", () => {
       expect(() => sourceState(root, "nothing")).toThrow(MissingSourceError);
     });
 
-    it("refuses an id that escapes raw/", () => {
+    it("refuses an id that escapes raw/ but stays inside the project", () => {
+      // The interesting case is a single `..`: it leaves `raw/` while staying
+      // in the project, so confining against the project root would let it
+      // through. `../../elsewhere` leaves the project too and proves less.
+      expect(() => sourceState(root, "../wiki")).toThrow();
       expect(() => sourceState(root, "../../elsewhere")).toThrow();
     });
   });
@@ -140,6 +144,16 @@ describe("source state (6.1)", () => {
       mkdirSync(join(root, "raw", "_inbox"), { recursive: true });
       source(root, "a.md");
       expect(listSourceStates(root).map((s) => s.id)).toEqual(["a.md"]);
+    });
+
+    it("keeps listing the rest when one manifest will not parse", () => {
+      // A sources screen showing nothing because of one bad directory is worse
+      // than one showing the other nineteen.
+      source(root, "good.md", { text: "g" });
+      mkdirSync(join(root, "raw", "broken.md"), { recursive: true });
+      writeFileSync(join(root, "raw", "broken.md", "manifest.json"), "{ not json", "utf8");
+
+      expect(listSourceStates(root).map((s) => s.id)).toEqual(["good.md"]);
     });
 
     it("returns nothing for a project with no sources", () => {

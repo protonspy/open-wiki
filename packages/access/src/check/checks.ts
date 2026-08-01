@@ -61,6 +61,24 @@ function lineInPage(page: LoadedPage, needle: string): number | undefined {
   return before.split("\n").length - 1 + page.body.slice(0, at).split("\n").length;
 }
 
+/**
+ * Blank out fenced code, keeping the line count intact so a reported line still
+ * points where the reader expects.
+ */
+function withoutFences(body: string): string {
+  let inFence = false;
+  return body
+    .split("\n")
+    .map((line) => {
+      if (/^\s*```/.test(line)) {
+        inFence = !inFence;
+        return "";
+      }
+      return inFence ? "" : line;
+    })
+    .join("\n");
+}
+
 /** The 1-based line `needle` first appears on in `text`, or undefined. */
 function lineOf(text: string, needle: string): number | undefined {
   const at = text.indexOf(needle);
@@ -206,7 +224,7 @@ export function checkProvenance(projectRoot: string, pages: LoadedPage[]): Findi
         code: "provenance.unresolved",
         severity: "error",
         page: page.path,
-        message: `${page.path}: ${issue.reason}`,
+        message: `${page.path}: ${safe(issue.reason)}`,
         fix: "Upload the source it names, or correct the citation. A citation that opens nothing is worse than none — if the source cannot be produced, the claim comes out with it.",
       });
     }
@@ -410,7 +428,11 @@ export function checkCodewiki(projectRoot: string, pages: LoadedPage[]): Finding
   };
 
   for (const page of pages.filter((p) => p.codewiki)) {
-    for (const match of page.body.matchAll(CODEWIKI_CITATION)) {
+    // Fences are examples, not citations. A codewiki page documenting the
+    // citation form — which the skill's own prose does — would otherwise fail
+    // `ow check` for the sample inside its fence. The section scan below
+    // already ignores fences, and so does `checkVocabulary`.
+    for (const match of withoutFences(page.body).matchAll(CODEWIKI_CITATION)) {
       const [whole, target, startText, endText] = match;
       const start = Number(startText);
       const end = endText === undefined ? start : Number(endText);
@@ -506,9 +528,19 @@ export function checkCodewiki(projectRoot: string, pages: LoadedPage[]): Finding
   if (existsSync(stray) && statSync(stray).isDirectory()) {
     // Recursive, like the model three functions above: a stray
     // `codewiki/area/x.md` is exactly as misplaced as `codewiki/x.md`.
-    const strayPages = readdirSync(stray, { recursive: true, withFileTypes: true }).filter(
-      (entry) => entry.isFile() && entry.name.endsWith(".md"),
-    );
+    // `recursive: true` follows symlinked directories, which would walk out of
+    // the project. Same rule as `listPages`: links are skipped, not followed.
+    const strayPages: string[] = [];
+    const walkStray = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isSymbolicLink()) continue;
+        if (entry.isDirectory()) walkStray(join(dir, entry.name));
+        else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
+          strayPages.push(entry.name);
+        }
+      }
+    };
+    walkStray(stray);
     if (strayPages.length > 0) {
       findings.push({
         code: "codewiki.misplaced",
@@ -533,7 +565,7 @@ export function checkSchema(pages: LoadedPage[]): Finding[] {
         code: "page.invalid",
         severity: "error",
         page: page.path,
-        message: `${page.path}: ${issue.field ? `${issue.field}: ` : ""}${issue.reason}`,
+        message: `${page.path}: ${safe(issue.field ? `${issue.field}: ${issue.reason}` : issue.reason)}`,
         fix: "Correct the frontmatter. `ow write` applies the same rules, and the gate would have refused this write — it arrived some other way.",
       });
     }

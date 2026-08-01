@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { assertWithin, OutsideProjectError } from "../paths.js";
 
@@ -89,12 +89,15 @@ export function listSources(projectRoot: string): string[] {
   const raw = join(projectRoot, "raw");
   if (!existsSync(raw)) return [];
   const ids: string[] = [];
-  for (const entry of readdirSync(raw)) {
-    if (entry === INBOX) continue;
-    const dir = join(raw, entry);
-    if (!statSync(dir).isDirectory()) continue;
+  for (const entry of readdirSync(raw, { withFileTypes: true })) {
+    if (entry.name === INBOX) continue;
+    // `withFileTypes` describes the entry itself, so a dangling symlink is
+    // reported rather than stat'd. `statSync` on one throws ENOENT, which used
+    // to abort the whole listing — and `ow check` with it.
+    if (!entry.isDirectory()) continue;
+    const dir = join(raw, entry.name);
     if (!existsSync(join(dir, "manifest.json"))) continue;
-    ids.push(entry);
+    ids.push(entry.name);
   }
   return ids;
 }

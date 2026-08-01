@@ -156,6 +156,23 @@ describe("the integrity checks (group 7)", () => {
       expect(checkProject(root).pages).toBe(0);
     });
 
+    it("sees a page whose extension is upper case, as the gate does", () => {
+      // The gate folds case before testing for `.md`, so it validates and
+      // accepts `wiki/fenix.MD`. Matching case-sensitively here meant that page
+      // was accepted and then invisible to everything downstream.
+      writeFileSync(
+        join(root, "wiki", "shouty.MD"),
+        "---\nid: topic:shouty\ntype: topic\ntitle: shouty\nstatus: active\naliases: []\n" +
+          'updated: 2026-08-01\nsources: []\nsuperseded-by: ""\n---\n',
+        "utf8",
+      );
+      index(root, ["shouty"]);
+      changelog(root, ["shouty"]);
+
+      expect(checkProject(root).pages).toBe(1);
+      expect(codes(checkProject(root).findings)).not.toContain("page.orphan");
+    });
+
     it("treats a nested file called index.md as an ordinary page", () => {
       page(root, "topics/index.md");
       index(root, ["index"]);
@@ -456,6 +473,20 @@ describe("the integrity checks (group 7)", () => {
       changelog(root, []);
 
       expect(codes(checkProject(root).findings)).toContain("codewiki.misplaced");
+    });
+
+    it("does not resolve a citation shown inside a fenced code block", () => {
+      // A codewiki page documenting the citation form — which the skill's own
+      // prose does — would otherwise fail `ow check` for its own example.
+      page(
+        root,
+        "codewiki/dispatch.md",
+        "## Form\n\n```\n[path/to/file.ts:12-40]()\n```\n\nAnd prose.\n",
+      );
+      index(root, ["dispatch"]);
+      changelog(root, ["dispatch"]);
+
+      expect(codes(checkProject(root).findings)).not.toContain("codewiki.citation-unresolved");
     });
 
     it("reports a codewiki/ at the project root as misplaced", () => {

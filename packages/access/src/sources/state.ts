@@ -74,7 +74,12 @@ export function sourceState(
   citedBy: readonly string[] = [],
 ): SourceState {
   const manifest = readManifest(projectRoot, id);
-  const dir = assertWithin(projectRoot, join(projectRoot, "raw", id));
+  // Confined against `raw/`, not merely the project: an id like `../wiki` stays
+  // inside the project and is still not a source. `readManifest` already roots
+  // at `raw/`; this has to agree with it or the two disagree about what an id
+  // may name.
+  const rawDir = join(projectRoot, "raw");
+  const dir = assertWithin(rawDir, join(rawDir, id));
   const textReady = existsSync(join(dir, "text.md"));
 
   const journal = readJournal(projectRoot, id);
@@ -117,7 +122,17 @@ export function listSourceStates(
   projectRoot: string,
   citations: ReadonlyMap<string, string[]> = new Map(),
 ): SourceState[] {
-  return listSources(projectRoot)
-    .map((id) => sourceState(projectRoot, id, citations.get(id) ?? []))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const states: SourceState[] = [];
+  for (const id of listSources(projectRoot)) {
+    try {
+      states.push(sourceState(projectRoot, id, citations.get(id) ?? []));
+    } catch {
+      // `listSources` only checks that `manifest.json` exists. One that will
+      // not parse, or a source deleted between the listing and the read, must
+      // not take the other nineteen with it — a sources screen showing nothing
+      // because of one bad directory is worse than one showing nineteen.
+      continue;
+    }
+  }
+  return states.sort((a, b) => a.id.localeCompare(b.id));
 }

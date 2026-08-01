@@ -70,18 +70,26 @@ export function listPages(projectRoot: string): PageRef[] {
         walk(full);
         continue;
       }
-      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      // Case-folded, like the gate. `gatedPageRel` lowercases before testing
+      // for `.md`, so it validates and accepts `wiki/fenix.MD` — and matching
+      // case-sensitively here meant that page was accepted by the gate and then
+      // invisible to the index, the orphan check, `ow graph` and MCP. That is
+      // the exact failure this addressing model exists to end, one level down.
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
 
       const rel = relative(wiki, full).split(sep).join(posix.sep);
       // Only the three at the very top are the wiki's own; a file called
       // `index.md` inside `wiki/topics/` is an ordinary page named "index".
-      if (!rel.includes(posix.sep) && (NON_ENTITY_PAGES as readonly string[]).includes(rel)) {
+      if (
+        !rel.includes(posix.sep) &&
+        (NON_ENTITY_PAGES as readonly string[]).includes(rel.toLowerCase())
+      ) {
         continue;
       }
       pages.push({
         slug: entry.name.slice(0, -3),
         path: `wiki/${rel}`,
-        codewiki: rel.startsWith(`${CODEWIKI_DIR}/`),
+        codewiki: rel.toLowerCase().startsWith(`${CODEWIKI_DIR}/`),
       });
     }
   };
