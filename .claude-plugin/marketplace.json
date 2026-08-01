@@ -1,5 +1,6 @@
 {
   "name": "protonspy",
+  "description": "open-wiki: a project's documentation as a wiki the agent already has open, with every write going through a gate that validates it.",
   "owner": {
     "name": "protonspy",
     "url": "https://github.com/protonspy"

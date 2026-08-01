@@ -158,6 +158,7 @@ const { checkPlugin } = await import("../../../scripts/ci/check-plugin.mjs");
 
 describe("checkPlugin (10.6)", () => {
   const marketplace = {
+    description: "what this marketplace offers",
     plugins: [{ name: "open-wiki", source: "./plugins/open-wiki", version: "0.1.0" }],
   };
   const manifest = { name: "open-wiki", version: "0.1.0" };
@@ -220,6 +221,24 @@ describe("checkPlugin (10.6)", () => {
       exists(PRESENT),
     );
     expect(result.ok).toBe(false);
+  });
+
+  it("refuses a marketplace with no description", () => {
+    // `claude plugin validate --strict` treats the warning as an error, and
+    // this script is the floor underneath that tool rather than a looser
+    // second opinion — it exists because a check that silently passes when its
+    // tool is missing is not a check.
+    const result = checkPlugin(
+      ".",
+      files({
+        ".claude-plugin/marketplace.json": {
+          plugins: [{ name: "open-wiki", source: "./plugins/open-wiki", version: "0.1.0" }],
+        },
+      }),
+      exists(PRESENT),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.problems.join(" ")).toMatch(/--strict/);
   });
 
   it("refuses a plugin with no hooks — the gate is what it is for", () => {

@@ -153,7 +153,11 @@ jobs:
             echo "could not install the Claude Code CLI — skipped (check-plugin.mjs still ran)"
             exit 0
           fi
+          # Both, because they are different manifests: validating the
+          # marketplace reads `.claude-plugin/marketplace.json` and stops — it
+          # never opens the plugin's own manifest.
           claude plugin validate --strict .
+          claude plugin validate --strict ./plugins/open-wiki
 
   # The single check to require on the branch. Skipped jobs are fine — an empty
   # workspace has nothing to test — but a failed or cancelled one is not.

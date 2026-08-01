@@ -29,6 +29,12 @@ export function checkPlugin(repoRoot = root, read = defaultRead, exists = exists
     problems.push("the marketplace lists no plugins");
     return { ok: false, problems };
   }
+  // `claude plugin validate --strict` treats a missing description as an
+  // error, and this is the floor underneath it — a check that only runs when
+  // the CLI installs is a check that reports the tool's absence as success.
+  if (!marketplace.description) {
+    problems.push("the marketplace has no description — --strict treats that as an error");
+  }
 
   for (const entry of marketplace.plugins) {
     const source = String(entry.source ?? "");
