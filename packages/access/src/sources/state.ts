@@ -95,8 +95,23 @@ export function sourceState(
     citedBy: [...citedBy],
   };
 
-  if (failed !== undefined && !textReady) {
-    return { ...base, stage: "failed", error: failed, ...progressOf(chunks.length, done) };
+  // A chunk that failed is not a transcription that stopped. The pipeline
+  // (4.9) records a chunk's error and carries on to the next one, because 6.3
+  // offers "redo only what failed" and that needs the rest attempted — so a
+  // single 429 twelve minutes into a healthy run would otherwise make the
+  // source read as `failed`, with a progress count that keeps climbing, for
+  // the rest of the run.
+  //
+  // `failed` means nothing is left to try: every chunk has been attempted and
+  // at least one did not succeed. The error is carried either way, so a caller
+  // showing a source in flight can still say what went wrong on the way.
+  const untried = chunks.some((c) => !c.done && c.error === undefined);
+  const stopped =
+    journal?.error !== undefined || (chunks.length > 0 && !untried && done < chunks.length);
+  const error = failed !== undefined ? { error: failed } : {};
+
+  if (stopped && !textReady) {
+    return { ...base, stage: "failed", ...error, ...progressOf(chunks.length, done) };
   }
   // `textReady` gates "cited" on purpose: a page citing a source whose text
   // never landed is citing something nothing could have read, and reporting
@@ -104,7 +119,7 @@ export function sourceState(
   // recorded in `citedBy`, so the caller can say both things.
   if (textReady) return { ...base, stage: citedBy.length > 0 ? "cited" : "text-ready" };
   if (chunks.length > 0) {
-    return { ...base, stage: "transcribing", ...progressOf(chunks.length, done) };
+    return { ...base, stage: "transcribing", ...error, ...progressOf(chunks.length, done) };
   }
   return { ...base, stage: "received" };
 }

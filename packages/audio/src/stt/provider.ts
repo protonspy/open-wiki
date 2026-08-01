@@ -107,16 +107,48 @@ export function secondsToNs(seconds: number): number {
   return Math.round(seconds * NS_PER_SECOND);
 }
 
+/** No single name is this long; one that is came from a hostile or broken page. */
+export const MAX_NAME_CHARS = 64;
+
+/**
+ * About 250 tokens of names — a little over Whisper's window, so the budget is
+ * spent rather than wasted, and bounded in *characters* because that is what
+ * actually breaks: a multi-megabyte page title becomes a multi-megabyte form
+ * field on the upload, and an argv value past Windows' 32 KB limit on the
+ * local provider.
+ */
+export const MAX_PROMPT_CHARS = 1000;
+
 /**
  * The prompt that carries the project's vocabulary.
  *
  * Both providers take a free-text prompt and use it to bias decoding, so this
  * is one string built one way rather than two adapters each inventing a
- * format. Bounded because the prompt window is small — Whisper reads only the
- * last 224 tokens — and an unbounded list of every name in a large wiki would
- * push the ones that matter out of it.
+ * format.
+ *
+ * **The best names go last.** Whisper's prompt window holds only its *last*
+ * 224 tokens, so anything that overflows is dropped from the front — and a
+ * list carefully ordered best-first puts "Fenix" exactly where it gets thrown
+ * away. `rankNames` orders them best-first because that is the useful order
+ * for a caller to read; this reverses it, because that is the order the model
+ * keeps. Getting this backwards degrades the feature precisely on the projects
+ * with enough pages for it to matter.
  */
-export function vocabularyPrompt(vocabulary: readonly string[], limit = 120): string {
-  const names = vocabulary.filter((n) => n.trim().length > 0).slice(0, limit);
-  return names.join(", ");
+export function vocabularyPrompt(
+  vocabulary: readonly string[],
+  maxChars = MAX_PROMPT_CHARS,
+): string {
+  const kept: string[] = [];
+  let used = 0;
+  for (const raw of vocabulary) {
+    const name = raw.trim().slice(0, MAX_NAME_CHARS);
+    if (!name) continue;
+    const cost = name.length + (kept.length > 0 ? 2 : 0);
+    if (used + cost > maxChars) break;
+    used += cost;
+    kept.push(name);
+  }
+  // Taken best-first so the budget buys the best names, emitted worst-first so
+  // the best are the ones nearest the end.
+  return kept.reverse().join(", ");
 }

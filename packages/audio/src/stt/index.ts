@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { createGroqProvider, type GroqOptions } from "./groq.js";
 import { createWhisperCppProvider, type WhisperCppOptions } from "./whispercpp.js";
 import type { ProviderName, SttProvider } from "./provider.js";
@@ -46,6 +47,30 @@ export interface CreateProviderDeps {
   run?: WhisperCppOptions["run"];
 }
 
+/**
+ * Run the local binary. It is the default rather than an injected dependency
+ * so that a provider can be built from configuration alone — which is the
+ * whole job of this function. A caller that forgot to pass a spawn seam should
+ * get a working provider, not a message telling them to fix settings that are
+ * already right.
+ */
+function defaultSpawn(): WhisperCppOptions["run"] {
+  return async (exe, args) =>
+    new Promise((resolvePromise, rejectPromise) => {
+      const child = spawn(exe, [...args], { windowsHide: true });
+      let stderr = "";
+      child.stderr.on("data", (d: Buffer) => {
+        // Bounded for the same reason `spawnFfmpeg` bounds its own: a run over
+        // a damaged file emits a line per bad frame.
+        stderr = (stderr + d.toString("utf8")).slice(-MAX_STDERR_CHARS);
+      });
+      child.on("error", rejectPromise);
+      child.on("close", (code) => resolvePromise({ code: code ?? -1, stderr }));
+    });
+}
+
+const MAX_STDERR_CHARS = 64 * 1024;
+
 export function createProvider(config: SttConfig, deps: CreateProviderDeps = {}): SttProvider {
   if (config.provider === "groq") {
     if (!config.apiKey) throw new MissingCredentialError();
@@ -57,16 +82,23 @@ export function createProvider(config: SttConfig, deps: CreateProviderDeps = {})
   }
   if (!config.whisperExe || !config.whisperModel) throw new MissingWhisperPathError();
   const make = deps.whispercpp ?? createWhisperCppProvider;
-  if (!deps.run) throw new MissingWhisperPathError();
   return make({
     exe: config.whisperExe,
     modelPath: config.whisperModel,
-    run: deps.run,
+    run: deps.run ?? defaultSpawn(),
   });
 }
 
 export * from "./provider.js";
-export { createGroqProvider, parseVerboseJson, toIso639, GROQ_MODEL, GROQ_URL } from "./groq.js";
+export {
+  createGroqProvider,
+  parseVerboseJson,
+  toIso639,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  GROQ_MODEL,
+  GROQ_URL,
+  InsecureEndpointError,
+} from "./groq.js";
 export {
   createWhisperCppProvider,
   parseWhisperJson,

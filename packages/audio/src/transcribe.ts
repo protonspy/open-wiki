@@ -4,7 +4,6 @@ import { join } from "node:path";
 import type { FfmpegRunner } from "./ffmpeg.js";
 import { runOrThrow } from "./ffmpeg.js";
 import {
-  isComplete,
   journalMatches,
   pendingChunks,
   planJournal,
@@ -84,6 +83,7 @@ export async function transcribeRecording(options: TranscribeOptions): Promise<J
     model: options.provider.model,
     chunks: options.map.chunks,
     tracks,
+    language: options.language,
   };
 
   let journal = readJournal(options.dir);
@@ -186,5 +186,3 @@ export function extractChunkArgs(
 function seconds(ns: number): string {
   return (ns / NS_PER_SECOND).toFixed(6);
 }
-
-export { isComplete };

@@ -8,6 +8,8 @@ import {
   createWhisperCppProvider,
   FLAC_16K,
   GROQ_MODEL,
+  InsecureEndpointError,
+  MAX_PROMPT_CHARS,
   MissingCredentialError,
   MissingWhisperPathError,
   parseVerboseJson,
@@ -43,17 +45,36 @@ function formOf(init: RequestInit): FormData {
 
 describe("vocabularyPrompt (4.10)", () => {
   it("joins the names into one prompt both providers can take", () => {
-    expect(vocabularyPrompt(["Fenix", "Mateus"])).toBe("Fenix, Mateus");
-  });
-
-  it("bounds the list, because the prompt window holds only so much", () => {
-    const many = Array.from({ length: 500 }, (_, i) => `name${i}`);
-    expect(vocabularyPrompt(many, 3)).toBe("name0, name1, name2");
+    expect(vocabularyPrompt(["Fenix", "Mateus"])).toBe("Mateus, Fenix");
   });
 
   it("is empty when the project has no names yet", () => {
     expect(vocabularyPrompt([])).toBe("");
     expect(vocabularyPrompt(["  "])).toBe("");
+  });
+  it("puts the best names last, because the window keeps the end", () => {
+    // Whisper reads only its last 224 tokens. A list ordered best-first puts
+    // the name that matters exactly where it is dropped.
+    expect(vocabularyPrompt(["Fenix", "Mateus Andrade"])).toBe("Mateus Andrade, Fenix");
+  });
+
+  it("spends the character budget on the best names", () => {
+    const prompt = vocabularyPrompt(["Fenix", "Mateus Andrade", "Someone Else"], 20);
+    expect(prompt).toContain("Fenix");
+    expect(prompt.length).toBeLessThanOrEqual(20);
+  });
+
+  it("bounds one absurd name rather than sending it whole", () => {
+    // A page in a project that arrived by clone. Unbounded, it is a megabyte
+    // of form field on the upload and past Windows' argv limit locally.
+    const prompt = vocabularyPrompt(["x".repeat(100_000), "Fenix"]);
+    expect(prompt.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+    expect(prompt).toContain("Fenix");
+  });
+
+  it("bounds the whole prompt", () => {
+    const many = Array.from({ length: 5000 }, (_, i) => `name${i}`);
+    expect(vocabularyPrompt(many).length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
   });
 });
 
@@ -143,6 +164,47 @@ describe("the Groq provider (4.8, 4.15)", () => {
     const provider = createGroqProvider({ apiKey: "k", fetch: doFetch, sleep: async () => {} });
     await expect(transcribeWith(provider)).rejects.toThrow(SttError);
     expect(attempt).toBe(1);
+  });
+
+  it("retries a network failure, which is the one adr:0012 names", async () => {
+    // A `fetch` that rejects — DNS, ECONNRESET, TLS, a timeout — throws a
+    // TypeError, not an SttError. Retrying only on errors this module raised
+    // itself gave a 503 three attempts and the most common failure one.
+    let attempt = 0;
+    const doFetch: FetchLike = async () => {
+      attempt += 1;
+      if (attempt === 1) throw new TypeError("fetch failed");
+      return new Response(JSON.stringify(body), { status: 200 });
+    };
+    const provider = createGroqProvider({ apiKey: "k", fetch: doFetch, sleep: async () => {} });
+    await expect(transcribeWith(provider)).resolves.toMatchObject({ text: "bom dia" });
+    expect(attempt).toBe(2);
+  });
+
+  it("bounds how long one attempt may take", async () => {
+    let signal: AbortSignal | undefined;
+    const doFetch: FetchLike = async (_url, init) => {
+      signal = init.signal ?? undefined;
+      return new Response(JSON.stringify(body), { status: 200 });
+    };
+    await transcribeWith(createGroqProvider({ apiKey: "k", fetch: doFetch }));
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("does not follow a redirect, whatever fetch would have done with the header", async () => {
+    let init: RequestInit | undefined;
+    const doFetch: FetchLike = async (_url, i) => {
+      init = i;
+      return new Response(JSON.stringify(body), { status: 200 });
+    };
+    await transcribeWith(createGroqProvider({ apiKey: "k", fetch: doFetch }));
+    expect(init?.redirect).toBe("error");
+  });
+
+  it("refuses to send the credential over plain http", () => {
+    expect(() => createGroqProvider({ apiKey: "k", baseUrl: "http://example.test/v1" })).toThrow(
+      InsecureEndpointError,
+    );
   });
 
   it("gives up after the configured number of attempts", async () => {

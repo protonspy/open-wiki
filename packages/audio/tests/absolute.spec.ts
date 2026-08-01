@@ -124,6 +124,47 @@ describe("absolutePassages (4.11)", () => {
     expect(passages[0]!.compressedEndNs).toBeLessThanOrEqual(s(25));
   });
 
+  it("drops a segment that begins past the end of its chunk", () => {
+    // Not the same as one that merely runs over. A segment that *starts* after
+    // the chunk ends is the next chunk's, and that chunk will return the same
+    // words — clipping it to a zero-length passage on the boundary is how they
+    // land in the timeline twice.
+    const passages = absolutePassages(
+      chunk({
+        compressedStartNs: 0,
+        compressedEndNs: s(5),
+        segments: [{ startNs: s(6), endNs: s(7), text: "belongs to the next chunk" }],
+      }),
+      map,
+    );
+    expect(passages).toEqual([]);
+  });
+
+  it("never emits a passage that ends before it starts", () => {
+    // Clamping the start against the chunk and the end against the recording
+    // is how a passage comes to claim it starts at 28 s and ends at 25 s.
+    const passages = absolutePassages(
+      chunk({
+        compressedStartNs: s(20),
+        compressedEndNs: s(30),
+        segments: [{ startNs: s(1), endNs: s(9), text: "past the map" }],
+      }),
+      map,
+    );
+    for (const passage of passages) {
+      expect(passage.compressedEndNs).toBeGreaterThanOrEqual(passage.compressedStartNs);
+      expect(passage.compressedStartNs).toBeLessThanOrEqual(map.compressedDurationNs);
+      expect(passage.compressedEndNs).toBeLessThanOrEqual(map.compressedDurationNs);
+    }
+  });
+
+  it("returns nothing rather than a wrong instant when the map refuses one", () => {
+    const empty = { ...map, segments: [], compressedDurationNs: 0 };
+    expect(
+      absolutePassages(chunk({ segments: [{ startNs: 0, endNs: 1, text: "orphan" }] }), empty),
+    ).toEqual([]);
+  });
+
   it("drops a segment with nothing in it", () => {
     const passages = absolutePassages(
       chunk({ segments: [{ startNs: 0, endNs: SECOND, text: "   " }] }),

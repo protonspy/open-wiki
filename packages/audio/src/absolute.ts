@@ -57,27 +57,36 @@ function passageAt(
   endNs: number,
   text: string,
 ): TimedPassage | null {
-  // Clamped into the chunk, because Whisper over-runs: asked about ten seconds
-  // it sometimes answers about eleven, and the eleventh belongs to the next
-  // chunk as well — the same words twice in one timeline.
-  const start = clamp(
-    chunk.compressedStartNs + startNs,
-    chunk.compressedStartNs,
-    chunk.compressedEndNs,
-  );
-  const end = clamp(chunk.compressedStartNs + endNs, start, chunk.compressedEndNs);
+  // One ceiling, applied once. The chunk's end and the recording's end are the
+  // same number for the last chunk and the chunk's is lower for every other,
+  // so taking the smaller of the two and clamping everything against it keeps
+  // the three returned fields describing one instant. Clamping them separately
+  // is how a passage ends up claiming to start at 28 s, end at 25 s, and carry
+  // a wall time belonging to neither.
+  const ceiling = Math.min(chunk.compressedEndNs, map.compressedDurationNs);
+  const rawStart = chunk.compressedStartNs + startNs;
 
-  // And clamped into the recording, because the last chunk's end is the
-  // recording's end and a provider that ran past it names an instant the map
-  // rightly refuses.
-  const inRange = Math.min(start, map.compressedDurationNs);
-  const wallStartMs = toWallMs(map, inRange);
+  // Whisper over-runs: asked about ten seconds it sometimes answers about
+  // eleven. A segment that merely *ends* past the chunk is clipped — the words
+  // are real and they started here. A segment that *begins* past it is not
+  // this chunk's at all: the next chunk covers that second and will return the
+  // same words, and clipping it to a zero-length passage on the boundary is
+  // how they end up in the timeline twice.
+  if (rawStart >= ceiling && ceiling > chunk.compressedStartNs) return null;
+
+  const start = clamp(rawStart, chunk.compressedStartNs, ceiling);
+  const end = clamp(chunk.compressedStartNs + endNs, start, ceiling);
+
+  const wallStartMs = toWallMs(map, start);
+  // An instant the map refuses has no place in the timeline. Answering with
+  // the nearest one it accepts would be the map lying, which is the whole
+  // thing this module exists not to do.
   if (wallStartMs === null) return null;
 
   return {
     track: chunk.track,
     compressedStartNs: start,
-    compressedEndNs: Math.min(end, map.compressedDurationNs),
+    compressedEndNs: end,
     wallStartMs,
     text,
   };

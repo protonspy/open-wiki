@@ -34,6 +34,26 @@ export interface GroqOptions {
   attempts?: number;
   /** Injected so a retry test does not actually wait. */
   sleep?: (ms: number) => Promise<void>;
+  /** How long one attempt may take. A stalled socket must not hang the run. */
+  timeoutMs?: number;
+}
+
+/**
+ * A ten-minute chunk returns in about three seconds at Groq's ~228x real time.
+ * Five minutes is far beyond slow and well short of forever — which is what a
+ * request with no timeout is, and what `transcribeRecording` would wait for
+ * with no journal write and no progress in the meantime.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Enough of an error body to say what went wrong; not enough to be a problem. */
+const MAX_ERROR_BODY_BYTES = 8 * 1024;
+
+export class InsecureEndpointError extends Error {
+  constructor(url: string) {
+    super(`refusing to send the transcription credential to ${url}: it is not https`);
+    this.name = "InsecureEndpointError";
+  }
 }
 
 /** Whisper's `language` is ISO 639-1, so a region tag has to lose its region. */
@@ -49,9 +69,13 @@ interface VerboseJson {
 export function createGroqProvider(options: GroqOptions): SttProvider {
   const model = options.model ?? GROQ_MODEL;
   const baseUrl = options.baseUrl ?? GROQ_URL;
+  // The credential rides on every request, so the endpoint is checked once,
+  // here, rather than trusted because it usually comes from a constant.
+  if (!baseUrl.startsWith("https://")) throw new InsecureEndpointError(baseUrl);
   const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
   const attempts = Math.max(1, options.attempts ?? 3);
   const sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   const audioFormat: AudioFormat = FLAC_16K;
 
@@ -67,9 +91,15 @@ export function createGroqProvider(options: GroqOptions): SttProvider {
     const response = await doFetch(baseUrl, {
       method: "POST",
       // The key goes in a header and never into the body or the URL, so it
-      // cannot end up in a log line or a redirect.
+      // cannot end up in a log line. `redirect: "error"` is what makes it not
+      // end up in a redirect either: undici happens to strip `Authorization`
+      // across origins today, but a transcription endpoint has no business
+      // redirecting, and this makes that a property of the code rather than of
+      // whichever fetch implementation is underneath.
+      redirect: "error",
       headers: { authorization: `Bearer ${options.apiKey}` },
       body: form,
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
@@ -94,7 +124,7 @@ export function createGroqProvider(options: GroqOptions): SttProvider {
           return await once(request);
         } catch (e) {
           last = e;
-          if (!(e instanceof SttError) || !e.retryable || attempt === attempts) break;
+          if (!isRetryable(e) || attempt === attempts) break;
           // Exponential, so a rate limit that needs a moment gets one rather
           // than three requests in the same second.
           await sleep(2 ** (attempt - 1) * 1000);
@@ -120,9 +150,45 @@ export function parseVerboseJson(body: VerboseJson): SttResult {
   return { segments, text: (body.text ?? segments.map((s) => s.text).join(" ")).trim() };
 }
 
+/**
+ * Whether another attempt is worth making.
+ *
+ * `adr:0012` names "the network drops between chunk four and chunk five" as a
+ * motivating failure, and a `fetch` that rejects for that reason throws a
+ * `TypeError` or an `AbortError` — not an `SttError`. Retrying only on the
+ * errors this module raised itself would give a 503 three attempts and the
+ * most common transient failure exactly one.
+ *
+ * `InsecureEndpointError` never reaches here: it is thrown when the provider is
+ * built, not when a request is made.
+ */
+function isRetryable(error: unknown): boolean {
+  if (error instanceof SttError) return error.retryable;
+  // Anything else came out of `fetch` — a socket, a name lookup, a timeout.
+  return true;
+}
+
 async function safeText(response: Response): Promise<string> {
   try {
-    return (await response.text()).slice(0, 500);
+    const body = response.body;
+    if (!body) return "(no body)";
+    // Read up to a cap rather than reading it whole and slicing: a response
+    // that streams indefinitely would otherwise be consumed to exhaustion
+    // before the first character was thrown away.
+    const reader = body.getReader();
+    const parts: string[] = [];
+    let size = 0;
+    try {
+      while (size < MAX_ERROR_BODY_BYTES) {
+        const { done, value } = await reader.read();
+        if (done || !value) break;
+        size += value.byteLength;
+        parts.push(new TextDecoder().decode(value, { stream: true }));
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+    return parts.join("").slice(0, 500);
   } catch {
     return "(no body)";
   }

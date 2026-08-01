@@ -234,6 +234,28 @@ describe("transcribeRecording (4.9)", () => {
     expect(journal.chunks.filter((c) => c.done)).toHaveLength(3);
   });
 
+  it("makes a failure durable before the next chunk is sent", async () => {
+    // The other half of `adr:0012`. A machine that goes down after chunk two
+    // failed must come back knowing chunk two failed — otherwise the resume
+    // re-sends everything that came after it as well.
+    const seen: Array<string | undefined> = [];
+    const p = provider(async (n) => {
+      seen.push(readJournal(dir)?.chunks[0]?.error);
+      if (n === 0) throw new SttError("that chunk was unreadable", false);
+      return said();
+    });
+    await transcribeRecording({
+      dir,
+      provider: p.provider,
+      language: "en",
+      map,
+      run: writingFfmpeg(),
+    });
+    // Nothing before the first attempt; the error is on disk from the second on.
+    expect(seen[0]).toBeUndefined();
+    expect(seen[1]).toMatch(/unreadable/);
+  });
+
   it("stops after a run of failures, rather than paying for twenty of them", async () => {
     // A bad credential fails every chunk identically. Three in a row is the
     // shape of a systemic failure; one is the shape of a bad chunk.

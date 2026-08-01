@@ -61,6 +61,13 @@ export interface JournalExpectation {
   model: string;
   chunks: readonly Chunk[];
   tracks?: readonly TrackName[];
+  /**
+   * The content language now configured. `adr:0012` names the provider, the
+   * model and the boundaries; this is the same class of mismatch and is
+   * checked with them — resuming a `pt-BR` journal after the setting moved to
+   * English produces one transcript in two languages, which reads as one.
+   */
+  language?: string;
 }
 
 export type JournalMatch = { ok: true } | { ok: false; reason: string };
@@ -111,14 +118,25 @@ export function journalMatches(journal: Journal, expected: JournalExpectation): 
         `${expected.model} — resuming would put two models' output in one timeline`,
     };
   }
-  const tracks = expected.tracks ?? TRACKS;
-  const wanted = planJournal(expected, journal.language).chunks;
-  if (journal.chunks.length !== wanted.length) {
+  if (expected.language !== undefined && journal.language !== expected.language) {
     return {
       ok: false,
       reason:
-        `this journal covers ${journal.chunks.length} chunks across ${tracks.length} tracks ` +
-        `and the recording now cuts into ${wanted.length} — the boundaries moved`,
+        `this journal was written for ${journal.language} and the content language is now ` +
+        `${expected.language} — resuming would produce one transcript in two languages`,
+    };
+  }
+  const tracks = expected.tracks ?? TRACKS;
+  const wanted = planJournal(expected, journal.language).chunks;
+  if (journal.chunks.length !== wanted.length) {
+    // Counted in cuts, not in units of work: the user recognises "the
+    // recording cuts into 3 chunks", not the 6 requests that makes over two
+    // tracks.
+    return {
+      ok: false,
+      reason:
+        `this journal covers ${journal.chunks.length / tracks.length} chunks and the ` +
+        `recording now cuts into ${expected.chunks.length} — the boundaries moved`,
     };
   }
   for (const [i, chunk] of journal.chunks.entries()) {
@@ -190,6 +208,17 @@ export function writeJournal(dir: string, journal: Journal): void {
   }
 }
 
+/**
+ * Whether a parsed value is a journal this version can act on.
+ *
+ * It validates the content fields as well as the scheduling ones, which is
+ * not tidiness. `text` and `segments` are what end up in the timeline and then
+ * in a wiki page, carrying wall-clock provenance derived from the real time
+ * map — and a journal marked complete makes 4.14 delete 690 MB of source audio
+ * without a provider ever having been called. A guard that returns
+ * `value is Journal` while never looking at those three fields hands every
+ * consumer a `string` that is a number and an array that is a string.
+ */
 export function isJournal(value: unknown): value is Journal {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const journal = value as Partial<Journal>;
@@ -197,14 +226,34 @@ export function isJournal(value: unknown): value is Journal {
   if (journal.provider !== "groq" && journal.provider !== "whispercpp") return false;
   if (typeof journal.model !== "string" || typeof journal.language !== "string") return false;
   if (!Array.isArray(journal.chunks)) return false;
-  return journal.chunks.every(
-    (chunk) =>
-      typeof chunk === "object" &&
-      chunk !== null &&
-      Number.isFinite(chunk.index) &&
-      (chunk.track === "mic" || chunk.track === "system") &&
-      Number.isFinite(chunk.compressedStartNs) &&
-      Number.isFinite(chunk.compressedEndNs) &&
-      typeof chunk.done === "boolean",
-  );
+  if (journal.chunks.length > MAX_CHUNKS) return false;
+  return journal.chunks.every(isJournalChunk);
+}
+
+/**
+ * A day of audio at the 10-minute chunks 4.7 plans, over two tracks, is under
+ * 300. The bound is here because the array sizes every loop that walks it.
+ */
+const MAX_CHUNKS = 10_000;
+
+function isJournalChunk(chunk: unknown): chunk is JournalChunk {
+  if (typeof chunk !== "object" || chunk === null) return false;
+  const c = chunk as Partial<JournalChunk>;
+  if (!Number.isFinite(c.index)) return false;
+  if (c.track !== "mic" && c.track !== "system") return false;
+  if (!Number.isFinite(c.compressedStartNs) || !Number.isFinite(c.compressedEndNs)) return false;
+  if (typeof c.done !== "boolean") return false;
+  if (c.text !== undefined && typeof c.text !== "string") return false;
+  if (c.error !== undefined && typeof c.error !== "string") return false;
+  if (c.segments !== undefined) {
+    if (!Array.isArray(c.segments)) return false;
+    if (!c.segments.every(isSegment)) return false;
+  }
+  return true;
+}
+
+function isSegment(segment: unknown): segment is SttSegment {
+  if (typeof segment !== "object" || segment === null) return false;
+  const s = segment as Partial<SttSegment>;
+  return Number.isFinite(s.startNs) && Number.isFinite(s.endNs) && typeof s.text === "string";
 }

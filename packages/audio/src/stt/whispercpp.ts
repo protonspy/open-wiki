@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   SttError,
   vocabularyPrompt,
@@ -70,7 +70,10 @@ export function createWhisperCppProvider(options: WhisperCppOptions): SttProvide
 
     async transcribe(request: SttRequest): Promise<SttResult> {
       const dir = mkdtempSync(join(tmpdir(), "ow-whisper-"));
-      const input = join(dir, request.filename);
+      // `basename`, because `filename` is documented as "the name the provider
+      // sees" and this is an exported provider: nothing here should depend on
+      // a numeric guard in a different file to know it is not a path.
+      const input = join(dir, basename(request.filename));
       const outputStem = join(dir, "out");
       try {
         writeFileSync(input, request.audio);
