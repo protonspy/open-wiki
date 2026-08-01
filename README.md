@@ -22,13 +22,20 @@ Windows 10/11. Apache-2.0.
 
 ## Install
 
+The installer from [Releases](https://github.com/protonspy/open-wiki/releases).
+Every release publishes a `SHA256SUMS.txt` beside it — check it.
+
+Or through Scoop, from the manifest that release attaches:
+
 ```powershell
-winget install protonspy.open-wiki
+scoop install https://github.com/protonspy/open-wiki/releases/latest/download/open-wiki.json
 ```
 
-or `scoop install open-wiki`, or the installer from
-[Releases](https://github.com/protonspy/open-wiki/releases). Every release
-publishes a `SHA256SUMS.txt` beside the installer — check it.
+A winget manifest is generated and attached to every release as well
+(`manifests.zip`), quoting the same hash. **It is not in the winget community
+repository yet** — submitting it is a pull request to `microsoft/winget-pkgs`
+that nothing here opens for you, so `winget install protonspy.open-wiki` does
+not work today.
 
 For the CLI alone, with nothing installed:
 

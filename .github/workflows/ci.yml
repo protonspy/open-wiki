@@ -142,11 +142,18 @@ jobs:
       - name: The marketplace and the plugin manifest are well formed
         run: node scripts/ci/check-plugin.mjs
 
+      # A failed *install* is tolerated — a registry outage is not a finding
+      # about this repository. A failed *validation* is not: `continue-on-error`
+      # made the `|| exit 1` inert, so the step reported success whatever the
+      # tool said — which is exactly what check-plugin.mjs's own header calls
+      # "a check that silently passes when its tool is missing".
       - name: claude plugin validate --strict
-        continue-on-error: true
         run: |
-          npm i -g @anthropic-ai/claude-code >/dev/null 2>&1 || exit 0
-          claude plugin validate --strict . || exit 1
+          if ! npm i -g @anthropic-ai/claude-code >/dev/null 2>&1; then
+            echo "could not install the Claude Code CLI — skipped (check-plugin.mjs still ran)"
+            exit 0
+          fi
+          claude plugin validate --strict .
 
   # The single check to require on the branch. Skipped jobs are fine — an empty
   # workspace has nothing to test — but a failed or cancelled one is not.

@@ -395,6 +395,28 @@ which have to say the same thing.
 (10.3). A skew between them fails looking like corrupted state rather than a bad install,
 which is the cost `adr:0014-typescript-everywhere-except-audio-capture` accepted.
 
+*9.14 was built RED first.* Seven assertions in `packages/access/tests/socket.spec.ts`
+failed against signature-only stubs before `socket.ts` existed — the verb split, the refusal
+of a write, and the two paths agreeing. The socket is a boundary, and a boundary whose test
+never failed has not been shown to test anything.
+
+*The endpoint name is not a secret.* The pipe is named from a hash of the project path,
+which is obscure and nothing more: any local process guesses or enumerates it. So both
+directions are authenticated — a random token in the application's own data directory
+(0600, in a 0700 directory), and an HMAC over the client's nonce coming back — because
+whatever holds that endpoint decides what `ow read` prints into an agent's context.
+
+*Bundling is what makes the packaging real, and it breaks three things quietly.* The
+packaged application has no `node_modules` and no TypeScript, so the main process, the
+preload and the CLI are all bundles — and each collapsed something the source relied on.
+`import.meta.url` cannot be expressed in CommonJS (esbuild warns and exits 0, so the
+packaging run stays green and the application does not start); the ESM output's `require`
+stub throws for the CommonJS packages in the graph; and the resolvers that find ffmpeg and
+`recorder.exe` count directories up from *their own source file*, which is three different
+depths flattened into one file. The last is the worst, because everything passes and only an
+installed copy fails to record — so `apps/desktop/src/main/resources.ts` states the packaged
+location rather than deriving it.
+
 **Research, later, and why it still costs almost nothing.** Nothing in this plan asks the
 application to go and find material — sources arrive because a person uploaded a file or
 recorded a meeting. But 3.7 watches an inbox, which means an agent that can already read

@@ -34,13 +34,6 @@ export function installerUrl(version) {
  */
 export function wingetManifests(version, sha256) {
   const dir = `manifests/${PUBLISHER[0].toLowerCase()}/${PUBLISHER}/open-wiki/${version}`;
-  const header = (type) =>
-    [
-      `PackageIdentifier: ${PACKAGE_ID}`,
-      `PackageVersion: ${version}`,
-      `ManifestType: ${type}`,
-      "ManifestVersion: 1.6.0",
-    ].join("\n");
 
   return {
     [`${dir}/${PACKAGE_ID}.yaml`]: [
@@ -77,7 +70,8 @@ export function wingetManifests(version, sha256) {
     ].join("\n"),
 
     [`${dir}/${PACKAGE_ID}.installer.yaml`]: [
-      header("installer").split("\nManifestType")[0],
+      `PackageIdentifier: ${PACKAGE_ID}`,
+      `PackageVersion: ${version}`,
       "InstallerType: nullsoft",
       "Scope: user",
       "InstallModes:",
@@ -94,8 +88,21 @@ export function wingetManifests(version, sha256) {
   };
 }
 
-/** Scoop is one JSON manifest, and `autoupdate` is what keeps it current. */
+/**
+ * Scoop is one JSON manifest, and `autoupdate` is what keeps it current.
+ *
+ * **It runs the installer rather than pretending to be portable.** Scoop's
+ * usual shape — download an archive, `bin` a file out of it — does not apply
+ * here: what the release publishes is an NSIS setup, and Scoop understands
+ * Inno but not NSIS. A manifest with a bare `.exe` url and a `bin` entry
+ * downloads the setup, never runs it, and then fails to shim a file that was
+ * never extracted. So the setup is invoked silently by an `installer.script`,
+ * and the matching `uninstaller.script` calls NSIS's own uninstaller — which
+ * is also what takes `$INSTDIR\bin` back off PATH.
+ */
 export function scoopManifest(version, sha256) {
+  const setup = `open-wiki-Setup-${version}.exe`;
+  const installed = "$env:LOCALAPPDATA\\Programs\\open-wiki";
   return `${JSON.stringify(
     {
       version,
@@ -104,20 +111,35 @@ export function scoopManifest(version, sha256) {
       license: "Apache-2.0",
       architecture: {
         "64bit": {
-          url: installerUrl(version),
+          // The fragment renames the download, so the installer script below
+          // knows what it is called without parsing the URL.
+          url: `${installerUrl(version)}#/${setup}`,
           hash: sha256.toLowerCase(),
         },
       },
-      innosetup: false,
-      // The NSIS installer puts `ow` on PATH itself; Scoop shims the exe.
-      bin: ["ow.cmd"],
+      installer: {
+        script: [
+          `Start-Process -FilePath "$dir\\${setup}" -ArgumentList '/S' -Wait`,
+          `Remove-Item "$dir\\${setup}" -Force -ErrorAction SilentlyContinue`,
+        ],
+      },
+      uninstaller: {
+        script: [
+          `$uninstall = "${installed}\\Uninstall open-wiki.exe"`,
+          "if (Test-Path $uninstall) { Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait }",
+        ],
+      },
+      notes: [
+        "open-wiki installed itself per-user and put `ow` on your PATH.",
+        "Open a new shell before running it.",
+      ],
       checkver: {
         github: `https://github.com/${OWNER}/${REPO}`,
       },
       autoupdate: {
         architecture: {
           "64bit": {
-            url: installerUrl("$version"),
+            url: `${installerUrl("$version")}#/open-wiki-Setup-$version.exe`,
           },
         },
         hash: {

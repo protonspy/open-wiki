@@ -1,8 +1,9 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConnection, createServer, type Server } from "node:net";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { checkProject } from "./check/checks.js";
+import { defaultAppDataDir } from "./config/app-dir.js";
 import { assertWithin } from "./paths.js";
 import { listPages } from "./store/index.js";
 
@@ -29,6 +30,18 @@ import { listPages } from "./store/index.js";
  * needs the application, and `adr:0013-the-project-directory-is-the-unit` says
  * the opposite.
  *
+ * **Both directions are authenticated, because the endpoint name is not a
+ * secret.** It is a hash of a directory path — obscure, and a local process
+ * guesses or enumerates it. Whoever is listening could otherwise feed the CLI
+ * text that is printed as trusted wiki content into an agent's context, which
+ * is the whole prize. So the server writes a random token into the
+ * application's own data directory (0600, in a 0700 directory) and requires it
+ * on every request, and answers with an HMAC over the client's nonce so the
+ * client can tell the real application from something that squatted the name
+ * first. Both reduce the reachable set to "a process already running as this
+ * user with read access to their profile" — which is the boundary the project
+ * directory itself sits behind.
+ *
  * Reached as `@open-wiki/access/socket`, not from the barrel: this module
  * opens a listening socket, and the MCP process's read surface has no business
  * being able to.
@@ -42,7 +55,60 @@ export interface SocketRequest {
   args: string[];
 }
 
+/** What actually goes over the wire — the request plus what proves the peer. */
+interface WireRequest extends SocketRequest {
+  token: string;
+  nonce: string;
+}
+
 export type SocketResponse = { ok: true; result: unknown } | { ok: false; error: string };
+
+/** A response carries the proof the client checks; `askRunningApp` strips it. */
+type WireResponse = SocketResponse & { mac?: string };
+
+export interface SocketOptions {
+  /** Overridable so a test does not write into the real profile. */
+  appDataDir?: string;
+}
+
+/**
+ * A line longer than this is not a request.
+ *
+ * Without it either side buffers whatever the peer sends until the process
+ * dies — and the server side is the Electron main process, which is the window
+ * the user is looking at.
+ */
+export const MAX_LINE_BYTES = 64 * 1024;
+
+/** More than this many at once is not a CLI asking a question. */
+const MAX_CONNECTIONS = 8;
+
+/**
+ * The identity of a project, for naming its endpoint.
+ *
+ * Normalised first, and that is not cosmetic: the desktop passes whatever
+ * `resolveProject` produced and the CLI passes `process.cwd()`, and on Windows
+ * those routinely differ in drive-letter case or by a junction for the same
+ * directory. Every such difference used to hash to a different pipe, so the
+ * optimisation silently did not fire and nothing said so.
+ */
+export function projectKey(projectRoot: string): string {
+  let normalised = resolve(projectRoot);
+  try {
+    normalised = realpathSync(normalised);
+  } catch {
+    /* not there yet, or not readable — the resolved form is the best we have */
+  }
+  if (process.platform === "win32") normalised = normalised.toLowerCase();
+  return createHash("sha256").update(normalised).digest("hex").slice(0, 16);
+}
+
+/** Where the token and (off Windows) the socket file live. 0700, always. */
+function endpointDir(options: SocketOptions = {}): string {
+  const dir = join(options.appDataDir ?? defaultAppDataDir(), "sockets");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
 
 /**
  * The pipe a project's application listens on.
@@ -51,14 +117,21 @@ export type SocketResponse = { ok: true; result: unknown } | { ok: false; error:
  * hashes it too: a pipe name is visible to every process on the machine, and
  * the path carries somebody's username and the name of what they are working
  * on. Windows named pipes are the only form that works on the platform this
- * product supports; the same name is a filesystem socket elsewhere, which is
- * what makes this testable off Windows.
+ * product supports; elsewhere it is a filesystem socket, which is what makes
+ * this testable off Windows — and it goes in the application's own 0700
+ * directory rather than `/tmp`, which is world-writable and therefore
+ * squattable by any local account.
  */
-export function socketPath(projectRoot: string): string {
-  const id = createHash("sha256").update(projectRoot).digest("hex").slice(0, 16);
+export function socketPath(projectRoot: string, options: SocketOptions = {}): string {
+  const id = projectKey(projectRoot);
   return process.platform === "win32"
     ? `\\\\.\\pipe\\open-wiki-${id}`
-    : join(process.env["TMPDIR"] ?? "/tmp", `open-wiki-${id}.sock`);
+    : join(endpointDir(options), `${id}.sock`);
+}
+
+/** The file the server leaves its token in, for a client running as the same user. */
+export function tokenFile(projectRoot: string, options: SocketOptions = {}): string {
+  return join(endpointDir(options), `${projectKey(projectRoot)}.token`);
 }
 
 /** Whether a verb is one the socket may answer. Everything else writes. */
@@ -91,7 +164,11 @@ export function handleRequest(projectRoot: string, request: SocketRequest): Sock
     // sits, so the correct implementation is also the confined one).
     const ref = listPages(projectRoot).find((p) => p.slug === slug);
     if (!ref) return { ok: false, error: `no page "${slug}" in this wiki` };
-    const file = assertWithin(projectRoot, join(projectRoot, ref.path));
+    // Confined to `wiki/`, not to the project — the same check and the same
+    // reason as `packages/mcp/src/tools.ts`: a path that is inside the project
+    // but outside the wiki is not a page, and the weaker of two checks in one
+    // codebase is the one that is eventually wrong.
+    const file = assertWithin(join(projectRoot, "wiki"), join(projectRoot, ref.path));
     if (!existsSync(file)) return { ok: false, error: `no page "${slug}" in this wiki` };
     return { ok: true, result: readFileSync(file, "utf8") };
   } catch (e) {
@@ -104,25 +181,62 @@ function encode(value: unknown): string {
   return `${JSON.stringify(value)}\n`;
 }
 
+/** Constant time, and false rather than throwing when the lengths differ. */
+function sameSecret(a: string, b: string): boolean {
+  const left = Buffer.from(a, "utf8");
+  const right = Buffer.from(b, "utf8");
+  if (left.length !== right.length || left.length === 0) return false;
+  return timingSafeEqual(left, right);
+}
+
+function macOf(token: string, nonce: string): string {
+  return createHmac("sha256", token).update(nonce).digest("hex");
+}
+
 /**
  * Listen for queries about this project. Returns something the window closes
  * when it does — a server left behind answers about a project nobody has open.
+ *
+ * `onError` is called rather than swallowed. A failed bind means either a
+ * second window on the same project or something that took the name first, and
+ * both are worth saying out loud: the CLI would otherwise be talking to
+ * whatever that is, with nothing anywhere indicating this window is not the
+ * one answering.
  */
-export function serveQueries(projectRoot: string): Server {
+export function serveQueries(
+  projectRoot: string,
+  options: SocketOptions & { onError?: (error: Error) => void } = {},
+): Server {
+  const token = randomBytes(32).toString("hex");
   const server = createServer((socket) => {
     let buffered = "";
     socket.on("data", (chunk: Buffer) => {
       buffered += chunk.toString("utf8");
+      if (buffered.length > MAX_LINE_BYTES) {
+        socket.destroy();
+        return;
+      }
       let newline = buffered.indexOf("\n");
       while (newline >= 0) {
         const line = buffered.slice(0, newline);
         buffered = buffered.slice(newline + 1);
         if (line.trim()) {
-          let response: SocketResponse;
+          let response: WireResponse;
           try {
-            response = handleRequest(projectRoot, JSON.parse(line) as SocketRequest);
+            const wire = JSON.parse(line) as WireRequest;
+            // Unauthenticated peers get nothing at all — not an error message,
+            // which would confirm the endpoint is the real one.
+            if (typeof wire.token !== "string" || !sameSecret(wire.token, token)) {
+              socket.destroy();
+              return;
+            }
+            response = {
+              ...handleRequest(projectRoot, { verb: wire.verb, args: wire.args ?? [] }),
+              mac: macOf(token, String(wire.nonce ?? "")),
+            };
           } catch {
-            response = { ok: false, error: "that is not a request" };
+            socket.destroy();
+            return;
           }
           socket.write(encode(response));
         }
@@ -133,33 +247,54 @@ export function serveQueries(projectRoot: string): Server {
     // taking the main process down for.
     socket.on("error", () => socket.destroy());
   });
-  server.on("error", () => {});
-  const path = socketPath(projectRoot);
-  // A stale socket file from a process that was killed would otherwise make
-  // every later listen fail with EADDRINUSE.
-  if (process.platform !== "win32" && existsSync(path)) {
-    try {
-      unlinkSync(path);
-    } catch {
-      /* nothing listening and nothing to remove */
-    }
-  }
-  server.listen(path);
+  server.maxConnections = MAX_CONNECTIONS;
+
+  const onError =
+    options.onError ?? ((error: Error) => console.error(`open-wiki: ${error.message}`));
+  const file = tokenFile(projectRoot, options);
+  server.on("error", (error: Error) => {
+    // Whatever the reason, this window is not the one answering. Take the
+    // token back so a client reads nothing rather than the wrong thing.
+    rmSync(file, { force: true });
+    onError(error);
+  });
+  server.on("close", () => rmSync(file, { force: true }));
+
+  // A live socket at the path is another window's, and removing it would steal
+  // its clients; a leftover from a process that was killed makes `listen` fail
+  // with EADDRINUSE. Both are reported rather than guessed at — the product is
+  // Windows-only, where a named pipe has neither problem, and a silent unlink
+  // of a path in a shared directory is how a socket becomes a delete.
+  writeFileSync(file, token, { encoding: "utf8", mode: 0o600 });
+  server.listen(socketPath(projectRoot, options));
   return server;
 }
 
 /**
  * Ask the running application, or answer `null` when there is none.
  *
- * Every failure — nothing listening, a stale pipe, a timeout, a response that
- * is not JSON — reads as "no application", because the caller's fallback is
- * correct in all of them and slower in none that matter.
+ * Every failure — no token, nothing listening, a stale pipe, a timeout, a
+ * response that is not JSON or does not prove it came from the application —
+ * reads as "no application", because the caller's fallback is correct in all of
+ * them and slower in none that matter.
  */
 export function askRunningApp(
   projectRoot: string,
   request: SocketRequest,
   timeoutMs = 300,
+  options: SocketOptions = {},
 ): Promise<SocketResponse | null> {
+  let token: string;
+  let path: string;
+  try {
+    token = readFileSync(tokenFile(projectRoot, options), "utf8").trim();
+    path = socketPath(projectRoot, options);
+  } catch {
+    return Promise.resolve(null); // no application has this project open
+  }
+  if (!token) return Promise.resolve(null);
+  const nonce = randomBytes(16).toString("hex");
+
   return new Promise((resolve) => {
     let settled = false;
     const done = (value: SocketResponse | null): void => {
@@ -168,20 +303,33 @@ export function askRunningApp(
       socket.destroy();
       resolve(value);
     };
-    const socket = createConnection(socketPath(projectRoot));
+    const socket = createConnection(path);
     // Short: the whole point is to be faster than starting a process, so a
     // socket that is slow to answer has already lost its reason to exist.
     socket.setTimeout(timeoutMs, () => done(null));
     socket.on("error", () => done(null));
-    socket.on("connect", () => socket.write(encode(request)));
+    socket.on("connect", () => socket.write(encode({ ...request, token, nonce })));
 
     let buffered = "";
     socket.on("data", (chunk: Buffer) => {
       buffered += chunk.toString("utf8");
+      // A peer that answers with megabytes and no newline is not the
+      // application, and holding it all first is how it wins anyway.
+      if (buffered.length > MAX_LINE_BYTES) {
+        done(null);
+        return;
+      }
       const newline = buffered.indexOf("\n");
       if (newline < 0) return;
       try {
-        done(JSON.parse(buffered.slice(0, newline)) as SocketResponse);
+        const { mac, ...response } = JSON.parse(buffered.slice(0, newline)) as WireResponse;
+        // Whoever answered has to hold the token too. Without this the CLI
+        // prints whatever squatted the endpoint name as wiki content.
+        if (typeof mac !== "string" || !sameSecret(mac, macOf(token, nonce))) {
+          done(null);
+          return;
+        }
+        done(response as SocketResponse);
       } catch {
         done(null);
       }

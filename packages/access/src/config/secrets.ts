@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { defaultAppDataDir, NoAppDataDirError } from "./app-dir.js";
 
 /**
  * The transcription credential is the application's **only** secret
@@ -22,32 +23,10 @@ export interface ProjectSecrets {
   stt: SttSecret;
 }
 
-/** The application data directory. Overridable for tests. */
-export class NoAppDataDirError extends Error {
-  constructor() {
-    super(
-      "no application data directory: neither APPDATA nor HOME is set. The " +
-        "credential is written nowhere else — falling back to the working " +
-        "directory would put it inside the project, which is usually a git repository.",
-    );
-    this.name = "NoAppDataDirError";
-  }
-}
-
-/**
- * The application data directory. Overridable for tests.
- *
- * **It never falls back to the working directory.** That fallback existed,
- * and it was the exact leak this module is written to prevent: the desktop
- * process runs with the project as its cwd, and the managed gitignore covers
- * `.state/` and the audio — not an `open-wiki/` directory appearing beside
- * them.
- */
-export function defaultAppDataDir(): string {
-  const base = process.env["APPDATA"] ?? process.env["HOME"];
-  if (!base) throw new NoAppDataDirError();
-  return join(base, "open-wiki");
-}
+// The directory itself moved to `app-dir.ts` so the socket can find it from
+// the CLI without importing this module. Re-exported because everything that
+// reads the credential already imports them from here.
+export { defaultAppDataDir, NoAppDataDirError };
 
 function hashPath(projectRoot: string): string {
   return createHash("sha256").update(projectRoot).digest("hex");

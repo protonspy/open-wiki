@@ -69,9 +69,48 @@ export function checkPlugin(repoRoot = root, read = defaultRead, exists = exists
     if (exists(join(dir, ".mcp.json"))) {
       problems.push(`${source} ships a .mcp.json — its contents differ per user`);
     }
+
+    problems.push(...checkHooks(dir, source, read, exists, read(join(repoRoot, CLI_MANIFEST))));
   }
 
   return problems.length > 0 ? { ok: false, problems } : { ok: true };
+}
+
+export const CLI_MANIFEST = "packages/cli/package.json";
+
+/**
+ * The hook commands have to name a version.
+ *
+ * `npx -y open-wiki gate pre` resolves whatever is `latest` on the registry —
+ * on **every page write**, which is the exact cost `scripts/build-cli.mjs`
+ * exists to remove. It also defeats 10.3's whole point: the installer and the
+ * npm package ship from one tag so they cannot skew, and a hook that picks up
+ * `latest` skews by design. So the pin is checked, and checked against the
+ * version this repository would publish.
+ */
+function checkHooks(dir, source, read, exists, cli) {
+  const file = join(dir, "hooks", "hooks.json");
+  if (!exists(file)) return [`${source} ships no hooks — the gate is what the plugin is for`];
+  const doc = read(file);
+  if (!doc) return [`${source}/hooks/hooks.json is missing or will not parse`];
+
+  const problems = [];
+  const version = cli?.version;
+  const entries = Object.values(doc.hooks ?? {}).flat();
+  if (entries.length === 0) problems.push(`${source}/hooks/hooks.json declares no hooks`);
+  for (const entry of entries) {
+    for (const hook of entry?.hooks ?? []) {
+      const command = String(hook.command ?? "");
+      if (!command.includes("open-wiki")) continue;
+      if (!command.includes(`open-wiki@${version}`)) {
+        problems.push(
+          `${source} runs "${command}" — pin it to open-wiki@${String(version)}, or a page write ` +
+            `resolves whatever is latest on the registry`,
+        );
+      }
+    }
+  }
+  return problems;
 }
 
 function defaultRead(path) {

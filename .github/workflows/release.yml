@@ -10,13 +10,23 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   release:
     name: Build and publish the installer
     runs-on: windows-latest
+    permissions:
+      # Least privilege, and granted per job rather than per workflow: the
+      # release needs to create one, and `id-token` is what npm provenance
+      # signs with. Nothing else in this repository should inherit either.
+      contents: write
+      id-token: write
+    env:
+      # Never interpolated into a `run:` body. A tag name may contain `"`, `$`,
+      # `;` and a backtick — `git check-ref-format` permits all four — and this
+      # job holds the npm token and the signing certificate.
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,21 +46,32 @@ jobs:
       - name: Check the tag and both artifacts agree
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        run: node scripts/ci/release-version.mjs "${{ github.ref_name }}"
+        run: node scripts/ci/release-version.mjs "$env:TAG"
 
-      - name: Refuse to republish an existing release
+      # Both registries, before anything is built. A GitHub release can be
+      # deleted; an npm version cannot, so finding out afterwards that one of
+      # the two is already taken leaves a half-published release with no way
+      # back except bumping the version — which is what the agreement check
+      # above exists to make impossible.
+      - name: Refuse to republish
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # A published release has been downloaded; deleting it does not undo that.
-          gh release view "${{ github.ref_name }}" 2>$null
+          gh release view "$env:TAG" 2>$null
           if ($LASTEXITCODE -eq 0) {
-            Write-Error "release ${{ github.ref_name }} already exists — bump the version and tag again"
+            Write-Error "release $env:TAG already exists — bump the version and tag again"
             exit 1
           }
-          Write-Host "no release for ${{ github.ref_name }} yet"
+          $version = $env:TAG.TrimStart("v")
+          npm view "open-wiki@$version" version 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "open-wiki@$version is already on npm — a version there is permanent; bump and tag again"
+            exit 1
+          }
+          Write-Host "neither registry has $env:TAG yet"
 
       - uses: pnpm/action-setup@v4
 
@@ -58,6 +79,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          # Without this, `setup-node` writes no .npmrc and NODE_AUTH_TOKEN is
+          # read by nothing — the publish below would be unauthenticated.
+          registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
 
@@ -70,8 +94,18 @@ jobs:
       - name: Fetch and verify ffmpeg
         shell: pwsh
         env:
+          FFMPEG_URL: ${{ vars.FFMPEG_URL }}
           FFMPEG_SHA256: ${{ vars.FFMPEG_SHA256 }}
-        run: node scripts/fetch-ffmpeg.mjs
+        run: |
+          # The hash is a repository variable rather than a committed constant
+          # because the upstream URL is a moving one. An empty value here fails
+          # inside the fetch script as "no expected hash", which reads like a
+          # bug in the script rather than a setting nobody set.
+          if (-not $env:FFMPEG_SHA256) {
+            Write-Error "vars.FFMPEG_SHA256 is not set — the installer bundles ffmpeg and the download is verified against it. Set it (with vars.FFMPEG_URL) in the repository settings."
+            exit 1
+          }
+          node scripts/fetch-ffmpeg.mjs
 
       - name: Build the installer
         shell: pwsh
@@ -100,29 +134,35 @@ jobs:
             Out-File -FilePath "$dir/SHA256SUMS.txt" -Encoding utf8
           Get-Content "$dir/SHA256SUMS.txt"
 
-      # 10.3 — the second artifact, from the same tag. Provenance is on, and
-      # it is not decoration: a product that verifies the SHA256 of its own
-      # ffmpeg cannot ship a `npx` entry point that verifies nothing.
-      - name: Publish the CLI to npm
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          pnpm --filter open-wiki run build
-          pnpm --filter open-wiki publish --access public --no-git-checks
-
-      # 10.4 — the manifests, generated from the tag and the hash that was just
-      # published. A manifest carrying last release's hash fails as "the
-      # download is corrupt" rather than "somebody forgot to update a file".
+      # 10.4 — the manifests, generated from the tag and the hash of the
+      # installer that is about to be released. A manifest carrying last
+      # release's hash fails as "the download is corrupt" rather than
+      # "somebody forgot to update a file".
       - name: Generate the winget and Scoop manifests
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $line = (Get-Content "apps/desktop/release/SHA256SUMS.txt" | Select-Object -First 1)
+          # By name, not by position: the collect step allows more than one
+          # `.exe`, and taking the first line would silently publish some other
+          # file's hash.
+          $version = $env:TAG.TrimStart("v")
+          $wanted = "open-wiki-Setup-$version.exe"
+          $line = Get-Content "apps/desktop/release/SHA256SUMS.txt" |
+            Where-Object { $_ -match [regex]::Escape($wanted) + '$' } |
+            Select-Object -First 1
+          if (-not $line) {
+            Write-Error "no checksum line for $wanted — the installer is not named what the manifests will point at"
+            exit 1
+          }
           $sha = $line.Split(" ")[0]
-          node scripts/ci/package-manifests.mjs "${{ github.ref_name }}" $sha "dist/manifests"
+          node scripts/ci/package-manifests.mjs "$env:TAG" $sha "dist/manifests"
+          Copy-Item "dist/manifests/scoop/open-wiki.json" "apps/desktop/release/open-wiki.json"
           Compress-Archive -Path "dist/manifests/*" -DestinationPath "apps/desktop/release/manifests.zip"
 
+      # The reversible step first. A GitHub release can be deleted and made
+      # again; an npm version is permanent, so publishing to npm before the
+      # release existed meant any later failure left `open-wiki@X` on the
+      # registry with no installer to go with it and no way to re-run the tag.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -130,10 +170,27 @@ jobs:
           files: |
             apps/desktop/release/*.exe
             apps/desktop/release/SHA256SUMS.txt
+            apps/desktop/release/open-wiki.json
+            apps/desktop/release/manifests.zip
           generate_release_notes: true
           # A tag carrying a suffix — v0.1.0-beta.1 — is not a stable release.
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
+
+      # 10.3 — the second artifact, from the same tag. Provenance is on, and
+      # it is not decoration: a product that verifies the SHA256 of its own
+      # ffmpeg cannot ship a `npx` entry point that verifies nothing.
+      - name: Publish the CLI to npm
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # A prerelease must not become what `npx open-wiki` resolves to.
+          $pre = node scripts/ci/release-version.mjs --prerelease "$env:TAG"
+          $tag = if ($pre) { "next" } else { "latest" }
+          Write-Host "publishing to the '$tag' dist-tag"
+          pnpm --filter open-wiki publish --access public --no-git-checks --tag $tag
 
       # workflow_dispatch builds without a tag: useful for checking the packaging
       # still works without publishing anything.

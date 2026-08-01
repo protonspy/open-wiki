@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LANGUAGES } from "@open-wiki/access";
-import { writeClaudeMd, writeHooks } from "../src/install.js";
+import { HOOK_MATCHERS, writeClaudeMd, writeHooks } from "../src/install.js";
 import { generateClaudeMd } from "@open-wiki/access";
 
 /**
@@ -45,8 +45,8 @@ describe("writeHooks (9.5)", () => {
     expect(written).toBe(join(root, ".claude", "hooks", "hooks.json"));
 
     const doc = readHooks(root);
-    expect(commandsFor(doc.hooks.PreToolUse, "Write|Edit|Bash")).toEqual(["ow gate pre"]);
-    expect(commandsFor(doc.hooks.PostToolUse, "Write|Edit")).toEqual(["ow gate post"]);
+    expect(commandsFor(doc.hooks.PreToolUse, HOOK_MATCHERS.pre)).toEqual(["ow gate pre"]);
+    expect(commandsFor(doc.hooks.PostToolUse, HOOK_MATCHERS.post)).toEqual(["ow gate post"]);
   });
 
   it("keeps the project's own hooks — installing the gate is not destructive", () => {
@@ -56,7 +56,7 @@ describe("writeHooks (9.5)", () => {
       JSON.stringify({
         hooks: {
           PreToolUse: [
-            { matcher: "Write|Edit|Bash", hooks: [{ type: "command", command: "their-linter" }] },
+            { matcher: HOOK_MATCHERS.pre, hooks: [{ type: "command", command: "their-linter" }] },
             { matcher: "Read", hooks: [{ type: "command", command: "their-auditor" }] },
           ],
         },
@@ -65,7 +65,7 @@ describe("writeHooks (9.5)", () => {
     );
 
     const doc = readHooks(writeHooksAt(root));
-    expect(commandsFor(doc.hooks.PreToolUse, "Write|Edit|Bash")).toEqual([
+    expect(commandsFor(doc.hooks.PreToolUse, HOOK_MATCHERS.pre)).toEqual([
       "their-linter",
       "ow gate pre",
     ]);
@@ -77,15 +77,15 @@ describe("writeHooks (9.5)", () => {
     writeHooks(root);
     writeHooks(root);
     const doc = readHooks(root);
-    expect(commandsFor(doc.hooks.PreToolUse, "Write|Edit|Bash")).toEqual(["ow gate pre"]);
-    expect(commandsFor(doc.hooks.PostToolUse, "Write|Edit")).toEqual(["ow gate post"]);
+    expect(commandsFor(doc.hooks.PreToolUse, HOOK_MATCHERS.pre)).toEqual(["ow gate pre"]);
+    expect(commandsFor(doc.hooks.PostToolUse, HOOK_MATCHERS.post)).toEqual(["ow gate post"]);
   });
 
   it("starts over from a hooks.json that will not parse rather than refusing to install", () => {
     mkdirSync(join(root, ".claude", "hooks"), { recursive: true });
     writeFileSync(join(root, ".claude", "hooks", "hooks.json"), "{ not json", "utf8");
     const doc = readHooks(writeHooksAt(root));
-    expect(commandsFor(doc.hooks.PreToolUse, "Write|Edit|Bash")).toEqual(["ow gate pre"]);
+    expect(commandsFor(doc.hooks.PreToolUse, HOOK_MATCHERS.pre)).toEqual(["ow gate pre"]);
   });
 });
 

@@ -2,14 +2,14 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [{ "type": "command", "command": "npx -y open-wiki gate pre" }]
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [{ "type": "command", "command": "npx -y open-wiki@0.1.0 gate pre" }]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit",
-        "hooks": [{ "type": "command", "command": "npx -y open-wiki gate post" }]
+        "hooks": [{ "type": "command", "command": "npx -y open-wiki@0.1.0 gate post" }]
       }
     ]
   }

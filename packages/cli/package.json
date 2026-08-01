@@ -6,9 +6,6 @@
   "bin": {
     "ow": "build/ow.mjs"
   },
-  "exports": {
-    ".": "./src/index.ts"
-  },
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -17,7 +14,7 @@
     "build": "node ../../scripts/build-cli.mjs",
     "prepack": "pnpm run build"
   },
-  "dependencies": {
+  "devDependencies": {
     "@open-wiki/access": "workspace:*",
     "@open-wiki/mcp": "workspace:*"
   },
@@ -35,6 +32,5 @@
   "publishConfig": {
     "access": "public",
     "provenance": true
-  },
-  "devDependencies": {}
+  }
 }

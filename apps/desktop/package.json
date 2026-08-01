@@ -12,25 +12,24 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "build:main": "node ../../scripts/build-main.mjs",
-    "build": "pnpm run build:main && pnpm run build:renderer",
+    "build:cli": "pnpm --filter open-wiki run build",
+    "build": "pnpm run build:main && pnpm run build:renderer && pnpm run build:cli",
     "package": "pnpm run build && electron-builder --win --publish never"
   },
-  "dependencies": {
+  "devDependencies": {
     "@open-wiki/access": "workspace:*",
     "@open-wiki/audio": "workspace:*",
-    "chokidar": "^5.0.0",
-    "markdown-it": "^14.1.0"
-  },
-  "devDependencies": {
     "@types/markdown-it": "^14.1.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "chokidar": "^5.0.0",
     "electron": "^38.0.0",
+    "electron-builder": "^25.1.8",
+    "markdown-it": "^14.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "vite": "^6.0.0",
-    "electron-builder": "^25.1.8"
+    "vite": "^6.0.0"
   },
   "build": {
     "appId": "dev.protonspy.openwiki",
@@ -52,6 +51,10 @@
       {
         "from": "../../target/release/recorder.exe",
         "to": "recorder.exe"
+      },
+      {
+        "from": "../../packages/cli/build/ow.mjs",
+        "to": "ow.mjs"
       }
     ],
     "win": {

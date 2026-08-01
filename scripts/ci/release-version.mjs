@@ -23,10 +23,19 @@ export const RELEASED = [
   { name: "the CLI", path: "packages/cli/package.json" },
 ];
 
-/** `v0.1.0` → `0.1.0`. A tag that is not a version is not a release tag. */
+/**
+ * `v0.1.0` → `0.1.0`. A tag that is not a version is not a release tag.
+ *
+ * `..` is rejected separately from the pattern: the prerelease suffix permits
+ * `.` and `-`, and the version becomes a path segment — of the manifest
+ * directory this writes, and of the download URL those manifests point at.
+ * Anyone who can push a tag can already do worse, but a version that walks out
+ * of `dist/manifests` is not a thing to leave available.
+ */
 export function versionOfTag(tag) {
   const match = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(tag ?? "");
-  return match ? match[1] : null;
+  if (!match || match[1].includes("..")) return null;
+  return match[1];
 }
 
 /** True for a tag carrying a suffix — `v0.1.0-beta.1` is not a stable release. */
@@ -71,6 +80,13 @@ function defaultRead(path) {
 
 // Run as a script: exit 1 on disagreement, and print what to fix.
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/"))) {
+  // `--prerelease <tag>` prints "true" or nothing, so the release workflow can
+  // pick npm's dist-tag from it. A prerelease published to `latest` is what
+  // `npx open-wiki` would then hand every user.
+  if (process.argv[2] === "--prerelease") {
+    if (isPrerelease(process.argv[3] ?? "")) console.log("true");
+    process.exit(0);
+  }
   const result = checkRelease(process.argv[2] ?? "");
   if (!result.ok) {
     for (const problem of result.problems) console.error(`release: ${problem}`);

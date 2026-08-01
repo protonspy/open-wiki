@@ -43,20 +43,13 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.1)(yaml@2.9.0)
 
   apps/desktop:
-    dependencies:
+    devDependencies:
       '@open-wiki/access':
         specifier: workspace:*
         version: link:../../packages/access
       '@open-wiki/audio':
         specifier: workspace:*
         version: link:../../packages/audio
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
-      markdown-it:
-        specifier: ^14.1.0
-        version: 14.3.0
-    devDependencies:
       '@types/markdown-it':
         specifier: ^14.1.2
         version: 14.1.2
@@ -69,12 +62,18 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.4
         version: 4.7.0(vite@6.4.3(@types/node@22.20.1)(yaml@2.9.0))
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       electron:
         specifier: ^38.0.0
         version: 38.8.6
       electron-builder:
         specifier: ^25.1.8
         version: 25.1.8(electron-builder-squirrel-windows@25.1.8)
+      markdown-it:
+        specifier: ^14.1.0
+        version: 14.3.0
       react:
         specifier: ^19.0.0
         version: 19.2.8
@@ -106,7 +105,7 @@ importers:
   packages/audio: {}
 
   packages/cli:
-    dependencies:
+    devDependencies:
       '@open-wiki/access':
         specifier: workspace:*
         version: link:../access

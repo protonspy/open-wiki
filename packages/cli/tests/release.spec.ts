@@ -1,4 +1,11 @@
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { HOOK_MATCHERS } from "../src/install.js";
+
+/** This file, `packages/cli/tests/`, is three levels down from the root. */
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 /*
  * The release scripts are plain ESM on purpose: CI runs them with `node` and
  * nothing bundles them, so they carry no types. Imported dynamically and typed
@@ -33,6 +40,15 @@ describe("versionOfTag (10.2)", () => {
 
   it("refuses anything that is not one", () => {
     for (const tag of ["0.1.0", "v0.1", "vlatest", "", "v1.2.3.4"]) {
+      expect(versionOfTag(tag)).toBeNull();
+    }
+  });
+
+  it("refuses a version that walks up a directory", () => {
+    // The version becomes a path segment — of the manifest directory and of
+    // the URL those manifests point at. The prerelease suffix permits `.` and
+    // `-`, which is enough to spell `..`.
+    for (const tag of ["v1.0.0-..", "v1.0.0-..-..", "v1.0.0-a..b"]) {
       expect(versionOfTag(tag)).toBeNull();
     }
   });
@@ -108,7 +124,19 @@ describe("the package manifests (10.4)", () => {
   it("quotes the hash in the Scoop manifest", () => {
     const scoop = JSON.parse(scoopManifest("0.1.0", SHA.toUpperCase()));
     expect(scoop.architecture["64bit"].hash).toBe(SHA);
-    expect(scoop.architecture["64bit"].url).toBe(installerUrl("0.1.0"));
+    expect(scoop.architecture["64bit"].url).toContain(installerUrl("0.1.0"));
+  });
+
+  it("actually installs something through Scoop", () => {
+    // What the release publishes is an NSIS setup, and Scoop understands Inno
+    // but not NSIS. A manifest with a bare `.exe` url and a `bin` entry
+    // downloads the setup, never runs it, and then fails to shim a file that
+    // was never extracted — passing every assertion about its strings.
+    const scoop = JSON.parse(scoopManifest("0.1.0", SHA));
+    expect(scoop.bin).toBeUndefined();
+    expect(scoop.installer.script.join("\n")).toContain("open-wiki-Setup-0.1.0.exe");
+    expect(scoop.installer.script.join("\n")).toContain("/S");
+    expect(scoop.uninstaller.script.join("\n")).toContain("Uninstall open-wiki.exe");
   });
 
   it("keeps Scoop able to update itself from the published sums", () => {
@@ -133,10 +161,22 @@ describe("checkPlugin (10.6)", () => {
     plugins: [{ name: "open-wiki", source: "./plugins/open-wiki", version: "0.1.0" }],
   };
   const manifest = { name: "open-wiki", version: "0.1.0" };
+  const hooks = {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "Write|Edit|MultiEdit|Bash",
+          hooks: [{ type: "command", command: "npx -y open-wiki@0.1.0 gate pre" }],
+        },
+      ],
+    },
+  };
   const files = (over: Record<string, unknown> = {}) => {
     const map: Record<string, unknown> = {
       ".claude-plugin/marketplace.json": marketplace,
       "plugins/open-wiki/.claude-plugin/plugin.json": manifest,
+      "plugins/open-wiki/hooks/hooks.json": hooks,
+      "packages/cli/package.json": { version: "0.1.0" },
       ...over,
     };
     return (path: string) => {
@@ -145,11 +185,47 @@ describe("checkPlugin (10.6)", () => {
       return hit ? map[hit] : null;
     };
   };
+  const PRESENT = ["plugins/open-wiki", "plugins/open-wiki/hooks/hooks.json"];
   const exists = (present: string[]) => (path: string) =>
     present.some((p) => path.replace(/\\/g, "/").endsWith(p));
 
   it("accepts a plugin the marketplace and the manifest agree on", () => {
-    expect(checkPlugin(".", files(), exists(["plugins/open-wiki"]))).toEqual({ ok: true });
+    expect(checkPlugin(".", files(), exists(PRESENT))).toEqual({ ok: true });
+  });
+
+  it("refuses a hook that resolves whatever is latest on the registry", () => {
+    // `npx -y open-wiki gate pre` fetches from the registry on *every page
+    // write* — the exact cost the CLI bundle exists to remove — and it defeats
+    // 10.3: the installer and the npm package ship from one tag so they cannot
+    // skew, and a hook picking up `latest` skews by design.
+    const result = checkPlugin(
+      ".",
+      files({
+        "plugins/open-wiki/hooks/hooks.json": {
+          hooks: {
+            PreToolUse: [{ hooks: [{ type: "command", command: "npx -y open-wiki gate pre" }] }],
+          },
+        },
+      }),
+      exists(PRESENT),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.problems.join(" ")).toContain("open-wiki@0.1.0");
+  });
+
+  it("refuses a pin that is not the version this repository publishes", () => {
+    const result = checkPlugin(
+      ".",
+      files({ "packages/cli/package.json": { version: "0.2.0" } }),
+      exists(PRESENT),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses a plugin with no hooks — the gate is what it is for", () => {
+    const result = checkPlugin(".", files(), exists(["plugins/open-wiki"]));
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.problems.join(" ")).toMatch(/ships no hooks/);
   });
 
   it("refuses when the two disagree on the version", () => {
@@ -176,21 +252,13 @@ describe("checkPlugin (10.6)", () => {
     // `adr:0015` gives the convention one home, and it is the project. A copy
     // here would be a second, and two copies of a convention drift — which is
     // the failure that record exists to prevent.
-    const result = checkPlugin(
-      ".",
-      files(),
-      exists(["plugins/open-wiki", "plugins/open-wiki/skills"]),
-    );
+    const result = checkPlugin(".", files(), exists([...PRESENT, "plugins/open-wiki/skills"]));
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.problems.join(" ")).toContain("adr:0015");
   });
 
   it("refuses a plugin that ships a .mcp.json", () => {
-    const result = checkPlugin(
-      ".",
-      files(),
-      exists(["plugins/open-wiki", "plugins/open-wiki/.mcp.json"]),
-    );
+    const result = checkPlugin(".", files(), exists([...PRESENT, "plugins/open-wiki/.mcp.json"]));
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.problems.join(" ")).toMatch(/differ per user/);
   });
@@ -198,5 +266,29 @@ describe("checkPlugin (10.6)", () => {
   it("says so when the marketplace itself will not parse", () => {
     const result = checkPlugin(".", () => null, exists([]));
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("the plugin and `ow init` install the same gate (10.6)", () => {
+  // Two JSON files, one convention, and nothing that makes them agree. They
+  // drifted the first time they were written: the plugin dropped `Bash` — the
+  // matcher whose whole purpose is shell writes, which `ow init` has because a
+  // page written through a command carries no content for the gate to see —
+  // and added `MultiEdit`, which `ow init` did not have. A user who installs
+  // the plugin instead of running `ow init` gets whichever of the two is wrong.
+  const plugin = JSON.parse(
+    readFileSync(join(REPO_ROOT, "plugins/open-wiki/hooks/hooks.json"), "utf8"),
+  ) as { hooks: Record<string, Array<{ matcher: string }>> };
+
+  it("matches the same tools before a write", () => {
+    expect(plugin.hooks["PreToolUse"]?.map((e) => e.matcher)).toEqual([HOOK_MATCHERS.pre]);
+  });
+
+  it("matches the same tools after one", () => {
+    expect(plugin.hooks["PostToolUse"]?.map((e) => e.matcher)).toEqual([HOOK_MATCHERS.post]);
+  });
+
+  it("passes its own shape check against the real files", () => {
+    expect(checkPlugin(REPO_ROOT)).toEqual({ ok: true });
   });
 });
