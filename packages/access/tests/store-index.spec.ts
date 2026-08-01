@@ -1,8 +1,23 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { listEntityPages, isIndexed, findOrphans } from "../src/store/index.js";
+import { dirname, join } from "node:path";
+import {
+  listEntityPages,
+  listPages,
+  pagePath,
+  isIndexed,
+  findOrphans,
+  readIndex,
+} from "../src/store/index.js";
 import { registerInIndex } from "../src/store/index-write.js";
 
 function tempProject() {
@@ -113,5 +128,91 @@ describe("findOrphans (5.7)", () => {
     // The agent removes fenix's only link.
     writeFileSync(join(root, "wiki", "index.md"), "# Index\n\n## Pages\n\n- [[ana]]\n");
     expect(findOrphans(root)).toEqual(["fenix"]);
+  });
+});
+
+describe("listPages / pagePath — a page is its slug wherever it sits (adr:0016)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "ow-listpages-"));
+    mkdirSync(join(root, "wiki"), { recursive: true });
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  const write = (rel: string): void => {
+    const file = join(root, "wiki", rel);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "# page\n", "utf8");
+  };
+
+  it("finds a page at any depth, and says where it is", () => {
+    write("flat.md");
+    write("topics/checkout.md");
+    write("codewiki/dispatch.md");
+
+    expect(listPages(root).map((p) => [p.slug, p.path])).toEqual([
+      ["dispatch", "wiki/codewiki/dispatch.md"],
+      ["flat", "wiki/flat.md"],
+      ["checkout", "wiki/topics/checkout.md"],
+    ]);
+  });
+
+  it("marks only the pages under codewiki/", () => {
+    write("topics/checkout.md");
+    write("codewiki/dispatch.md");
+    const byCodewiki = Object.fromEntries(listPages(root).map((p) => [p.slug, p.codewiki]));
+    expect(byCodewiki).toEqual({ checkout: false, dispatch: true });
+  });
+
+  it("excludes the wiki's own three pages, at the top level only", () => {
+    write("index.md");
+    write("changelog.md");
+    write("log.md");
+    write("topics/index.md");
+    expect(listPages(root).map((p) => p.path)).toEqual(["wiki/topics/index.md"]);
+  });
+
+  it("does not follow a symlinked directory out of the project", () => {
+    const outside = mkdtempSync(join(tmpdir(), "ow-outside-"));
+    try {
+      writeFileSync(join(outside, "secret.md"), "# secret\n", "utf8");
+      try {
+        symlinkSync(outside, join(root, "wiki", "escape"));
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "EPERM" || code === "EACCES" || code === "ENOSYS") return;
+        throw err;
+      }
+      expect(listPages(root)).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("returns nothing when there is no wiki, and creates nothing", () => {
+    rmSync(join(root, "wiki"), { recursive: true, force: true });
+    expect(listPages(root)).toEqual([]);
+    expect(existsSync(join(root, "wiki"))).toBe(false);
+  });
+
+  it("pagePath resolves a slug to where the file actually is", () => {
+    write("topics/checkout.md");
+    expect(pagePath(root, "checkout")).toBe("wiki/topics/checkout.md");
+    expect(pagePath(root, "nothing")).toBeUndefined();
+  });
+
+  it("readIndex creates no directory — a read must not write", () => {
+    // checkProject is exported into the read-only surface the MCP process
+    // imports; a read that mkdirs makes every caller a writer, and `ow check`
+    // in the wrong directory would leave a wiki/ behind.
+    rmSync(join(root, "wiki"), { recursive: true, force: true });
+    readIndex(root);
+    expect(existsSync(join(root, "wiki"))).toBe(false);
+  });
+
+  it("isIndexed treats a slug carrying regex metacharacters literally", () => {
+    expect(isIndexed("- [[a.b]]", "a.b")).toBe(true);
+    // `(.*)` as a slug would otherwise match any wikilink and mark itself indexed.
+    expect(isIndexed("- [[something]]", "(.*)")).toBe(false);
   });
 });

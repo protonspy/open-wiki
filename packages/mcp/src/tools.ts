@@ -11,6 +11,7 @@ import {
   listSources,
   type PageFrontmatter,
   type SourceManifest,
+  pagePath as lookupPagePath,
 } from "@open-wiki/access/read";
 
 /**
@@ -103,13 +104,25 @@ export function readSourceText(projectRoot: string, id: string): string {
   return readFileSync(file, "utf8");
 }
 
-/** The confined path of a page file; throws if the slug escapes `wiki/`. */
+/**
+ * The confined path of a page file; throws if the slug escapes `wiki/`.
+ *
+ * A page is its slug wherever it sits under `wiki/`
+ * (`adr:0016-a-page-is-its-slug-wherever-it-sits`), so the file is looked up
+ * rather than assumed at the top level. Assuming it meant a page filed as
+ * `wiki/topics/checkout.md` was listed by `ow_index` and then served as "no
+ * page \"checkout\" under wiki/" — and its frontmatter read as `null`, so the
+ * index reported `type: unknown, status: active` for a page that might be
+ * superseded. That is worse than absent: it is confidently wrong.
+ */
 function pagePath(projectRoot: string, slug: string): string {
+  const wikiDir = join(projectRoot, "wiki");
+  const found = lookupPagePath(projectRoot, slug);
   // Confine to the `wiki/` directory, not just the project: a slug like
   // `../README` would otherwise resolve to `<root>/README.md`, which is inside
-  // the project but is not a wiki page. The server serves `wiki/` only.
-  const wikiDir = join(projectRoot, "wiki");
-  return assertWithin(wikiDir, join(wikiDir, `${slug}.md`));
+  // the project but is not a wiki page. The server serves `wiki/` only. The
+  // fallback keeps "no such page" reachable for a slug that matches nothing.
+  return assertWithin(wikiDir, join(projectRoot, found ?? `wiki/${slug}.md`));
 }
 
 /** The confined path of a source's `text.md`; throws if the id escapes `raw/`. */

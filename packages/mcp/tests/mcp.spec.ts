@@ -33,7 +33,12 @@ function writePage(
   frontmatter: Record<string, unknown>,
   body: string,
 ): void {
-  const fm = "---\n" + Object.entries(frontmatter).map(([k, v]) => `${k}: ${v}`).join("\n") + "\n---\n\n";
+  const fm =
+    "---\n" +
+    Object.entries(frontmatter)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join("\n") +
+    "\n---\n\n";
   writeFileSync(join(root, "wiki", `${slug}.md`), fm + body, "utf8");
 }
 
@@ -171,7 +176,12 @@ describe("MCP read tools — path confinement (9.9)", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       join(dir, "manifest.json"),
-      JSON.stringify({ id: "pending.pdf", title: "Pending", kind: "file", original: "pending.pdf" }) + "\n",
+      JSON.stringify({
+        id: "pending.pdf",
+        title: "Pending",
+        kind: "file",
+        original: "pending.pdf",
+      }) + "\n",
       "utf8",
     );
     const state = listSourcesState(root).find((s) => s.id === "pending.pdf");
@@ -212,7 +222,9 @@ describe("MCP read-only boundary (9.9)", () => {
     // Relative imports stay inside this package, so they cannot reach the write
     // path; everything else must be one of the read-only roots below.
     if (spec.startsWith("./") || spec.startsWith("../")) return true;
-    return ALLOWED.some((a) => spec === a || (a.endsWith(":") ? spec.startsWith(a) : spec.startsWith(a)));
+    return ALLOWED.some(
+      (a) => spec === a || (a.endsWith(":") ? spec.startsWith(a) : spec.startsWith(a)),
+    );
   }
 
   function srcFiles(dir: string): string[] {
@@ -243,14 +255,7 @@ describe("MCP read-only boundary (9.9)", () => {
     // If the read barrel leaked a write symbol, importing it would pull the
     // write path after all. Belt and braces: assert the known write symbols are
     // absent from the barrel's text.
-    const barrel = join(
-      __dirname,
-      "..",
-      "..",
-      "access",
-      "src",
-      "read.ts",
-    );
+    const barrel = join(__dirname, "..", "..", "access", "src", "read.ts");
     expect(existsSync(barrel)).toBe(true);
     const text = readFileSync(barrel, "utf8");
     const writeExports = [
@@ -271,7 +276,10 @@ describe("MCP read-only boundary (9.9)", () => {
       "writeSourceText",
     ];
     for (const w of writeExports) {
-      expect(new RegExp(`\\b${w}\\b`).test(text), `read barrel re-exports write symbol "${w}"`).toBe(false);
+      expect(
+        new RegExp(`\\b${w}\\b`).test(text),
+        `read barrel re-exports write symbol "${w}"`,
+      ).toBe(false);
     }
   });
 });
@@ -294,5 +302,38 @@ describe("parseMcpArgs (9.7)", () => {
 
   it("refuses to start without a project name", () => {
     expect(() => parseMcpArgs(["--read-only"])).toThrow(/--project/);
+  });
+});
+
+describe("a page filed under a subdirectory (adr:0016)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "ow-mcp-nested-"));
+    mkdirSync(join(root, "wiki", "topics"), { recursive: true });
+    writeFileSync(
+      join(root, "wiki", "topics", "checkout.md"),
+      "---\nid: topic:checkout\ntype: topic\ntitle: Checkout\nstatus: superseded\n" +
+        'aliases: []\nupdated: 2026-08-01\nsources: []\nsuperseded-by: "topic:pay"\n---\nBody.\n',
+      "utf8",
+    );
+    writeFileSync(join(root, "wiki", "index.md"), "# Index\n\n- [[checkout]]\n", "utf8");
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("serves the page rather than reporting it missing", () => {
+    // It was listed by ow_index and then served as `no page "checkout" under
+    // wiki/` — the index and the reader disagreeing about the same project.
+    expect(readPageWhole(root, "checkout").content).toContain("Body.");
+  });
+
+  it("reads its frontmatter, so the index does not report it as unknown", () => {
+    // The frontmatter read degraded to null, so a superseded page came back as
+    // `type: unknown, status: active` — confidently wrong rather than absent.
+    const entry = indexStructure(root).find((p) => p.slug === "checkout");
+    expect(entry).toMatchObject({ title: "Checkout", type: "topic", status: "superseded" });
+  });
+
+  it("still refuses a slug that escapes wiki/", () => {
+    expect(() => readPageWhole(root, "../README")).toThrow();
   });
 });

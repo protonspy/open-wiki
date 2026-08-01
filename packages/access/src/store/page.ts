@@ -57,6 +57,12 @@ const REQUIRED_KEYS = [
 export interface PageIssue {
   field: string;
   reason: string;
+  /**
+   * The thing the issue is about — a wikilink's target, say. Carried so a
+   * caller can locate it without parsing it back out of `reason`, which
+   * silently produces garbage the first time the wording changes.
+   */
+  target?: string;
 }
 
 export type PageValidation =

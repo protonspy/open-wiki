@@ -27,22 +27,36 @@ describe("gateWrite — routing (9.5)", () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
   it("refuses a write to the gate's own configuration (9.6)", () => {
-    const d = gateWrite({ projectRoot: root, filePath: ".claude/settings.json", content: "x", date: DATE });
+    const d = gateWrite({
+      projectRoot: root,
+      filePath: ".claude/settings.json",
+      content: "x",
+      date: DATE,
+    });
     expect(d.action).toBe("deny");
     if (d.action === "deny") expect(d.reasons.join(" ")).toContain("configuration");
   });
 
   it("passes through a non-gated path unchanged", () => {
-    expect(gateWrite({ projectRoot: root, filePath: "README.md", content: "hi\n", date: DATE })).toEqual({
+    expect(
+      gateWrite({ projectRoot: root, filePath: "README.md", content: "hi\n", date: DATE }),
+    ).toEqual({
       action: "allow",
     });
     expect(
-      gateWrite({ projectRoot: root, filePath: "raw/doc.pdf/text.md", content: "hi\n", date: DATE }),
+      gateWrite({
+        projectRoot: root,
+        filePath: "raw/doc.pdf/text.md",
+        content: "hi\n",
+        date: DATE,
+      }),
     ).toEqual({ action: "allow" });
   });
 
   it("passes through the non-entity pages under wiki/ (index, changelog, log)", () => {
-    expect(gateWrite({ projectRoot: root, filePath: "wiki/index.md", content: "# Index\n", date: DATE })).toEqual({
+    expect(
+      gateWrite({ projectRoot: root, filePath: "wiki/index.md", content: "# Index\n", date: DATE }),
+    ).toEqual({
       action: "allow",
     });
   });
@@ -233,10 +247,42 @@ describe("gateWrite — path confinement (2.6, the review's HIGH finding)", () =
     // On Windows these name the same files as `wiki/fenix.md`. A pass-through
     // would land an unvalidated page in the wiki, so the gate must have an
     // opinion about all of them.
-    for (const filePath of ["Wiki/fenix.md", "wiki/fenix.MD", "WIKI/FENIX.MD", "CodeWiki/x.md"]) {
+    for (const filePath of ["Wiki/fenix.md", "wiki/fenix.MD", "WIKI/FENIX.MD"]) {
       const d = gateWrite({ projectRoot: root, filePath, content: page(GOOD_FM), date: DATE });
       expect(d.action, filePath).not.toBe("allow");
     }
+  });
+
+  it("gates a codewiki page, which lives under wiki/", () => {
+    for (const filePath of ["wiki/codewiki/dispatch.md", "Wiki/CodeWiki/Dispatch.MD"]) {
+      const d = gateWrite({ projectRoot: root, filePath, content: page(GOOD_FM), date: DATE });
+      expect(d.action, filePath).not.toBe("allow");
+    }
+  });
+
+  it("has no opinion about a top-level codewiki/, which is not the wiki", () => {
+    // Settling plan 7.5: the scaffolded skill and the plan's layout both put
+    // codewiki at `wiki/codewiki/`. A page outside `wiki/` is not part of the
+    // wiki at all — nothing indexes it, nothing links it, nothing can cite it —
+    // and gating it implied otherwise. `ow check` reports it as misplaced.
+    const d = gateWrite({
+      projectRoot: root,
+      filePath: "codewiki/x.md",
+      content: page(GOOD_FM),
+      date: DATE,
+    });
+    expect(d.action).toBe("allow");
+  });
+
+  it("gates a nested page named index.md, which is not the wiki index", () => {
+    // Only the three at the top of wiki/ are the wiki's own pages.
+    const d = gateWrite({
+      projectRoot: root,
+      filePath: "wiki/topics/index.md",
+      content: page(GOOD_FM.replace("id: t:fenix", "id: t:index")),
+      date: DATE,
+    });
+    expect(d.action).not.toBe("allow");
   });
 
   it("takes the slug from the filename without the extension, whatever its case", () => {
@@ -260,7 +306,10 @@ describe("gateWrite — path confinement (2.6, the review's HIGH finding)", () =
 
 describe("formatDenial (9.13)", () => {
   it("renders a header and one bullet per reason", () => {
-    const text = formatDenial("wiki/fenix.md", ["updated must be a date", "[[x]] does not resolve"]);
+    const text = formatDenial("wiki/fenix.md", [
+      "updated must be a date",
+      "[[x]] does not resolve",
+    ]);
     expect(text).toContain("wiki/fenix.md");
     expect(text).toContain("- updated must be a date");
     expect(text).toContain("- [[x]] does not resolve");

@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findOrphans, listEntityPages, readFrontmatter, readIndex } from "@open-wiki/access";
+import {
+  findOrphans,
+  listPages,
+  readFrontmatter,
+  readIndex,
+  type PageRef,
+} from "@open-wiki/access";
 
 /**
  * `ow graph [superseded|orphans|index]` — the structural queries (plan 9.12).
@@ -8,16 +14,21 @@ import { findOrphans, listEntityPages, readFrontmatter, readIndex } from "@open-
  * records. Local queries print JSON for a harness to read.
  */
 export function runGraph(projectRoot: string, sub: string | undefined): string {
-  const pages = listEntityPages(projectRoot);
+  // The refs, not just the slugs: a page is its slug wherever it sits under
+  // `wiki/` (`adr:0016`), so reading one means looking up where it is. Assuming
+  // `wiki/<slug>.md` threw ENOENT — a stack, not a sentence — the moment a
+  // project filed a page the way the plan's layout describes.
+  const refs = listPages(projectRoot);
+  const pages = refs.map((p) => p.slug);
   if (sub === "orphans") return JSON.stringify(findOrphans(projectRoot), null, 2);
-  if (sub === "superseded") return JSON.stringify(supersessionWalk(projectRoot, pages), null, 2);
+  if (sub === "superseded") return JSON.stringify(supersessionWalk(projectRoot, refs), null, 2);
   if (sub === "index") return JSON.stringify(indexState(projectRoot, pages), null, 2);
   // default: the whole structure
   return JSON.stringify(
     {
       pages,
       orphans: findOrphans(projectRoot),
-      superseded: supersessionWalk(projectRoot, pages),
+      superseded: supersessionWalk(projectRoot, refs),
     },
     null,
     2,
@@ -30,10 +41,10 @@ interface SupersededEntry {
   updated: string;
 }
 
-function supersessionWalk(projectRoot: string, pages: string[]): SupersededEntry[] {
+function supersessionWalk(projectRoot: string, refs: PageRef[]): SupersededEntry[] {
   const out: SupersededEntry[] = [];
-  for (const slug of pages) {
-    const text = readPage(projectRoot, slug);
+  for (const { slug, path } of refs) {
+    const text = readPage(projectRoot, path);
     const block = readFrontmatter(text);
     if (!block || !block.parsed) continue;
     const fm = block.frontmatter as Record<string, unknown>;
@@ -53,6 +64,6 @@ function indexState(projectRoot: string, pages: string[]): string[] {
   return pages.filter((slug) => new RegExp(`\\[\\[${slug}(\\||#|\\]\\])`).test(indexText));
 }
 
-function readPage(projectRoot: string, slug: string): string {
-  return readFileSync(join(projectRoot, "wiki", `${slug}.md`), "utf8");
+function readPage(projectRoot: string, relPath: string): string {
+  return readFileSync(join(projectRoot, relPath), "utf8");
 }

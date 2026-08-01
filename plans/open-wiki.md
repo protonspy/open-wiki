@@ -176,7 +176,8 @@ which is 9.5's problem.
 
 ## 6 — Source flow
 
-- [ ] 6.1 (Unit) Model each source's state — received, text ready, cited on a page — persisted and resumable
+- [x] 6.1 (Unit) Model each source's state — received, text ready, cited on a page — persisted and resumable
+  - **Derived, not persisted.** The filesystem already is both: `manifest.json` says received, `text.md` says the text is ready, the pages say what is cited, `journal.json` says how far a transcription got. A state file beside those would be a second record of one fact, and the copy is the one that goes stale — the rule this plan applies to its own checklists and to the wiki's index. So a crash loses nothing and there is nothing to reconcile: the next read observes the same directory and reaches the same answer, which is what "resumable" was asking for.
 - [ ] 6.2 (Unit) Sources screen: one row per source with its current state, what is missing, and the error when it stopped
 - [ ] 6.3 (Unit) A transcribe button on a stopped recording, with per-chunk progress and the option to redo only what failed
 - [ ] 6.4 (Unit) Show, for a source, which pages cite it, and navigate from there to the page
@@ -189,14 +190,15 @@ which is 9.5's problem.
 With the agent writing through the filesystem, this stops being hygiene and becomes the net
 of record.
 
-- [ ] 7.1 (Unit) Report broken wikilinks and orphan pages
-- [ ] 7.2 (Unit) Report a desynchronised changelog and a source never cited
-- [ ] 7.3 (Unit) Report a provenance link that does not resolve to an existing source or instant
-- [ ] 7.4 (Unit) Report a synonym used where the project has a canonical term
-- [ ] 7.5 (Unit) Report a codewiki citation that no longer resolves or runs past the end of its file — the check that comes with scaffolding codewiki, per `adr:0015-the-convention-ships-as-skills`
-  - Design gap a review surfaced, to settle here: the gate accepts `codewiki/*.md` (top-level) but `listEntityPages`/`findOrphans`/`indexStructure` read only top-level `wiki/`, so a codewiki page is accepted by the gate yet invisible to the index, the orphans check, and `ow_index`. The codewiki skill prose also says `wiki/codewiki/`, which the gate's `wiki/` branch would treat as a wiki page named for its basename. Wiring codewiki into the store is a slug/index model decision (a `codewiki/` slug breaks the `^[a-z0-9-]+$` slug regex), deferred to group 7 with the rest of the integrity checks; the MVP closes on `wiki/` entity pages and does not exercise codewiki.
+- [x] 7.1 (Unit) Report broken wikilinks and orphan pages
+- [x] 7.2 (Unit) Report a desynchronised changelog and a source never cited
+- [x] 7.3 (Unit) Report a provenance link that does not resolve to an existing source or instant
+- [x] 7.4 (Unit) Report a synonym used where the project has a canonical term
+- [x] 7.5 (Unit) Report a codewiki citation that no longer resolves or runs past the end of its file — the check that comes with scaffolding codewiki, per `adr:0015-the-convention-ships-as-skills`
+  - **Settled** — `adr:0016-a-page-is-its-slug-wherever-it-sits`. The gap was wider than it looked: `listEntityPages` read only the *top level* of `wiki/`, so `wiki/projects/`, `wiki/people/` and `wiki/topics/` — the layout this plan's own diagram describes — were invisible too, not just codewiki. A page is now addressed by its slug wherever it sits under `wiki/`; a folder is organisation and a link is a name, which is what makes `[[wikilink]]` work in the first place. Slug uniqueness is the one rule that model needs, and it is a finding (`page.duplicate-slug`) rather than something resolved by silently picking one. Codewiki lives at `wiki/codewiki/`; a top-level `codewiki/` is no longer gated and is reported as misplaced.
 - [ ] 7.6 (Unit) Expose the checks in the UI, with the correction path described per finding
-- [ ] 7.7 (Unit) Expose the same checks as `ow check`, so an agent and a CI job can run them without the application
+  - Deferred to group 8, which is where the UI is. The findings already carry the correction path — `fix` on every one — so this is rendering, not new checking.
+- [x] 7.7 (Unit) Expose the same checks as `ow check`, so an agent and a CI job can run them without the application
 
 ## 8 — Application
 

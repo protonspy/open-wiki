@@ -11,7 +11,7 @@ import { join } from "node:path";
  * The `open-wiki-version` frontmatter marker lets `ow init` report staleness
  * instead of overwriting — the open question in that record.
  */
-export const SKILLS_VERSION = "0.1.0";
+export const SKILLS_VERSION = "0.2.0";
 
 const WIKI_SKILL = `---
 name: wiki
@@ -45,12 +45,32 @@ Every entity page is markdown with YAML frontmatter:
 - **id** is \`type:slug\` — \`project:fenix\`, \`person:ana\`, \`topic:checkout\`,
   or a codewiki area. The filename is the slug.
 - **type** is \`project\`, \`person\`, \`topic\` or a codewiki page.
+- **aliases** are the other names for this concept. They are what stops three
+  names for one thing appearing within a week: \`ow check\` reports any page
+  writing an alias where this page's **title** belongs. Put a synonym here once
+  and it is handled everywhere.
 - **status** is \`active\` unless the page is superseded, when it is
   \`superseded\` and \`superseded-by\` names the replacement.
 - **sources** lists the provenance links this page rests on.
 
 \`index.md\`, \`changelog.md\` and \`log.md\` are not entity pages; they are
-themselves and are not validated against this schema.
+themselves and are not validated against this schema. That is true of the three
+at the top of \`wiki/\` only — a \`wiki/topics/index.md\` is an ordinary page
+called "index".
+
+## Where a page lives
+
+**A page is its slug, wherever it sits under \`wiki/\`.** Write
+\`wiki/checkout.md\` or file it as \`wiki/topics/checkout.md\`; either way it is
+\`[[checkout]]\`, and moving it between folders breaks nothing. A folder is
+organisation; a link is a name — \`adr:0016-a-page-is-its-slug-wherever-it-sits\`.
+
+The one rule this needs: **a slug names exactly one page.** Two files called
+\`checkout.md\` in different folders make \`[[checkout]]\` ambiguous, and
+\`ow check\` reports it rather than guessing.
+
+Codewiki pages go under \`wiki/codewiki/\`. Nothing outside \`wiki/\` is part of
+the wiki at all.
 
 ## A claim
 
@@ -81,7 +101,10 @@ reader sees. Both, or it is not supersession.
    skim looks authoritative and is not.
 2. One page per concept. A source covering three concepts becomes three pages
    or three edits, not a mirror of the source.
-3. Check the glossary; use the canonical term.
+3. Use the project's own term. Every page's \`title\` is the canonical name for
+   its concept and its \`aliases\` are the names to avoid — there is no separate
+   glossary to consult, and adding one would be a second record of the same
+   fact.
 4. Write the page at \`wiki/<slug>.md\`, link it from \`index.md\`, record it in
    \`changelog.md\`.
 5. Run \`ow check\`.
@@ -93,8 +116,8 @@ description: Narrate an area of this project's code in wiki/codewiki/, where eve
 open-wiki-version: ${SKILLS_VERSION}
 ---
 
-\`codewiki/\` is prose that explains code, one page per area, with every section
-citing the exact lines it is about:
+\`wiki/codewiki/\` is prose that explains code, one page per area, with every
+section citing the exact lines it is about:
 
     ## How the dispatcher routes
 

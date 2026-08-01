@@ -5,6 +5,7 @@ import { runGateCommand } from "./commands/gate.js";
 import { runGraph } from "./commands/graph.js";
 import { runSearch } from "./commands/search.js";
 import { runConsultAdd } from "./commands/consult.js";
+import { parseCheckArgs, runCheck, CHECK_FAILED_TO_RUN } from "./commands/check.js";
 import { today } from "./date.js";
 
 /**
@@ -23,6 +24,7 @@ Usage:
   ow init [--language <en|pt-BR|es>] [--name <name>]   scaffold a project and install the gate
   ow write <path> [--content <text> | --file <path>]   write a page through the gate (no-hook path)
   ow gate pre|post                                     the hook handlers (read JSON on stdin)
+  ow check [--json] [--errors-only]                    the integrity checks; exit 2 means errors
   ow graph [superseded|orphans|index]                  structural queries, as JSON
   ow search <query>                                    lexical search over the wiki, as JSON
   ow consult add <name>                                add a read-only consult of another project
@@ -83,6 +85,22 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
       const kind = argv[1];
       if (kind !== "pre" && kind !== "post") return fail("ow gate needs pre|post");
       return runGateCommand(kind);
+    }
+
+    case "check": {
+      try {
+        const { stdout, code } = runCheck(projectRoot, parseCheckArgs(argv.slice(1)));
+        process.stdout.write(stdout);
+        return code;
+      } catch (err) {
+        // Exit 1 is "the check could not run", which is a different thing from
+        // "the check ran and found something" (exit 2). A CI job acts on the
+        // difference.
+        process.stderr.write(
+          `ow check could not run: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        return CHECK_FAILED_TO_RUN;
+      }
     }
 
     case "graph": {
