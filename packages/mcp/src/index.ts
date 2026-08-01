@@ -84,14 +84,12 @@ function run(fn: () => unknown) {
 }
 
 /**
- * Run the server. Resolves with an exit code once the stdio transport closes.
- * Throws when the project name cannot be resolved — the CLI turns that into a
- * stderr message and a non-zero exit.
+ * Build the server for a resolved project root, with the project name announced
+ * in the server info and instructions (plan 9.11). Factored out of `runMcpServer`
+ * so a test can drive it over an in-memory transport without resolving a name
+ * through the registry or standing up stdio.
  */
-export async function runMcpServer(argv: string[]): Promise<number> {
-  const { project } = parseMcpArgs(argv);
-  const projectRoot = new ProjectRegistry().resolve(project);
-
+export function createMcpServer(projectRoot: string, project: string): McpServer {
   const server = new McpServer(
     { name: `open-wiki (${project})`, version: "0.0.0" },
     {
@@ -99,7 +97,18 @@ export async function runMcpServer(argv: string[]): Promise<number> {
     },
   );
   registerTools(server, projectRoot);
+  return server;
+}
 
+/**
+ * Run the server. Resolves with an exit code once the stdio transport closes.
+ * Throws when the project name cannot be resolved — the CLI turns that into a
+ * stderr message and a non-zero exit.
+ */
+export async function runMcpServer(argv: string[]): Promise<number> {
+  const { project } = parseMcpArgs(argv);
+  const projectRoot = new ProjectRegistry().resolve(project);
+  const server = createMcpServer(projectRoot, project);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   return 0;

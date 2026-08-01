@@ -93,5 +93,6 @@ export {
   listEntityPages,
   isIndexed,
   findOrphans,
+  readIndex,
 } from "./store/index.js";
 export { registerInIndex } from "./store/index-write.js";
