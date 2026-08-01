@@ -114,8 +114,8 @@ fenix/                          a project — usually a repository the user alre
 
 ## 3 — Sources: files
 
-- [ ] 3.1 (TDD) Register a source in `raw/<id>/` with a `manifest.json` carrying its title, the original preserved, and the directory marked immutable once written — the id is derived from the source's name and frozen there, per `adr:0011-sources-are-named-by-what-they-are`
-- [ ] 3.2 (Unit) Upload Markdown and plain text: copy into `raw/` and normalise to `text.md`
+- [x] 3.1 (TDD) Register a source in `raw/<id>/` with a `manifest.json` carrying its title, the original preserved, and the directory marked immutable once written — the id is derived from the source's name and frozen there, per `adr:0011-sources-are-named-by-what-they-are`
+- [x] 3.2 (Unit) Upload Markdown and plain text: copy into `raw/` and normalise to `text.md`
 - [ ] 3.3 (Unit) Upload a PDF: extract the text to `text.md`, keeping the page number as a provenance anchor
 - [ ] 3.4 (Unit) Upload a DOCX: extract the text and the heading hierarchy to `text.md`
 - [ ] 3.5 (Unit) Drag files onto the window and see what was recognised and what was not
@@ -166,11 +166,11 @@ which is 9.5's problem.
 - [x] 5.1 (TDD) Validate the page frontmatter against the schema (`id`, `type`, `title`, `status`, `aliases`, `updated`, `sources`, `superseded-by`) and refuse the write with a reason, instead of storing something malformed — `index.md`, `changelog.md` and `log.md` are not entity pages and are validated as themselves, not against this schema
 - [x] 5.2 (TDD) Record supersession as data, not only as struck-through prose: `status`, `superseded-by` and the date it happened, on the page that was replaced, so that "what replaced this, and when" is answerable by a traversal rather than by reading — without it 9.12's `ow graph superseded` has nothing to walk
 - [x] 5.3 (TDD) Refuse a write whose wikilink does not resolve to an existing page, saying which link broke
-- [ ] 5.4 (TDD) Refuse a write whose provenance citation does not point at an existing source and, for audio, at an instant inside the recording
-- [ ] 5.5 (Unit) Fill in `updated` and append the source to `sources` automatically — returned as `updatedInput` on the hook path, so that it does not depend on the agent remembering rather than merely telling it to remember
-- [ ] 5.6 (Unit) Append a line to `log.md` and an entry to `changelog.md` after every write, with its origin
-- [ ] 5.7 (Unit) Maintain the index: register a new page in `index.md` and flag a page that became unreachable
-- [ ] 5.8 (TDD) Do not let a correction the store itself made read as somebody else's edit. Two paths produce it: a hook that rewrote the content through `updatedInput` leaves the agent holding a copy that no longer matches the disk, and the editor filling `updated` on save makes the next save from the same buffer look stale to 8.8. Both have to resolve without asking the writer to reconcile a change it did not make
+- [x] 5.4 (TDD) Refuse a write whose provenance citation does not point at an existing source and, for audio, at an instant inside the recording
+- [x] 5.5 (Unit) Fill in `updated` and append the source to `sources` automatically — returned as `updatedInput` on the hook path, so that it does not depend on the agent remembering rather than merely telling it to remember
+- [x] 5.6 (Unit) Append a line to `log.md` and an entry to `changelog.md` after every write, with its origin
+- [x] 5.7 (Unit) Maintain the index: register a new page in `index.md` and flag a page that became unreachable
+- [x] 5.8 (TDD) Do not let a correction the store itself made read as somebody else's edit. Two paths produce it: a hook that rewrote the content through `updatedInput` leaves the agent holding a copy that no longer matches the disk, and the editor filling `updated` on save makes the next save from the same buffer look stale to 8.8. Both have to resolve without asking the writer to reconcile a change it did not make
 
 ## 6 — Source flow
 

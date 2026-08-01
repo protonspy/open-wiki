@@ -62,3 +62,32 @@ export {
 } from "./store/page.js";
 export { supersedePage, type SupersessionResult } from "./store/supersede.js";
 export { resolveWikilinks } from "./store/wikilinks.js";
+export { isStoreOnlyChange, STORE_MANAGED_FIELDS } from "./store/staleness.js";
+
+// Sources (group 3)
+export {
+  registerSource,
+  readManifest,
+  listSources,
+  sourceExists,
+  TakenIdError,
+  MissingSourceError,
+  type SourceManifest,
+  type SourceKind,
+  type RegisterInput,
+} from "./sources/manifest.js";
+export { deriveId, isIdTaken, EmptyNameError } from "./sources/id.js";
+export {
+  uploadTextSource,
+  writeSourceText,
+  normaliseText,
+} from "./sources/ingest.js";
+export { resolveProvenance, extractProvenanceLinks } from "./store/provenance.js";
+export { completeFrontmatter } from "./store/complete.js";
+export { recordWrite, type WriteEntry, type WriteAction } from "./store/record.js";
+export {
+  listEntityPages,
+  isIndexed,
+  registerInIndex,
+  findOrphans,
+} from "./store/index.js";
