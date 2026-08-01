@@ -21,7 +21,7 @@ import type { ProjectChange } from "../main/watcher.js";
  * typecheck rather than producing `undefined` on a screen.
  */
 export interface OwBridge {
-  project(): Promise<ProjectInfo>;
+  project(): Promise<ProjectInfo | null>;
   index(): Promise<WikiIndex>;
   page(slug: string): Promise<PageView>;
   sources(): Promise<SourceRow[]>;
@@ -51,7 +51,7 @@ export interface OwBridge {
   knownProjects(): Promise<KnownProject[]>;
   createProject(name: string, directory: string, language: Language): Promise<KnownProject>;
   forgetProject(name: string): Promise<void>;
-  transcribe(id: string): Promise<TranscribeOutcome>;
+  transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
 
   /** 3.5 — `File.path` was removed in Electron 32; the preload knows the path. */
   pathForFile(file: File): string;

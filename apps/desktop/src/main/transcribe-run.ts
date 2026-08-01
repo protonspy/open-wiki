@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { readManifest, transcriptionInputs } from "@open-wiki/access";
+import { readManifest, readSettings, transcriptionInputs } from "@open-wiki/access";
 import { defaultAppDataDir, readSecrets } from "@open-wiki/access/secrets";
 import {
   createProvider,
   finishRecording,
   preprocessRecording,
+  isTimeMap,
   readJournal,
   resolveFfmpeg,
   spawnFfmpeg,
@@ -32,6 +33,11 @@ import { sourceDir } from "@open-wiki/audio";
  * the seal that discards the WAV only once every chunk succeeded.
  */
 
+export interface TranscribeOptions {
+  /** Throw away a journal that no longer matches, rather than refusing (4.17). */
+  restart?: boolean;
+}
+
 export interface TranscribeDeps {
   run?: FfmpegRunner;
   appDataDir?: string;
@@ -43,11 +49,21 @@ export type TranscribeOutcome =
 export async function runTranscription(
   projectRoot: string,
   id: string,
-  onProgress?: (done: number, total: number) => void,
+  options: TranscribeOptions = {},
   deps: TranscribeDeps = {},
 ): Promise<TranscribeOutcome> {
-  const dir = sourceDir(projectRoot, id);
-  const manifest = readManifest(projectRoot, id);
+  // Inside the outcome type, not thrown past it. An id that escapes `raw/`
+  // and a missing manifest were the two failures that rejected the promise
+  // while every other one came back as a `TranscribeOutcome` — a caller
+  // reading the union would believe rejection was impossible.
+  let dir: string;
+  let manifest: ReturnType<typeof readManifest>;
+  try {
+    dir = sourceDir(projectRoot, id);
+    manifest = readManifest(projectRoot, id);
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
   if (manifest.kind !== "recording") {
     return { ok: false, reason: `"${id}" is a file, not a recording` };
   }
@@ -70,13 +86,7 @@ export async function runTranscription(
   try {
     // Preprocess only if it has not happened. `timemap.json` is the record
     // that it did — re-encoding would move every instant a citation names.
-    let map: TimeMap;
-    const existing = join(dir, TIMEMAP_FILE);
-    if (existsSync(existing)) {
-      map = JSON.parse(readFileSync(existing, "utf8")) as TimeMap;
-    } else {
-      map = await preprocessRecording(run, dir);
-    }
+    const map = await mapFor(run, dir);
 
     const provider = createProvider({
       provider: secrets.stt.provider,
@@ -91,20 +101,58 @@ export async function runTranscription(
       vocabulary: inputs.vocabulary,
       map,
       run,
-      ...(onProgress ? { onProgress } : {}),
+      // 4.17 refuses a journal that no longer describes the same work and says
+      // "start again from the beginning, or put the previous settings back".
+      // Without this the caller could not take the first half of that offer,
+      // so changing the content language mid-recording left a permanently
+      // unfinishable transcription and its 690 MB WAV.
+      ...(options.restart ? { restart: true } : {}),
     });
 
     // Finish either way. A part-done run still gets a timeline, which is what
     // makes "what is missing" visible on the sources screen; `text.md` and the
     // seal wait for a complete journal, which `finishRecording` decides.
+    // The project's own setting, which was being ignored — so a user who
+    // chose to keep their WAVs lost ~690 MB per hour of "the only copy of a
+    // meeting that already happened" anyway, which is the loss `adr:0006`
+    // and `adr:0012` are entirely about.
     const finished = finishRecording(projectRoot, id, journal, map, {
       title: manifest.title,
+      deleteWav: readSettings(projectRoot).deleteWavAfterTranscription,
     });
     const done = journal.chunks.filter((c) => c.done).length;
     return { ok: true, done, total: journal.chunks.length, sealed: finished.seal.sealed };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * The recording's time map: read if it is there, produced if it is not.
+ *
+ * **Read through `isTimeMap`, never cast.** `timemap.json` is committed by
+ * design — the managed gitignore covers the audio and `.state/`, not this —
+ * so it arrives with a clone, and `{}` casts to `TimeMap` as happily as a
+ * real map does. What flows out of here decides how many paid provider
+ * requests one click makes, and what wall-clock instant every citation of this
+ * recording resolves to.
+ *
+ * A map that does not check out is treated as *absent*, so the recording is
+ * preprocessed again and the map is rebuilt from the audio. That is safe in a
+ * way overwriting silently is not: `preprocessRecording` refuses to write a
+ * map that disagrees with the file it describes.
+ */
+async function mapFor(run: FfmpegRunner, dir: string): Promise<TimeMap> {
+  const file = join(dir, TIMEMAP_FILE);
+  if (existsSync(file)) {
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+      if (isTimeMap(parsed)) return parsed;
+    } catch {
+      // Unreadable reads as absent, for the same reason.
+    }
+  }
+  return preprocessRecording(run, dir);
 }
 
 /** How far a recording got, for the button's label (plan 6.3). */

@@ -75,20 +75,57 @@ export interface CredentialDeps {
  * costs nothing, it needs no audio, and a 401 from it means exactly what a 401
  * from the real call would mean.
  */
+/** No key is this long; one that is did not come from a person typing. */
+const MAX_KEY_CHARS = 512;
+
+/**
+ * What the renderer sent, or a refusal.
+ *
+ * Every other channel coerces its arguments; this one used to cast an
+ * arbitrary value straight through — so `provider: "bogus"` took the Groq
+ * branch and was then *stored* as `"bogus"`, and a `whispercpp` request
+ * persisted whatever `apiKey` came with it without checking anything at all.
+ */
+export function parseCredentialInput(value: unknown): SaveCredentialInput | null {
+  if (typeof value !== "object" || value === null) return null;
+  const input = value as Partial<SaveCredentialInput>;
+  if (input.provider !== "groq" && input.provider !== "whispercpp") return null;
+  if (input.provider === "whispercpp") return { provider: "whispercpp" };
+  if (typeof input.apiKey !== "string" || input.apiKey.length > MAX_KEY_CHARS) return null;
+  return { provider: "groq", apiKey: input.apiKey };
+}
+
 export async function checkCredential(
   input: SaveCredentialInput,
   deps: CredentialDeps = {},
 ): Promise<CredentialCheck> {
   if (input.provider === "whispercpp") {
-    // Nothing to check. Choosing it is how a user opts out of the one place
-    // this product talks to a third party, and it needs no credential.
-    return { ok: true };
+    // No *credential*, which is not the same as nothing to check. The binary
+    // and the model are not bundled — they are large and the size-against-
+    // accuracy choice is the user's — and `createProvider` refuses without
+    // both. Accepting the choice here and failing an hour later, after a
+    // meeting has been recorded, is the shape of a promise this screen has no
+    // business making.
+    return {
+      ok: false,
+      reason:
+        "whisper.cpp is not bundled: install it and set OPEN_WIKI_WHISPER and " +
+        "OPEN_WIKI_WHISPER_MODEL, or use Groq. It needs no credential, but it " +
+        "does need a binary and a model.",
+    };
   }
   if (!input.apiKey) return { ok: false, reason: "a Groq key is needed, or choose whisper.cpp" };
 
-  const doFetch = deps.fetch ?? ((url, init) => fetch(url, init));
+  const url = modelsUrl();
+  // The same assertion `groq.ts` makes, and for the same reason it wrote down:
+  // the credential rides on the request, so the endpoint is checked here rather
+  // than trusted because it usually comes from a constant.
+  if (!url.startsWith("https://")) {
+    return { ok: false, reason: "refusing to send the credential over plain http" };
+  }
+  const doFetch = deps.fetch ?? ((url2, init) => fetch(url2, init));
   try {
-    const response = await doFetch(modelsUrl(), {
+    const response = await doFetch(url, {
       method: "GET",
       headers: { authorization: `Bearer ${input.apiKey}` },
       redirect: "error",
@@ -182,6 +219,20 @@ export function knownProjects(appDataDir?: string): KnownProject[] {
   });
 }
 
+/** The registry's own rule, applied before anything is written. */
+const PROJECT_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+export class InvalidProjectNameError extends Error {
+  constructor(name: string) {
+    super(`"${name}" is not a project name — letters, digits, dot, dash and underscore`);
+    this.name = "InvalidProjectNameError";
+  }
+}
+
+function assertProjectName(name: string): void {
+  if (!PROJECT_NAME.test(name)) throw new InvalidProjectNameError(name);
+}
+
 export class RelativeProjectPathError extends Error {
   constructor(directory: string) {
     super(`"${directory}" is not an absolute path — say where the project should live`);
@@ -216,6 +267,11 @@ export function createProject(
   // application's own source tree. The launcher picks a real folder; this
   // refusal is for every caller that is not the launcher.
   if (!isAbsolute(directory)) throw new RelativeProjectPathError(directory);
+  // **Before the scaffold.** The registry validated the name inside
+  // `register`, which is the last statement — so a name with a space in it,
+  // which is an ordinary thing to type, created the whole directory tree and
+  // then threw, leaving an orphan on disk that nothing knew about.
+  assertProjectName(name);
   const registry = new ProjectRegistry(appDataDir ?? defaultAppDataDir());
   if (registry.has(name)) throw new ProjectNameTakenError(name);
 

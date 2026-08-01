@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readSecrets } from "@open-wiki/access/secrets";
+import { createApi, NoProjectError } from "../src/main/ipc.js";
 import type { FetchLike } from "@open-wiki/audio";
 import {
   checkCredential,
@@ -11,6 +12,8 @@ import {
   currentLanguage,
   forgetProject,
   knownProjects,
+  InvalidProjectNameError,
+  parseCredentialInput,
   ProjectNameTakenError,
   RelativeProjectPathError,
   saveCredential,
@@ -91,10 +94,31 @@ describe("checkCredential (8.3)", () => {
     expect(result.ok === false && result.reason).toMatch(/could not reach/);
   });
 
-  it("needs no credential at all for whisper.cpp", async () => {
-    // Choosing it is how a user opts out of the one place this product talks
-    // to a third party.
-    await expect(checkCredential({ provider: "whispercpp" })).resolves.toEqual({ ok: true });
+  it("does not promise whisper.cpp will work when nothing points at it", async () => {
+    // No *credential* is not the same as nothing to check. The binary and the
+    // model are not bundled, and `createProvider` refuses without both — so
+    // accepting the choice here and failing an hour later, after a meeting has
+    // been recorded, is a promise this screen has no business making.
+    const result = await checkCredential({ provider: "whispercpp" });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/binary and a model/);
+  });
+
+  it("refuses input that is not a provider at all", () => {
+    // The one channel that used to cast rather than coerce.
+    for (const bad of [null, "groq", 7, {}, { provider: "bogus" }, { provider: "groq" }]) {
+      expect(parseCredentialInput(bad)).toBeNull();
+    }
+    expect(parseCredentialInput({ provider: "groq", apiKey: "k" })).toEqual({
+      provider: "groq",
+      apiKey: "k",
+    });
+  });
+
+  it("drops a key sent alongside whisper.cpp rather than storing it", () => {
+    expect(parseCredentialInput({ provider: "whispercpp", apiKey: "gsk_x" })).toEqual({
+      provider: "whispercpp",
+    });
   });
 
   it("refuses Groq with no key, and names the alternative", async () => {
@@ -185,6 +209,15 @@ describe("setLanguage (8.12)", () => {
 });
 
 describe("the launcher (8.4)", () => {
+  it("validates the name before it scaffolds anything", () => {
+    // The registry validated inside `register`, the last statement — so a name
+    // with a space, which is an ordinary thing to type, created the whole tree
+    // and then threw, leaving an orphan nothing knew about.
+    const dir = join(root, "orphan");
+    expect(() => createProject("My Project", dir, "en", appData)).toThrow(InvalidProjectNameError);
+    expect(existsSync(dir)).toBe(false);
+  });
+
   it("lists nothing on a machine that knows no projects", () => {
     expect(knownProjects(appData)).toEqual([]);
   });
@@ -251,5 +284,26 @@ describe("createProject refuses a relative directory", () => {
     // tree, from a test that called every channel with arbitrary arguments.
     expect(() => createProject("novo", "y", "en", appData)).toThrow(RelativeProjectPathError);
     expect(existsSync(join(process.cwd(), "y"))).toBe(false);
+  });
+});
+
+describe("a window with no project (8.4)", () => {
+  it("answers null for the project rather than inventing one", () => {
+    const api = createApi({ projectRoot: null });
+    expect(api.project()).toBeNull();
+  });
+
+  it("still lists and creates projects, which is all a launcher does", () => {
+    const api = createApi({ projectRoot: null });
+    expect(api.knownProjects()).toBeInstanceOf(Array);
+  });
+
+  it("refuses every channel that needs a project, rather than guessing at one", () => {
+    const api = createApi({ projectRoot: null });
+    expect(() => api.index()).toThrow(NoProjectError);
+    expect(() => api.page("fenix")).toThrow(NoProjectError);
+    expect(() => api.sources()).toThrow(NoProjectError);
+    expect(() => api.findings()).toThrow(NoProjectError);
+    expect(() => api.credential()).toThrow(NoProjectError);
   });
 });
