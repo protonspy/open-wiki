@@ -25,6 +25,9 @@ pub struct ThreadedSource {
     commands: Sender<Command>,
     running: Arc<AtomicBool>,
     lost: Arc<AtomicU64>,
+    /// A device change taken out of the channel behind frames that have to be
+    /// reported first. Held, not dropped.
+    deferred: Option<Poll>,
     /// What the thread found when it tried to open the device. `None` while it
     /// has not answered yet.
     opened: Arc<Mutex<Option<Result<String, String>>>>,
@@ -126,6 +129,7 @@ impl ThreadedSource {
             commands,
             running,
             lost,
+            deferred: None,
             opened,
             handle: Some(handle),
         }
@@ -173,6 +177,10 @@ impl CaptureSource for ThreadedSource {
     /// A device change is reported on its own, ahead of the frames that
     /// followed it, so the session stamps it at the right offset.
     fn poll(&mut self) -> Result<Poll, CaptureError> {
+        // Anything held back from the last call comes first.
+        if let Some(held) = self.deferred.take() {
+            return Ok(held);
+        }
         let mut samples = Vec::new();
         loop {
             match self.rx.try_recv() {

@@ -440,3 +440,52 @@ fn one_failing_device_does_not_freeze_the_other_track_or_the_map() {
         "the map kept moving"
     );
 }
+
+#[test]
+fn a_device_change_behind_frames_is_reported_and_not_dropped() {
+    // The change used to be taken out of the queue and then discarded when
+    // audio preceded it in the same drain, so the recording carried on with no
+    // record that the device had moved.
+    use recorder::capture::AudioFormat;
+    use recorder::pump::ThreadedSource;
+
+    let format = AudioFormat {
+        sample_rate: RATE,
+        channels: 1,
+    };
+    let mut threaded = ThreadedSource::spawn(format, move || {
+        Ok(ScriptedSource::new(
+            format,
+            "old",
+            vec![
+                Poll::Frames {
+                    wall_ns: 0,
+                    samples: vec![0.5; 480],
+                },
+                Poll::DeviceChanged {
+                    device: "new".into(),
+                },
+            ],
+        ))
+    });
+    threaded
+        .wait_until_open(std::time::Duration::from_secs(2))
+        .unwrap();
+    threaded.start().unwrap();
+
+    let mut seen_frames = false;
+    let mut seen_change = false;
+    for _ in 0..200 {
+        match threaded.poll().unwrap() {
+            Poll::Frames { .. } => seen_frames = true,
+            Poll::DeviceChanged { device } => {
+                assert_eq!(device, "new");
+                seen_change = true;
+                break;
+            }
+            Poll::Idle => std::thread::sleep(std::time::Duration::from_millis(5)),
+        }
+    }
+    assert!(seen_frames, "the audio before the change is delivered");
+    assert!(seen_change, "and the change itself is not lost behind it");
+}
