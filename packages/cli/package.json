@@ -1,0 +1,15 @@
+{
+  "name": "open-wiki",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ow": "src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@open-wiki/access": "workspace:*"
+  }
+}

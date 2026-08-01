@@ -1,0 +1,12 @@
+**/dist/
+**/coverage/
+**/node_modules/
+**/release/
+vendor/
+apps/desktop/build/
+pnpm-lock.yaml
+package-lock.json
+# Prose: prettier rewraps markdown, which mangles the plan, ADRs and the wiki.
+docs/
+plans/
+.claude/

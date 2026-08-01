@@ -95,11 +95,11 @@ fenix/                          a project — usually a repository the user alre
 
 ## 1 — Foundation
 
-- [ ] 1.1 (Unit) Set up the monorepo: a pnpm workspace for `apps/desktop` and `packages/*` — the access module, the CLI and the MCP process among them — a cargo workspace for `crates/recorder`, shared strict TypeScript
-- [ ] 1.2 (Unit) Fill in `.claude/rules/project.md` with the real build, test, scoped test, lint and format commands
-- [ ] 1.3 (Unit) CI on GitHub Actions on `windows-latest`: Rust and TS build, tests with a coverage floor of 76% per package, lint
-- [ ] 1.4 (Unit) Remove `.claude/` and `CLAUDE.md` from `.gitignore` — the methodology is versioned with the code, and today it exists only on this machine
-- [ ] 1.5 (Unit) Bundle `vendor/ffmpeg` through a download script with hash verification
+- [x] 1.1 (Unit) Set up the monorepo: a pnpm workspace for `apps/desktop` and `packages/*` — the access module, the CLI and the MCP process among them — a cargo workspace for `crates/recorder`, shared strict TypeScript
+- [x] 1.2 (Unit) Fill in `.claude/rules/project.md` with the real build, test, scoped test, lint and format commands
+- [x] 1.3 (Unit) CI on GitHub Actions on `windows-latest`: Rust and TS build, tests with a coverage floor of 76% per package, lint
+- [x] 1.4 (Unit) Remove `.claude/` and `CLAUDE.md` from `.gitignore` — the methodology is versioned with the code, and today it exists only on this machine
+- [x] 1.5 (Unit) Bundle `vendor/ffmpeg` through a download script with hash verification
 
 ## 2 — Project directory and safe writing
 
