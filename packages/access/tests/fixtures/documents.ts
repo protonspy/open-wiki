@@ -123,6 +123,9 @@ function escapeXml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** The size field a ZIP64 archive writes when the real one lives elsewhere. */
+export const ZIP64_SENTINEL = 0xffffffff;
+
 /** A zip entry: its name, its bytes, and optionally a size it lies about. */
 type ZipEntry = readonly [name: string, text: string, declaredSize?: number];
 

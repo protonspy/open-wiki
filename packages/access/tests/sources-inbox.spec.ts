@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   truncateSync,
@@ -28,7 +29,10 @@ import { scaffold } from "../src/scaffold.js";
 import { buildPdf } from "./fixtures/documents.js";
 
 function tempProject(): string {
-  const root = mkdtempSync(join(tmpdir(), "ow-inbox-"));
+  // Resolved once, here. `inboxPath` returns the real path (`assertWithin`
+  // does), and `os.tmpdir()` is itself a symlink on macOS (/var → /private/var),
+  // so an unresolved root would not compare equal to what the code returns.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "ow-inbox-")));
   mkdirSync(join(root, "raw", INBOX), { recursive: true });
   return root;
 }
@@ -53,8 +57,12 @@ function trySymlink(target: string, path: string): boolean {
   try {
     symlinkSync(target, path);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    // Only the missing-privilege codes are a platform skip. Anything else is a
+    // real failure and has to fail the test rather than pass it quietly.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "EPERM" || code === "EACCES" || code === "ENOSYS") return false;
+    throw err;
   }
 }
 
@@ -349,10 +357,13 @@ describe("the raw/_inbox doorway (3.7)", () => {
         // resolves inside it, and an explicit drain has to say so.
         try {
           rmSync(join(root, "raw"), { recursive: true, force: true });
-        } catch {
+        } catch (err) {
           // Windows refuses to delete a directory that is being watched. That
-          // is the platform, not the behaviour under test.
-          return;
+          // is the platform, not the behaviour under test — but only for the
+          // codes that actually mean it.
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code === "EBUSY" || code === "EPERM" || code === "ENOTEMPTY") return;
+          throw err;
         }
         const elsewhere = mkdtempSync(join(tmpdir(), "ow-elsewhere-"));
         try {

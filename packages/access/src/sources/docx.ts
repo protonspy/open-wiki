@@ -23,13 +23,26 @@ import { writeSourceText } from "./ingest.js";
  * fires this package on every page write and must not pay for a DOCX reader.
  */
 
+/**
+ * A numeric character reference, or the reference itself when it names no
+ * character. `String.fromCodePoint` throws above `0x10FFFF`, and this module is
+ * exported: a caller can hand it HTML mammoth never produced, and one bad
+ * entity must not abort the whole conversion.
+ */
+function codePoint(value: number, literal: string): string {
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff) return literal;
+  // Surrogate halves are not characters on their own.
+  if (value >= 0xd800 && value <= 0xdfff) return literal;
+  return String.fromCodePoint(value);
+}
+
 /** Decode the entities mammoth emits in text; it escapes nothing else. */
 function decodeEntities(text: string): string {
   return (
     text
       .replace(/&nbsp;/g, " ")
-      .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-      .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)))
+      .replace(/&#(\d+);/g, (whole, code: string) => codePoint(Number(code), whole))
+      .replace(/&#x([0-9a-f]+);/gi, (whole, code: string) => codePoint(parseInt(code, 16), whole))
       .replace(/&quot;/g, '"')
       .replace(/&apos;/g, "'")
       .replace(/&lt;/g, "<")
@@ -299,7 +312,10 @@ const ZIP64_SENTINEL = 0xffffffff;
  * inflating anything. Returns `null` when the structure cannot be read — a
  * malformed archive is mammoth's to report, not this guard's to guess at.
  */
-export function declaredUncompressedSize(zip: Buffer): number | null {
+/** A ZIP64 archive: the real sizes live in an extra field this does not parse. */
+export const ZIP64 = Symbol("zip64");
+
+export function declaredUncompressedSize(zip: Buffer): number | typeof ZIP64 | null {
   const start = Math.max(0, zip.length - (22 + 0xffff));
   let eocd = -1;
   for (let i = zip.length - 22; i >= start; i--) {
@@ -312,7 +328,7 @@ export function declaredUncompressedSize(zip: Buffer): number | null {
 
   const entries = zip.readUInt16LE(eocd + 10);
   let offset = zip.readUInt32LE(eocd + 16);
-  if (offset === ZIP64_SENTINEL) return Number.POSITIVE_INFINITY; // ZIP64: refuse
+  if (offset === ZIP64_SENTINEL) return ZIP64;
 
   let total = 0;
   for (let n = 0; n < entries; n++) {
@@ -320,9 +336,9 @@ export function declaredUncompressedSize(zip: Buffer): number | null {
     if (zip.readUInt32LE(offset) !== CENTRAL_SIGNATURE) return null;
     const size = zip.readUInt32LE(offset + 24);
     // A ZIP64 entry hides its real size in an extra field. Rather than parse
-    // that, treat it as over any ceiling: a document that needs ZIP64 is not a
-    // document this reads.
-    if (size === ZIP64_SENTINEL) return Number.POSITIVE_INFINITY;
+    // that, say so: a document that needs ZIP64 is not one this reads, and
+    // "declares Infinity bytes" is not a sentence to show anybody.
+    if (size === ZIP64_SENTINEL) return ZIP64;
     total += size;
     offset +=
       46 +
@@ -340,6 +356,12 @@ export function declaredUncompressedSize(zip: Buffer): number | null {
  */
 export async function extractDocxMarkdown(content: Buffer): Promise<string> {
   const declared = declaredUncompressedSize(content);
+  if (declared === ZIP64) {
+    throw new Error(
+      "this DOCX is a ZIP64 archive, whose entry sizes cannot be checked before they are read — " +
+        "a document that large is not one this reads",
+    );
+  }
   if (declared !== null && declared > MAX_DOCX_UNCOMPRESSED_BYTES) {
     throw new Error(
       `this DOCX declares ${declared} bytes of content, over the ${MAX_DOCX_UNCOMPRESSED_BYTES}-byte limit — ` +

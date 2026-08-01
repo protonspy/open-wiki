@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   MAX_DOCX_UNCOMPRESSED_BYTES,
+  ZIP64,
   declaredUncompressedSize,
   extractDocxMarkdown,
   htmlToMarkdown,
   uploadDocxSource,
 } from "../src/sources/docx.js";
 import { readManifest } from "../src/sources/manifest.js";
-import { buildBombDocx, buildDocx } from "./fixtures/documents.js";
+import { ZIP64_SENTINEL, buildBombDocx, buildDocx } from "./fixtures/documents.js";
 
 function tempProject(): string {
   const root = mkdtempSync(join(tmpdir(), "ow-docx-"));
@@ -136,6 +137,15 @@ describe("DOCX upload (3.4)", () => {
       );
     });
 
+    it("leaves a numeric entity that names no character as it found it", () => {
+      // String.fromCodePoint throws above 0x10FFFF, and this is exported: one
+      // bad entity from a caller must not abort the whole conversion.
+      expect(htmlToMarkdown("<p>a &#99999999; b</p>")).toBe("a &#99999999; b");
+      expect(htmlToMarkdown("<p>a &#xD800; b</p>")).toBe("a &#xD800; b");
+      // A valid one still decodes.
+      expect(htmlToMarkdown("<p>&#233;t&#233;</p>")).toBe("été");
+    });
+
     it("returns nothing for an empty document", () => {
       expect(htmlToMarkdown("")).toBe("");
     });
@@ -199,6 +209,24 @@ describe("DOCX upload (3.4)", () => {
 
     it("returns null for something that is not a zip, leaving the reader to say so", () => {
       expect(declaredUncompressedSize(Buffer.from("not a zip at all"))).toBeNull();
+    });
+
+    it("reports a ZIP64 entry as ZIP64 rather than as a number", () => {
+      // The real size lives in an extra field this does not parse. Returning
+      // Infinity refused it correctly and then told the user their document
+      // "declares Infinity bytes of content".
+      expect(declaredUncompressedSize(buildBombDocx(ZIP64_SENTINEL))).toBe(ZIP64);
+    });
+  });
+
+  describe("the ZIP64 refusal", () => {
+    it("says what is wrong without quoting a byte count it does not have", async () => {
+      const message = await extractDocxMarkdown(buildBombDocx(ZIP64_SENTINEL)).then(
+        () => "did not throw",
+        (err: Error) => err.message,
+      );
+      expect(message).toContain("ZIP64");
+      expect(message).not.toContain("Infinity");
     });
   });
 

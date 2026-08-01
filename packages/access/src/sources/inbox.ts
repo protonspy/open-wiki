@@ -189,6 +189,13 @@ export interface WatchInboxHandlers {
   onError?: (error: Error) => void;
 }
 
+/**
+ * How long to wait for chokidar's initial scan before carrying on without it.
+ * Generous, because exceeding it means events may be missed; bounded, because
+ * the alternative is an application that never opens.
+ */
+const READY_TIMEOUT_MS = 10_000;
+
 export interface WatchInboxOptions {
   /**
    * How long a file's size must hold steady before it is considered fully
@@ -321,9 +328,29 @@ export async function watchInbox(
   // Return only once the initial scan is done. Before `ready` chokidar applies
   // no write-stability check of its own, and a caller that starts watching and
   // immediately drops a file would otherwise race the scan.
+  //
+  // But `ready` is **not guaranteed to arrive**: chokidar can fail during the
+  // initial scan and never emit it. A bare await hangs the caller for good —
+  // the desktop application never finishes opening the project. So settle on
+  // whichever of ready/error comes first, and give up after a bounded wait
+  // rather than trading one silent failure for a worse one.
   await new Promise<void>((resolve) => {
-    if (watcher.closed) resolve();
-    else watcher.once("ready", () => resolve());
+    if (watcher.closed) {
+      resolve();
+      return;
+    }
+    let settled = false;
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(done, READY_TIMEOUT_MS);
+    // Never hold the process open on account of this timer.
+    timer.unref?.();
+    watcher.once("ready", done);
+    watcher.once("error", done);
   });
 
   return {
