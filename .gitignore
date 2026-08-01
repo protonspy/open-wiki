@@ -146,3 +146,10 @@ vite.config.ts.timestamp-*
 vendor/ffmpeg/
 # Rust build output (crates/)
 /target/
+
+# Bundled output. `build-cli.mjs` and `build-main.mjs` produce these; the
+# installer and the npm package carry them, and neither is committed.
+packages/cli/build/
+apps/desktop/build/
+apps/desktop/release/
+dist/

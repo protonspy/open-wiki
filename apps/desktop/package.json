@@ -1,31 +1,80 @@
 {
   "name": "@open-wiki/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "src/main/index.ts",
+  "main": "build/main/index.js",
   "scripts": {
     "dev": "vite",
     "build:renderer": "vite build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint ."
-  },
-  "dependencies": {
-    "@open-wiki/access": "workspace:*",
-    "@open-wiki/audio": "workspace:*",
-    "chokidar": "^5.0.0",
-    "markdown-it": "^14.1.0"
+    "lint": "eslint .",
+    "build:main": "node ../../scripts/build-main.mjs",
+    "build:cli": "pnpm --filter open-wiki run build",
+    "build": "pnpm run build:main && pnpm run build:renderer && pnpm run build:cli",
+    "package": "pnpm run build && electron-builder --win --publish never"
   },
   "devDependencies": {
+    "@open-wiki/access": "workspace:*",
+    "@open-wiki/audio": "workspace:*",
     "@types/markdown-it": "^14.1.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "chokidar": "^5.0.0",
     "electron": "^38.0.0",
+    "electron-builder": "^25.1.8",
+    "markdown-it": "^14.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "vite": "^6.0.0"
+  },
+  "build": {
+    "appId": "dev.protonspy.openwiki",
+    "productName": "open-wiki",
+    "copyright": "Copyright (c) protonspy. Apache-2.0.",
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "build/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../vendor/ffmpeg/ffmpeg.exe",
+        "to": "ffmpeg.exe"
+      },
+      {
+        "from": "../../target/release/recorder.exe",
+        "to": "recorder.exe"
+      },
+      {
+        "from": "../../packages/cli/build/ow.mjs",
+        "to": "ow.mjs"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "open-wiki-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "include": "build-resources/installer.nsh"
+    },
+    "publish": null
   }
 }

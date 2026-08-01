@@ -172,6 +172,40 @@ describe("ow write", () => {
   });
 });
 
+describe("ow read (9.14)", () => {
+  // The socket module is tested where it lives. What is tested here is the
+  // wiring that makes 9.14 user-visible at all — the verb a hook actually
+  // runs. It is also the level at which "both paths produce the same answer"
+  // is a thing a user would notice: with no application listening, `ow read`
+  // has to print the page rather than fail because nothing answered.
+  let root: string;
+  beforeEach(() => {
+    root = tempProject();
+    writeFileSync(
+      join(root, "wiki", "fenix.md"),
+      page("fenix", "Fenix", "Fenix is a rebuild.\n"),
+      "utf8",
+    );
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("prints the page when no application is listening", async () => {
+    expect(await main(["read", "fenix"], root)).toBe(0);
+    expect(stdout()).toContain("Fenix is a rebuild.");
+  });
+
+  it("needs a slug", async () => {
+    expect(await main(["read"], root)).toBe(2);
+    expect(stderr()).toContain("slug");
+  });
+
+  it("reports a page that is not there as a sentence, not a stack", async () => {
+    expect(await main(["read", "ghost"], root)).toBe(2);
+    expect(stderr()).toContain("ghost");
+    expect(stderr()).not.toContain("    at ");
+  });
+});
+
 describe("ow graph and ow search", () => {
   let root: string;
   beforeEach(() => {

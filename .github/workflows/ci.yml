@@ -126,12 +126,45 @@ jobs:
 
       - run: cargo test --locked --all-features
 
+  # 10.6 — the plugin is a manifest and a hooks file, and a malformed one
+  # fails at `/plugin install` on somebody else's machine. Ubuntu because it
+  # only reads JSON.
+  plugin:
+    name: plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: The marketplace and the plugin manifest are well formed
+        run: node scripts/ci/check-plugin.mjs
+
+      # A failed *install* is tolerated — a registry outage is not a finding
+      # about this repository. A failed *validation* is not: `continue-on-error`
+      # made the `|| exit 1` inert, so the step reported success whatever the
+      # tool said — which is exactly what check-plugin.mjs's own header calls
+      # "a check that silently passes when its tool is missing".
+      - name: claude plugin validate --strict
+        run: |
+          if ! npm i -g @anthropic-ai/claude-code >/dev/null 2>&1; then
+            echo "could not install the Claude Code CLI — skipped (check-plugin.mjs still ran)"
+            exit 0
+          fi
+          # Both, because they are different manifests: validating the
+          # marketplace reads `.claude-plugin/marketplace.json` and stops — it
+          # never opens the plugin's own manifest.
+          claude plugin validate --strict .
+          claude plugin validate --strict ./plugins/open-wiki
+
   # The single check to require on the branch. Skipped jobs are fine — an empty
   # workspace has nothing to test — but a failed or cancelled one is not.
   ci:
     name: CI
     if: always()
-    needs: [discover, test, checks, rust]
+    needs: [discover, test, checks, rust, plugin]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled
@@ -144,3 +177,4 @@ jobs:
           echo "test:     ${{ needs.test.result }}"
           echo "checks:   ${{ needs.checks.result }}"
           echo "rust:     ${{ needs.rust.result }}"
+          echo "plugin:   ${{ needs.plugin.result }}"

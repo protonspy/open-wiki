@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./read": "./src/read.ts",
-    "./secrets": "./src/config/secrets.ts"
+    "./secrets": "./src/config/secrets.ts",
+    "./socket": "./src/socket.ts"
   },
   "scripts": {
     "test": "vitest run",

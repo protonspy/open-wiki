@@ -9,6 +9,27 @@ const OW_HOOKS = {
   post: "ow gate post",
 };
 
+/**
+ * Which tools each hook matches.
+ *
+ * Exported because `plugins/open-wiki/hooks/hooks.json` has to say the same
+ * thing, and there is no mechanism that makes two JSON files agree. A user who
+ * installs the plugin instead of running `ow init` gets whatever that file
+ * says, and the two drifted the first time they were written: the plugin
+ * dropped `Bash` — the matcher whose whole purpose is shell writes — and added
+ * `MultiEdit`, which this one did not have. `packages/cli/tests/release.spec.ts`
+ * asserts they match.
+ */
+export const HOOK_MATCHERS = {
+  // `Bash` is here because a page written through a shell command arrives as a
+  // command string with no page content to inspect, and denying `Edit(wiki/**)`
+  // does not constrain `Bash` — permission rules are per tool.
+  pre: "Write|Edit|MultiEdit|Bash",
+  // Post records a write that has actually happened, and a `Bash` write is one
+  // this gate never saw the content of.
+  post: "Write|Edit|MultiEdit",
+} as const;
+
 interface HookEntry {
   matcher: string;
   hooks: Array<{ type: string; command: string }>;
@@ -39,8 +60,8 @@ export function writeHooks(projectRoot: string): { written: string } {
   }
   doc.hooks ??= {};
 
-  doc.hooks.PreToolUse = upsertEntry(doc.hooks.PreToolUse, "Write|Edit|Bash", OW_HOOKS.pre);
-  doc.hooks.PostToolUse = upsertEntry(doc.hooks.PostToolUse, "Write|Edit", OW_HOOKS.post);
+  doc.hooks.PreToolUse = upsertEntry(doc.hooks.PreToolUse, HOOK_MATCHERS.pre, OW_HOOKS.pre);
+  doc.hooks.PostToolUse = upsertEntry(doc.hooks.PostToolUse, HOOK_MATCHERS.post, OW_HOOKS.post);
 
   mkdirSync(join(file, ".."), { recursive: true });
   writeFileSync(file, JSON.stringify(doc, null, 2) + "\n", "utf8");

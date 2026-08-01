@@ -17,6 +17,10 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      // Generated bundles. `build-cli.mjs` and `build-main.mjs` produce these;
+      // they are what the installer and the npm package carry, and linting a
+      // bundle reports on somebody else's source.
+      "**/build/**",
       "**/coverage/**",
       "**/node_modules/**",
       "**/release/**",

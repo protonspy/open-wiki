@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import { CHANNELS } from "./ipc.js";
+// From `channels.js`, never from `ipc.js`. A preload that imported the latter
+// dragged the whole main-process graph — the store, the audio package — into a
+// sandboxed bundle that cannot run any of it.
+import { CHANNELS } from "./channels.js";
 import type { OwBridge } from "../renderer/bridge.js";
 
 /**

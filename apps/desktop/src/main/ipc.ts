@@ -53,49 +53,10 @@ import {
  * dozen lines that bolt them to a window. Nothing here imports `electron`.
  */
 
-export const CHANNELS = {
-  project: "project:info",
-  index: "wiki:index",
-  page: "wiki:page",
-  sources: "sources:list",
-  recordStart: "record:start",
-  recordPause: "record:pause",
-  recordResume: "record:resume",
-  recordStop: "record:stop",
-  recordStatus: "record:status",
+import { CHANNELS } from "./channels.js";
 
-  // Editing (8.7, 8.8, 8.9) and the history behind it (8.11).
-  save: "wiki:save",
-  create: "wiki:create",
-  rename: "wiki:rename",
-  remove: "wiki:delete",
-  history: "history:list",
-  undo: "history:undo",
-
-  // Sources (6.2 to 6.7), the checks (7.6), and what a citation opens (8.6).
-  sourceDetail: "sources:detail",
-  sourcesOfPage: "sources:of-page",
-  retitle: "sources:retitle",
-  findings: "check:findings",
-  locate: "sources:locate",
-  drop: "sources:drop",
-
-  // The credential (8.3), the launcher (8.4), the content language (8.12) and
-  // the run 6.3 starts.
-  credential: "settings:credential",
-  saveCredential: "settings:save-credential",
-  language: "settings:language",
-  setLanguage: "settings:set-language",
-  knownProjects: "launcher:projects",
-  createProject: "launcher:create",
-  forgetProject: "launcher:forget",
-  transcribe: "sources:transcribe",
-
-  /** Main → renderer, for 8.10. */
-  changed: "project:changed",
-} as const;
-
-export type Channel = (typeof CHANNELS)[keyof typeof CHANNELS];
+export { CHANNELS };
+export type { Channel } from "./channels.js";
 
 /**
  * How a window gets at its recorder.

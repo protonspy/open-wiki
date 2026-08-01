@@ -1,0 +1,20 @@
+{
+  "name": "protonspy",
+  "description": "open-wiki: a project's documentation as a wiki the agent already has open, with every write going through a gate that validates it.",
+  "owner": {
+    "name": "protonspy",
+    "url": "https://github.com/protonspy"
+  },
+  "plugins": [
+    {
+      "name": "open-wiki",
+      "source": "./plugins/open-wiki",
+      "description": "The write gate and the scaffolding command for an open-wiki project: PreToolUse validates a page before it exists and PostToolUse records it.",
+      "version": "0.1.0",
+      "author": { "name": "protonspy" },
+      "homepage": "https://github.com/protonspy/open-wiki",
+      "license": "Apache-2.0",
+      "keywords": ["wiki", "documentation", "provenance"]
+    }
+  ]
+}

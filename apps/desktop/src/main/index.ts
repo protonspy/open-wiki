@@ -4,6 +4,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { CHANNELS, createApi, dispatch } from "./ipc.js";
 import { resolveProject } from "./project.js";
 import { RecorderSession, resolveRecorder, spawnTransport } from "./recorder.js";
+import { applyPackagedBinaries } from "./resources.js";
+import { serveQueries } from "@open-wiki/access/socket";
 import { isOpenableExternally } from "../renderer/navigation.js";
 import { watchProject } from "./watcher.js";
 
@@ -27,7 +29,11 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     minHeight: 480,
     backgroundColor: "#101216",
     webPreferences: {
-      preload: join(here, "..", "preload.js"),
+      // `.cjs`, and that is not a detail: a sandboxed preload cannot be an ES
+      // module, and this package is `"type": "module"`, so a `.js` bundle here
+      // would be parsed as ESM and fail to load — leaving a window with no
+      // `window.ow` at all.
+      preload: join(here, "..", "preload.cjs"),
       // The three that matter. This window renders markdown an agent wrote,
       // and a renderer with Node in it is one prompt injection away from being
       // the agent's hands.
@@ -66,6 +72,11 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     ipcMain.handle(channel, (_event, ...args: unknown[]) => dispatch(api, channel, args));
   }
 
+  // 9.14 — the CLI asks here rather than starting a process, when this
+  // window already has the project open. Read and validate only; the socket
+  // never carries a write.
+  const queries = projectRoot ? serveQueries(projectRoot) : null;
+
   // 8.10 — whoever wrote it, the screen follows. A launcher window has no
   // project to watch.
   const watcher = projectRoot
@@ -76,6 +87,7 @@ function createWindow(projectRoot: string | null): BrowserWindow {
 
   window.on("closed", () => {
     void watcher?.close();
+    queries?.close();
     session?.dispose();
     for (const channel of Object.values(CHANNELS)) ipcMain.removeHandler(channel);
   });
@@ -119,6 +131,11 @@ function createWindow(projectRoot: string | null): BrowserWindow {
 }
 
 void app.whenReady().then(() => {
+  // 10.1 — ffmpeg and `recorder.exe` ship beside the asar, and the resolvers
+  // that look for them count directories up from their own source file. The
+  // bundle collapses those depths, so the packaged location is stated here.
+  if (app.isPackaged) applyPackagedBinaries(process.resourcesPath);
+
   // 8.4 — `ow` outside a project opens the launcher rather than guessing at
   // one. A window with no project answers `null` to `project()`, and the
   // renderer shows the list of known projects instead of a wiki.
