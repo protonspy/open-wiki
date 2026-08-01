@@ -3,7 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CHANNELS, createApi, dispatch } from "../src/main/ipc.js";
-import { ingestDrop, ingestFile, recognises, recognisedExtensions } from "../src/main/ingest.js";
+import { PUSH_CHANNELS } from "../src/main/channels.js";
+import {
+  asDropOutcome,
+  inboxFailure,
+  ingestDrop,
+  ingestFile,
+  recognises,
+  recognisedExtensions,
+} from "../src/main/ingest.js";
 import {
   findings,
   locateCitation,
@@ -24,13 +32,23 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 function source(
   id: string,
-  over: { kind?: "file" | "recording"; text?: boolean; original?: string } = {},
+  over: {
+    kind?: "file" | "recording";
+    text?: boolean;
+    original?: string;
+    title?: string;
+  } = {},
 ): void {
   const dir = join(root, "raw", id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, "manifest.json"),
-    JSON.stringify({ id, title: id, kind: over.kind ?? "file", original: over.original ?? "" }),
+    JSON.stringify({
+      id,
+      title: over.title ?? id,
+      kind: over.kind ?? "file",
+      original: over.original ?? "",
+    }),
     "utf8",
   );
   if (over.text !== false) writeFileSync(join(dir, "text.md"), "# text\n", "utf8");
@@ -113,7 +131,7 @@ describe("sourcesOfPage (6.5)", () => {
     source("a.pdf");
     source("weekly", { kind: "recording" });
     page("fenix", "see src://a.pdf#p1 and rec://weekly#14:32\n");
-    expect(sourcesOfPage(root, "fenix")).toEqual(["a.pdf", "weekly"]);
+    expect(sourcesOfPage(root, "fenix").map((s) => s.id)).toEqual(["a.pdf", "weekly"]);
   });
 
   it("reads the field as well as the prose", () => {
@@ -121,7 +139,40 @@ describe("sourcesOfPage (6.5)", () => {
     // has its citations only in one of the two.
     source("a.pdf");
     page("fenix", "no citations in the body\n", ["src://a.pdf#p1"]);
-    expect(sourcesOfPage(root, "fenix")).toEqual(["a.pdf"]);
+    expect(sourcesOfPage(root, "fenix").map((s) => s.id)).toEqual(["a.pdf"]);
+  });
+
+  it("carries the title, so a page says what it came from and not only its id", () => {
+    source("a.pdf", { title: "Fenix architecture, v3" });
+    page("fenix", "see src://a.pdf#p1\n");
+    expect(sourcesOfPage(root, "fenix")[0]).toMatchObject({
+      id: "a.pdf",
+      title: "Fenix architecture, v3",
+      kind: "file",
+    });
+  });
+
+  it("opens each kind at its own start — a first page, a first instant", () => {
+    // The fragment goes back through `locateCitation` (8.6), so it has to be
+    // the anchor form that kind of source writes: `## p1` for a document
+    // (`pdf.ts`) and `## 0:00` for a recording (4.13). A fragment of the wrong
+    // shape resolves to nothing while reading perfectly reasonably.
+    source("a.pdf");
+    source("weekly", { kind: "recording" });
+    page("fenix", "see src://a.pdf#p1 and rec://weekly#14:32\n");
+    const [document, recording] = sourcesOfPage(root, "fenix");
+    expect(document).toMatchObject({ kind: "file", fragment: "p1" });
+    expect(recording).toMatchObject({ kind: "recording", fragment: "0:00" });
+  });
+
+  it("reports a citation whose source is gone, rather than dropping it", () => {
+    // Hiding it would leave the reader believing the page is sourced, which is
+    // the one wrong answer available here — and 7.3 reports the same citation
+    // as a finding.
+    page("fenix", "see src://vanished.pdf#p1\n");
+    expect(sourcesOfPage(root, "fenix")).toEqual([
+      { id: "vanished.pdf", title: "vanished.pdf", kind: null, fragment: "p1" },
+    ]);
   });
 
   it("is empty for a page that cites nothing, and for a page that is not there", () => {
@@ -255,6 +306,39 @@ describe("dropping files onto the window (3.5)", () => {
   });
 });
 
+describe("the inbox doorway, as the window reports it (3.7)", () => {
+  it("says an arrival the way a drop says it", () => {
+    expect(
+      asDropOutcome({ ok: true, name: "notes.md", format: "text", id: "notes.md", removed: true }),
+    ).toEqual({
+      name: "notes.md",
+      ok: true,
+      id: "notes.md",
+    });
+  });
+
+  it("carries the refusal's own reason, not a generic one", () => {
+    // The reason is the whole value of reporting a refusal: "could not ingest"
+    // tells the person nothing they can act on, and a file refused in silence
+    // is material an agent believes it handed over.
+    expect(
+      asDropOutcome({
+        ok: false,
+        name: "big.pdf",
+        format: null,
+        reason: "over the size limit for a source",
+        removed: false,
+      }),
+    ).toEqual({ name: "big.pdf", ok: false, reason: "over the size limit for a source" });
+  });
+
+  it("reports a doorway that stopped working, because a quiet watcher looks like an empty inbox", () => {
+    const outcome = inboxFailure(new Error("EPERM: operation not permitted"));
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.reason).toContain("EPERM");
+  });
+});
+
 describe("the widened IPC surface (6.x, 7.6, 8.6 to 8.11)", () => {
   it("routes every channel it declares", async () => {
     source("a.pdf");
@@ -267,7 +351,9 @@ describe("the widened IPC surface (6.x, 7.6, 8.6 to 8.11)", () => {
     await expect(dispatch(api, CHANNELS.sourceDetail, ["a.pdf"])).resolves.toMatchObject({
       id: "a.pdf",
     });
-    await expect(dispatch(api, CHANNELS.sourcesOfPage, ["fenix"])).resolves.toEqual(["a.pdf"]);
+    await expect(dispatch(api, CHANNELS.sourcesOfPage, ["fenix"])).resolves.toMatchObject([
+      { id: "a.pdf" },
+    ]);
     await expect(dispatch(api, CHANNELS.findings, [])).resolves.toBeInstanceOf(Array);
     await expect(dispatch(api, CHANNELS.locate, ["a.pdf", "p1"])).resolves.toMatchObject({
       kind: "missing",
@@ -278,7 +364,7 @@ describe("the widened IPC surface (6.x, 7.6, 8.6 to 8.11)", () => {
   it("handles every channel it declares, with no gaps", async () => {
     const api = createApi({ projectRoot: root });
     for (const channel of Object.values(CHANNELS)) {
-      if (channel === CHANNELS.changed) continue; // main → renderer only
+      if (PUSH_CHANNELS.has(channel)) continue; // main → renderer only
       // `createProject` actually scaffolds. Calling every channel with
       // arbitrary arguments once left a real project directory behind in the
       // repository — a test with side effects is a test that edits the thing

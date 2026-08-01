@@ -47,6 +47,20 @@ export const CHANNELS = {
 
   /** Main → renderer, for 8.10. */
   changed: "project:changed",
+  /** Main → renderer, for the inbox doorway of 3.7. */
+  inbox: "sources:inbox",
 } as const;
 
 export type Channel = (typeof CHANNELS)[keyof typeof CHANNELS];
+
+/**
+ * The channels the main process pushes on, which therefore take no handler.
+ *
+ * Named as a set rather than checked one by one in `index.ts`: registering an
+ * `ipcMain.handle` for a push channel is harmless until the day something
+ * invokes it, and then it is a handler nobody wrote answering `undefined`.
+ */
+export const PUSH_CHANNELS: ReadonlySet<string> = new Set<string>([
+  CHANNELS.changed,
+  CHANNELS.inbox,
+]);

@@ -39,6 +39,7 @@ import {
   locateCitation,
   sourceDetail,
   sourcesOfPage,
+  type PageSource,
   type SourceLocation,
   type SourceRow,
 } from "./sources.js";
@@ -131,7 +132,7 @@ export interface DesktopApi {
   undo(id: string): void;
 
   sourceDetail(id: string): SourceRow;
-  sourcesOfPage(slug: string): string[];
+  sourcesOfPage(slug: string): PageSource[];
   retitle(id: string, title: string): void;
   findings(): Finding[];
   locate(id: string, fragment: string): SourceLocation;

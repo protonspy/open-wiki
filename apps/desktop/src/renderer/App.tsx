@@ -6,7 +6,7 @@ import { bridge, hasBridge } from "./bridge.js";
 import { Editor } from "./Editor.js";
 import { renderPageBody } from "./markdown.js";
 import { History, linkTarget, type Location } from "./navigation.js";
-import { Findings, History as HistoryPanel, SourceAt } from "./Panels.js";
+import { Findings, History as HistoryPanel, PageSources, SourceAt } from "./Panels.js";
 import { RecordingIndicator } from "./RecordingIndicator.js";
 import { useRecording, type RecordingState } from "./recording.js";
 import { Launcher } from "./Launcher.js";
@@ -119,6 +119,18 @@ export function App(): React.JSX.Element {
       unsubscribe();
     };
   }, [location.slug, refreshIndex, reload]);
+
+  // 3.7 — the doorway. A file an agent wrote into `raw/_inbox/` becomes a
+  // source with nobody clicking anything, so the window reports it in the same
+  // place a drop is reported: arriving material the user did not initiate is
+  // still material they have to be able to see arrive, or a refusal is silence.
+  useEffect(() => {
+    if (!hasBridge()) return;
+    return bridge().onInbox((outcome) => {
+      setDropped((current) => [...(current ?? []), outcome]);
+      setReloadKey((n) => n + 1);
+    });
+  }, []);
 
   useEffect(() => {
     if (location.view !== "wiki" || !location.slug) {
@@ -271,6 +283,12 @@ export function App(): React.JSX.Element {
               onDelete={() => void deleteFlow(page.slug, visit, setError)}
             />
             <Frontmatter page={page} />
+            {/* 6.5 — where this page came from, and a way into each source. */}
+            <PageSources
+              slug={page.slug}
+              reloadKey={reloadKey}
+              onOpen={(id, fragment) => setOpenSource({ id, fragment })}
+            />
             {/* Rendered with `html: false` and two token rules, so what reaches
                 here is a closed set of tags this renderer produced. */}
             <div
@@ -356,8 +374,10 @@ function Dropped({
         <button onClick={onDismiss}>Dismiss</button>
       </div>
       <ul>
-        {outcomes.map((outcome) => (
-          <li key={outcome.name}>
+        {/* Keyed by position as well as name: the inbox (3.7) appends to this
+            list over time, and two files can carry one name across batches. */}
+        {outcomes.map((outcome, i) => (
+          <li key={`${outcome.name}-${i}`}>
             {outcome.name} — {outcome.ok ? `added as ${outcome.id}` : outcome.reason}
           </li>
         ))}

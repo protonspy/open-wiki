@@ -82,6 +82,13 @@ const api = {
     ipcRenderer.on(CHANNELS.changed, listener);
     return () => ipcRenderer.removeListener(CHANNELS.changed, listener);
   },
+
+  /** 3.7 — something arrived through `raw/_inbox/`, or the doorway broke. */
+  onInbox: (handler: (outcome: unknown) => void) => {
+    const listener = (_event: unknown, outcome: unknown): void => handler(outcome);
+    ipcRenderer.on(CHANNELS.inbox, listener);
+    return () => ipcRenderer.removeListener(CHANNELS.inbox, listener);
+  },
 };
 
 contextBridge.exposeInMainWorld("ow", api);

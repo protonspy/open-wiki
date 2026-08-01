@@ -5,6 +5,7 @@ import {
   uploadPdfSource,
   uploadTextSource,
   TakenIdError,
+  type InboxOutcome,
 } from "@open-wiki/access";
 
 /**
@@ -95,4 +96,35 @@ export async function ingestDrop(
   const outcomes: DropOutcome[] = [];
   for (const path of paths) outcomes.push(await ingestFile(projectRoot, path));
   return outcomes;
+}
+
+/**
+ * What the inbox watcher saw (plan 3.7), said the way a drop says it.
+ *
+ * The doorway and the drop zone are two ways into the same registration, so
+ * they are worth reporting through one shape: the window already knows how to
+ * show "three of four added, and here is the fourth". `removed` is dropped on
+ * the way through — whether the file left the doorway is the watcher's
+ * bookkeeping, and a reader who was not told the doorway exists cannot be told
+ * something stayed in it.
+ */
+export function asDropOutcome(outcome: InboxOutcome): DropOutcome {
+  return outcome.ok
+    ? { name: outcome.name, ok: true, id: outcome.id }
+    : { name: outcome.name, ok: false, reason: outcome.reason };
+}
+
+/**
+ * A doorway that stopped working, as an outcome (plan 3.7).
+ *
+ * Reported rather than logged, because a watcher that goes quiet is
+ * indistinguishable from an inbox nobody is using — and the failure it hides is
+ * material an agent believes it handed over.
+ */
+export function inboxFailure(error: Error): DropOutcome {
+  return {
+    name: "raw/_inbox",
+    ok: false,
+    reason: `the inbox stopped being watched: ${error.message}`,
+  };
 }

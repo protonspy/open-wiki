@@ -9,7 +9,7 @@ import type {
   KnownProject,
   SaveCredentialInput,
 } from "../main/settings.js";
-import type { SourceLocation, SourceRow } from "../main/sources.js";
+import type { PageSource, SourceLocation, SourceRow } from "../main/sources.js";
 import type { TranscribeOutcome } from "../main/transcribe-run.js";
 import type { ProjectChange } from "../main/watcher.js";
 
@@ -39,7 +39,7 @@ export interface OwBridge {
   undo(id: string): Promise<void>;
 
   sourceDetail(id: string): Promise<SourceRow>;
-  sourcesOfPage(slug: string): Promise<string[]>;
+  sourcesOfPage(slug: string): Promise<PageSource[]>;
   retitle(id: string, title: string): Promise<void>;
   findings(): Promise<Finding[]>;
   locate(id: string, fragment: string): Promise<SourceLocation>;
@@ -57,6 +57,9 @@ export interface OwBridge {
   pathForFile(file: File): string;
 
   onChanged(handler: (change: ProjectChange) => void): () => void;
+
+  /** 3.7 — a file that arrived through `raw/_inbox/`, reported as a drop is. */
+  onInbox(handler: (outcome: DropOutcome) => void): () => void;
 }
 
 declare global {

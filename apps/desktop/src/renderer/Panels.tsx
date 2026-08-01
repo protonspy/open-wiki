@@ -1,12 +1,77 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Finding, Operation } from "@open-wiki/access";
-import type { SourceLocation } from "../main/sources.js";
+import type { PageSource, SourceLocation } from "../main/sources.js";
 import { bridge } from "./bridge.js";
 
 /**
- * The three panels that hang off the main view: the checks (7.6), the
- * operation history (8.11), and what a provenance link opens (8.6).
+ * The panels that hang off the main view: the checks (7.6), the operation
+ * history (8.11), what a provenance link opens (8.6), and where the open page
+ * came from (6.5).
  */
+
+/**
+ * Which sources the open page came from (plan 6.5) — the inverse of the sources
+ * screen's "cited by" (6.4).
+ *
+ * It sits on the page itself rather than behind a button, because the question
+ * it answers is the one a reader has while they are reading. Clicking one opens
+ * the same panel a provenance link in the prose opens, at the source's start.
+ *
+ * A citation whose source is not there is **shown as broken, not hidden** — the
+ * same choice 8.5 makes for a wikilink that does not resolve. Dropping it would
+ * leave the reader believing the page is sourced, which is the one wrong answer
+ * available here.
+ */
+export function PageSources({
+  slug,
+  reloadKey,
+  onOpen,
+}: {
+  slug: string;
+  reloadKey: number;
+  onOpen: (id: string, fragment: string) => void;
+}): React.JSX.Element | null {
+  const [sources, setSources] = useState<PageSource[] | null>(null);
+
+  useEffect(() => {
+    // Guarded, because following a link is faster than a walk over the wiki:
+    // without it the previous page's answer lands on the page now open.
+    let live = true;
+    void bridge()
+      .sourcesOfPage(slug)
+      .then((found) => {
+        if (live) setSources(found);
+      })
+      .catch(() => {
+        if (live) setSources([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [slug, reloadKey]);
+
+  if (!sources || sources.length === 0) return null;
+
+  return (
+    <p className="source__cited">
+      From{" "}
+      {sources.map((source, i) => (
+        <span key={source.id}>
+          {i > 0 ? ", " : ""}
+          {source.kind === null ? (
+            <span className="wikilink--broken" title={`there is no source named "${source.id}"`}>
+              {source.id}
+            </span>
+          ) : (
+            <a title={source.id} onClick={() => onOpen(source.id, source.fragment)}>
+              {source.title}
+            </a>
+          )}
+        </span>
+      ))}
+    </p>
+  );
+}
 
 /**
  * The integrity findings (plan 7.6).

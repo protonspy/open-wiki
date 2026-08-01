@@ -2,10 +2,13 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CHANNELS, createApi, dispatch } from "./ipc.js";
+import { PUSH_CHANNELS } from "./channels.js";
+import { asDropOutcome, inboxFailure } from "./ingest.js";
 import { resolveProject } from "./project.js";
 import { RecorderSession, resolveRecorder, spawnTransport } from "./recorder.js";
 import { applyPackagedBinaries } from "./resources.js";
 import { serveQueries } from "@open-wiki/access/socket";
+import { watchInbox, type InboxWatcher } from "@open-wiki/access";
 import { isOpenableExternally } from "../renderer/navigation.js";
 import { watchProject } from "./watcher.js";
 
@@ -68,9 +71,14 @@ function createWindow(projectRoot: string | null): BrowserWindow {
 
   const api = createApi({ projectRoot, recorder });
   for (const channel of Object.values(CHANNELS)) {
-    if (channel === CHANNELS.changed) continue; // main → renderer only
+    if (PUSH_CHANNELS.has(channel)) continue; // main → renderer only
     ipcMain.handle(channel, (_event, ...args: unknown[]) => dispatch(api, channel, args));
   }
+
+  /** Tell the window something, unless it has gone. */
+  const send = (channel: string, payload: unknown): void => {
+    if (!window.isDestroyed()) window.webContents.send(channel, payload);
+  };
 
   // 9.14 — the CLI asks here rather than starting a process, when this
   // window already has the project open. Read and validate only; the socket
@@ -80,13 +88,42 @@ function createWindow(projectRoot: string | null): BrowserWindow {
   // 8.10 — whoever wrote it, the screen follows. A launcher window has no
   // project to watch.
   const watcher = projectRoot
-    ? watchProject(projectRoot, (change) => {
-        if (!window.isDestroyed()) window.webContents.send(CHANNELS.changed, change);
-      })
+    ? watchProject(projectRoot, (change) => send(CHANNELS.changed, change))
     : null;
 
+  // 3.7 — the doorway. An agent that fetched something writes it into
+  // `raw/_inbox/` with its own tools, and it becomes a source through the same
+  // registration a dropped file goes through. This is the process that holds
+  // the watcher open; until it existed the doorway only worked when something
+  // called `drainInbox` by hand.
+  //
+  // Started asynchronously — `watchInbox` waits for chokidar's initial scan, and
+  // a window that blocked on it would be a window that does not open. So the
+  // handle arrives late, and a window closed before it does has to close it
+  // anyway or the watcher outlives its window.
+  let inbox: InboxWatcher | null = null;
+  let closed = false;
+  if (projectRoot) {
+    void watchInbox(projectRoot, {
+      onOutcome: (outcome) => send(CHANNELS.inbox, asDropOutcome(outcome)),
+      onError: (error) => send(CHANNELS.inbox, inboxFailure(error)),
+    })
+      .then((started) => {
+        if (closed) void started.close();
+        else inbox = started;
+      })
+      .catch((error: unknown) => {
+        send(
+          CHANNELS.inbox,
+          inboxFailure(error instanceof Error ? error : new Error(String(error))),
+        );
+      });
+  }
+
   window.on("closed", () => {
+    closed = true;
     void watcher?.close();
+    void inbox?.close();
     queries?.close();
     session?.dispose();
     for (const channel of Object.values(CHANNELS)) ipcMain.removeHandler(channel);

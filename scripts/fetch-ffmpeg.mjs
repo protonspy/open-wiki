@@ -7,11 +7,19 @@
  * (`docs/stack.md`). This script is what makes that real: it downloads a pinned
  * build, refuses it if its SHA256 does not match, and extracts only `ffmpeg.exe`.
  *
- * The URL and the hash are pinned below. Bumping ffmpeg is a deliberate act:
- * change both, run the script, commit nothing under `vendor/ffmpeg/` (it is
- * gitignored). Both can be overridden from the environment for CI:
+ * **The hash is supplied, never defaulted.** The URL below is a rolling one —
+ * `ffmpeg-release-essentials.zip` is whatever gyan.dev published most recently —
+ * so a hash baked in beside it would be wrong the day upstream releases, and the
+ * only way to keep it green would be to stop checking. So the expected digest
+ * comes from the environment, the release workflow reads it from `vars` and
+ * fails loudly when it is unset, and this script refuses to download anything
+ * without one:
  *
  *   FFMPEG_URL=... FFMPEG_SHA256=... node scripts/fetch-ffmpeg.mjs
+ *
+ * To pin a build rather than track the latest, point `FFMPEG_URL` at a versioned
+ * package and record its digest alongside — the pair is what makes the pin, and
+ * either one on its own verifies nothing.
  *
  * Windows-only on purpose — it is the only platform the product supports.
  */
@@ -24,8 +32,9 @@ import { fileURLToPath } from "node:url";
 const here = fileURLToPath(import.meta.url);
 const repoRoot = resolve(here, "..", "..");
 
-// Pin both. The essentials build carries the encoders Opus needs; the hash is
-// what stops a tampered or half-download from shipping inside the installer.
+// The essentials build carries the encoders Opus needs. The digest has no
+// default on purpose: it is what stops a tampered or half-download from shipping
+// inside the installer, and a default would be a value nobody checked.
 const FFMPEG_URL =
   process.env["FFMPEG_URL"] ?? "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
 const FFMPEG_SHA256 = process.env["FFMPEG_SHA256"] ?? "";

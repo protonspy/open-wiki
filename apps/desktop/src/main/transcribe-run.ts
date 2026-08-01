@@ -7,7 +7,6 @@ import {
   finishRecording,
   preprocessRecording,
   isTimeMap,
-  readJournal,
   resolveFfmpeg,
   spawnFfmpeg,
   transcribeRecording,
@@ -153,17 +152,4 @@ async function mapFor(run: FfmpegRunner, dir: string): Promise<TimeMap> {
     }
   }
   return preprocessRecording(run, dir);
-}
-
-/** How far a recording got, for the button's label (plan 6.3). */
-export function transcriptionProgress(
-  projectRoot: string,
-  id: string,
-): { done: number; total: number } | null {
-  const journal = readJournal(sourceDir(projectRoot, id));
-  if (!journal) return null;
-  return {
-    done: journal.chunks.filter((c) => c.done).length,
-    total: journal.chunks.length,
-  };
 }

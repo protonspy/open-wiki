@@ -19,8 +19,10 @@ import { MAX_SOURCE_BYTES, ingestSource, type IngestOutcome } from "./upload.js"
  * reported. It is the user's file, and moving or deleting it to keep the
  * doorway tidy would lose material that nothing else holds a copy of.
  *
- * Nothing wires the watcher up yet — group 8's shell is what will run it. Until
- * then `drainInbox` is the whole doorway, callable by hand.
+ * The desktop application holds the watcher open for as long as a project window
+ * is open (`apps/desktop/src/main/index.ts`), reporting each outcome where a
+ * drop is reported. `drainInbox` remains callable on its own, which is what a
+ * process with no window — a test, a script — uses.
  */
 
 export { INBOX };

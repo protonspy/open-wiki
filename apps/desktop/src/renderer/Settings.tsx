@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Language } from "@open-wiki/access";
 import type { CredentialState } from "../main/settings.js";
 import { bridge } from "./bridge.js";
+import { LANGUAGES } from "./languages.js";
 
 /**
  * The settings screen: the transcription credential (plan 8.3) and the content
@@ -12,12 +13,6 @@ import { bridge } from "./bridge.js";
  * application's one secret, and a field pre-filled with it would put it in the
  * DOM of a window that renders markdown an agent wrote.
  */
-
-const LANGUAGES: Array<{ value: Language; label: string }> = [
-  { value: "en", label: "English" },
-  { value: "pt-BR", label: "Brazilian Portuguese" },
-  { value: "es", label: "Spanish" },
-];
 
 export function Settings(): React.JSX.Element {
   const [credential, setCredential] = useState<CredentialState | null>(null);
