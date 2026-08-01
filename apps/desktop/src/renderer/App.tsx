@@ -9,6 +9,7 @@ import { History, linkTarget, type Location } from "./navigation.js";
 import { Findings, History as HistoryPanel, SourceAt } from "./Panels.js";
 import { RecordingIndicator } from "./RecordingIndicator.js";
 import { useRecording, type RecordingState } from "./recording.js";
+import { Settings } from "./Settings.js";
 import { Sources } from "./Sources.js";
 
 /**
@@ -211,7 +212,7 @@ export function App(): React.JSX.Element {
           >
             →
           </button>
-          {(["wiki", "sources", "checks", "history"] as const).map((view) => (
+          {(["wiki", "sources", "checks", "history", "settings"] as const).map((view) => (
             <button
               key={view}
               aria-current={location.view === view}
@@ -276,6 +277,7 @@ export function App(): React.JSX.Element {
         ) : null}
         {location.view === "checks" ? <Findings reloadKey={reloadKey} /> : null}
         {location.view === "history" ? <HistoryPanel reloadKey={reloadKey} /> : null}
+        {location.view === "settings" ? <Settings /> : null}
       </main>
 
       {openSource ? (

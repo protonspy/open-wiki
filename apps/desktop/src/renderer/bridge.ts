@@ -1,9 +1,16 @@
-import type { Finding, Operation } from "@open-wiki/access";
+import type { Finding, Language, Operation } from "@open-wiki/access";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type { CreateInput, RenameResult, SaveInput, SaveResult } from "../main/edit.js";
 import type { DropOutcome } from "../main/ingest.js";
 import type { RecorderStatus } from "../main/recorder.js";
+import type {
+  CredentialCheck,
+  CredentialState,
+  KnownProject,
+  SaveCredentialInput,
+} from "../main/settings.js";
 import type { SourceLocation, SourceRow } from "../main/sources.js";
+import type { TranscribeOutcome } from "../main/transcribe-run.js";
 import type { ProjectChange } from "../main/watcher.js";
 
 /**
@@ -37,6 +44,15 @@ export interface OwBridge {
   findings(): Promise<Finding[]>;
   locate(id: string, fragment: string): Promise<SourceLocation>;
   drop(paths: readonly string[]): Promise<DropOutcome[]>;
+  credential(): Promise<CredentialState>;
+  saveCredential(input: SaveCredentialInput): Promise<CredentialCheck>;
+  language(): Promise<Language>;
+  setLanguage(language: Language): Promise<Language>;
+  knownProjects(): Promise<KnownProject[]>;
+  createProject(name: string, directory: string, language: Language): Promise<KnownProject>;
+  forgetProject(name: string): Promise<void>;
+  transcribe(id: string): Promise<TranscribeOutcome>;
+
   /** 3.5 — `File.path` was removed in Electron 32; the preload knows the path. */
   pathForFile(file: File): string;
 

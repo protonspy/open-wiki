@@ -45,6 +45,16 @@ const api = {
   locate: (id: string, fragment: string) => ipcRenderer.invoke(CHANNELS.locate, id, fragment),
   drop: (paths: readonly string[]) => ipcRenderer.invoke(CHANNELS.drop, paths),
 
+  credential: () => ipcRenderer.invoke(CHANNELS.credential),
+  saveCredential: (input: unknown) => ipcRenderer.invoke(CHANNELS.saveCredential, input),
+  language: () => ipcRenderer.invoke(CHANNELS.language),
+  setLanguage: (language: string) => ipcRenderer.invoke(CHANNELS.setLanguage, language),
+  knownProjects: () => ipcRenderer.invoke(CHANNELS.knownProjects),
+  createProject: (name: string, directory: string, language: string) =>
+    ipcRenderer.invoke(CHANNELS.createProject, name, directory, language),
+  forgetProject: (name: string) => ipcRenderer.invoke(CHANNELS.forgetProject, name),
+  transcribe: (id: string) => ipcRenderer.invoke(CHANNELS.transcribe, id),
+
   /**
    * The path of a dropped file (plan 3.5).
    *

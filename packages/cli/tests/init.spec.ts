@@ -78,7 +78,9 @@ describe("ow init (9.3–9.5)", () => {
   });
 
   it("refuses a language the project has no content convention for", () => {
-    expect(() => runInit({ projectRoot: root, language: "fr" })).toThrow(/--language must be one of/);
+    expect(() => runInit({ projectRoot: root, language: "fr" })).toThrow(
+      /--language must be one of/,
+    );
   });
 
   it("registers the project under --name, so .mcp.json can name it", () => {

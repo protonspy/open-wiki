@@ -138,7 +138,9 @@ describe("ow write", () => {
 
   it("writes the page named by --content", async () => {
     const content = page("fenix", "Fenix", `Fenix — see src://${sourceId}#p1.\n`);
-    expect(await main(["write", join(root, "wiki", "fenix.md"), "--content", content], root)).toBe(0);
+    expect(await main(["write", join(root, "wiki", "fenix.md"), "--content", content], root)).toBe(
+      0,
+    );
     expect(readFileSync(join(root, "wiki", "fenix.md"), "utf8")).toContain(`updated: ${today()}`);
   });
 
@@ -162,7 +164,9 @@ describe("ow write", () => {
 
   it("reports the gate's reason when the page is refused", async () => {
     const content = page("bogus", "Bogus", "See src://no-such-source#p1.\n");
-    expect(await main(["write", join(root, "wiki", "bogus.md"), "--content", content], root)).toBe(2);
+    expect(await main(["write", join(root, "wiki", "bogus.md"), "--content", content], root)).toBe(
+      2,
+    );
     expect(stderr()).toContain("no-such-source");
     expect(existsSync(join(root, "wiki", "bogus.md"))).toBe(false);
   });

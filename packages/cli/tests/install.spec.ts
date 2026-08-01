@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LANGUAGES } from "@open-wiki/access";
 import { writeClaudeMd, writeHooks } from "../src/install.js";
-import { generateClaudeMd } from "../src/claude-md.js";
+import { generateClaudeMd } from "@open-wiki/access";
 
 /**
  * The half of `ow init` the scaffolder does not do (plan 9.4, 9.5): the hook

@@ -1,4 +1,7 @@
-import type { Language } from "@open-wiki/access";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { assertWithin } from "./paths.js";
+import type { Language } from "./config/settings.js";
 
 const LANGUAGE_LABEL: Record<Language, string> = {
   en: "English",
@@ -38,4 +41,18 @@ and it is the transcription hint for any audio source. Change it with
 \`ow init --language <en|pt-BR|es>\`; this file is regenerated because it is
 generated, and the skills are not.
 `;
+}
+/**
+ * Write the generated project `CLAUDE.md` (plan 9.4).
+ *
+ * Overwrites, because it is generated. It sits beside `scaffoldSkills` rather
+ * than in the CLI because 9.3 and 9.4 are one act — what `ow init` puts into a
+ * project — and 8.12 has to regenerate it when the language changes. A copy in
+ * the CLI would have meant the desktop application either reaching into it or
+ * growing a second generator that drifts.
+ */
+export function writeClaudeMd(projectRoot: string, language: Language): string {
+  const file = assertWithin(projectRoot, join(projectRoot, "CLAUDE.md"));
+  writeFileSync(file, generateClaudeMd(language), "utf8");
+  return file;
 }

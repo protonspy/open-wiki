@@ -60,6 +60,35 @@ function SourceItem({
   onChanged: () => void;
 }): React.JSX.Element {
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  /**
+   * 6.3 — transcribe, or finish what stopped.
+   *
+   * "Redo only what failed" needs no flag: a resume sends exactly what did not
+   * succeed, which is the default and the whole point of the journal
+   * (`adr:0012`). The label says which of the two it is about to do, because
+   * "Transcribe" on a recording that is nine chunks in reads as starting over.
+   */
+  const transcribe = useCallback(async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const result = await bridge().transcribe(row.id);
+      setNote(
+        result.ok
+          ? result.sealed
+            ? "Transcribed."
+            : `${result.done} of ${result.total} chunks done.`
+          : result.reason,
+      );
+      onChanged();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [row.id, onChanged]);
 
   // 6.7 — the title is correctable, which is what makes the frozen id bearable
   // (`adr:0011`). It never moves the directory or touches a citation.
@@ -84,11 +113,17 @@ function SourceItem({
         {/* 6.6 — the case that disappears from view on its own. */}
         {row.uncited ? <span className="badge badge--warn">nothing cites this</span> : null}
         <span className="chrome__spacer" />
+        {row.kind === "recording" && !row.textReady ? (
+          <button onClick={() => void transcribe()} disabled={busy}>
+            {busy ? "Transcribing…" : row.progress ? "Finish transcribing" : "Transcribe"}
+          </button>
+        ) : null}
         <button onClick={() => void retitle()} disabled={busy}>
           Rename
         </button>
       </div>
       {row.error ? <p className="error">{row.error}</p> : null}
+      {note ? <p className="empty">{note}</p> : null}
       {/* 6.4 — from a source to the pages that cite it. */}
       {row.citedBy.length > 0 ? (
         <p className="source__cited">

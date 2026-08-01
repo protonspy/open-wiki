@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { recordingId, type Operation } from "@open-wiki/access";
+import { recordingId, type Language, type Operation } from "@open-wiki/access";
 import type { Finding, SourceState } from "@open-wiki/access/read";
 import type { PageView, ProjectInfo, WikiIndex } from "./api.js";
 import { projectInfo, readPage, sources, wikiIndex } from "./api.js";
@@ -18,6 +18,20 @@ import {
   type SaveResult,
 } from "./edit.js";
 import { ingestDrop, type DropOutcome } from "./ingest.js";
+import {
+  createProject,
+  credentialState,
+  currentLanguage,
+  forgetProject,
+  knownProjects,
+  saveCredential,
+  setLanguage,
+  type CredentialCheck,
+  type CredentialState,
+  type KnownProject,
+  type SaveCredentialInput,
+} from "./settings.js";
+import { runTranscription, type TranscribeOutcome } from "./transcribe-run.js";
 import type { RecorderSession, RecorderStatus } from "./recorder.js";
 import {
   findings,
@@ -65,6 +79,17 @@ export const CHANNELS = {
   locate: "sources:locate",
   drop: "sources:drop",
 
+  // The credential (8.3), the launcher (8.4), the content language (8.12) and
+  // the run 6.3 starts.
+  credential: "settings:credential",
+  saveCredential: "settings:save-credential",
+  language: "settings:language",
+  setLanguage: "settings:set-language",
+  knownProjects: "launcher:projects",
+  createProject: "launcher:create",
+  forgetProject: "launcher:forget",
+  transcribe: "sources:transcribe",
+
   /** Main → renderer, for 8.10. */
   changed: "project:changed",
 } as const;
@@ -92,6 +117,8 @@ export interface Deps {
   recorder?: RecorderControl;
   /** Injected so a test does not depend on today's date. */
   now?: () => Date;
+  /** 6.3 — per-chunk progress, forwarded to the window. */
+  onProgress?: (done: number, total: number) => void;
 }
 
 /** What a window reports when nothing is being recorded. */
@@ -143,6 +170,15 @@ export interface DesktopApi {
   findings(): Finding[];
   locate(id: string, fragment: string): SourceLocation;
   drop(paths: readonly string[]): Promise<DropOutcome[]>;
+
+  credential(): CredentialState;
+  saveCredential(input: SaveCredentialInput): Promise<CredentialCheck>;
+  language(): Language;
+  setLanguage(language: Language): Language;
+  knownProjects(): KnownProject[];
+  createProject(name: string, directory: string, language: Language): KnownProject;
+  forgetProject(name: string): void;
+  transcribe(id: string): Promise<TranscribeOutcome>;
 }
 
 export function createApi(deps: Deps): DesktopApi {
@@ -203,6 +239,15 @@ export function createApi(deps: Deps): DesktopApi {
     findings: () => findings(deps.projectRoot),
     locate: (id, fragment) => locateCitation(deps.projectRoot, id, fragment),
     drop: (paths) => ingestDrop(deps.projectRoot, paths),
+
+    credential: () => credentialState(deps.projectRoot),
+    saveCredential: (input) => saveCredential(deps.projectRoot, input),
+    language: () => currentLanguage(deps.projectRoot),
+    setLanguage: (language) => setLanguage(deps.projectRoot, language),
+    knownProjects: () => knownProjects(),
+    createProject: (name, directory, language) => createProject(name, directory, language),
+    forgetProject: (name) => forgetProject(name),
+    transcribe: (id) => runTranscription(deps.projectRoot, id, deps.onProgress),
   };
 }
 
@@ -259,6 +304,27 @@ export async function dispatch(
       return api.findings();
     case CHANNELS.locate:
       return api.locate(String(args[0] ?? ""), String(args[1] ?? ""));
+    case CHANNELS.credential:
+      return api.credential();
+    case CHANNELS.saveCredential:
+      return api.saveCredential(args[0] as SaveCredentialInput);
+    case CHANNELS.language:
+      return api.language();
+    case CHANNELS.setLanguage:
+      return api.setLanguage(String(args[0] ?? "") as Language);
+    case CHANNELS.knownProjects:
+      return api.knownProjects();
+    case CHANNELS.createProject:
+      return api.createProject(
+        String(args[0] ?? ""),
+        String(args[1] ?? ""),
+        String(args[2] ?? "en") as Language,
+      );
+    case CHANNELS.forgetProject:
+      return api.forgetProject(String(args[0] ?? ""));
+    case CHANNELS.transcribe:
+      return api.transcribe(String(args[0] ?? ""));
+
     case CHANNELS.drop:
       // The renderer hands over paths Chromium gave it for a drop. Anything
       // that is not a string is not a path.

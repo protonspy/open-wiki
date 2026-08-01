@@ -1,5 +1,10 @@
 import { readFileSync } from "node:fs";
-import { runPostToolUse, runPreToolUse, type PreToolUseInput, type PostToolUseInput } from "../hooks.js";
+import {
+  runPostToolUse,
+  runPreToolUse,
+  type PreToolUseInput,
+  type PostToolUseInput,
+} from "../hooks.js";
 import { today } from "../date.js";
 
 function readStdin(): string {
