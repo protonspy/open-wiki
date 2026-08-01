@@ -47,6 +47,8 @@ const api = {
   findings: () => ipcRenderer.invoke(CHANNELS.findings),
   locate: (id: string, fragment: string) => ipcRenderer.invoke(CHANNELS.locate, id, fragment),
   drop: (paths: readonly string[]) => ipcRenderer.invoke(CHANNELS.drop, paths),
+  inboxWaiting: () => ipcRenderer.invoke(CHANNELS.inboxWaiting),
+  inboxDrain: () => ipcRenderer.invoke(CHANNELS.inboxDrain),
 
   credential: () => ipcRenderer.invoke(CHANNELS.credential),
   saveCredential: (input: unknown) => ipcRenderer.invoke(CHANNELS.saveCredential, input),
@@ -81,6 +83,13 @@ const api = {
     const listener = (_event: unknown, change: unknown): void => handler(change);
     ipcRenderer.on(CHANNELS.changed, listener);
     return () => ipcRenderer.removeListener(CHANNELS.changed, listener);
+  },
+
+  /** 3.7 — something arrived through `raw/_inbox/`, or the doorway broke. */
+  onInbox: (handler: (outcome: unknown) => void) => {
+    const listener = (_event: unknown, outcome: unknown): void => handler(outcome);
+    ipcRenderer.on(CHANNELS.inbox, listener);
+    return () => ipcRenderer.removeListener(CHANNELS.inbox, listener);
   },
 };
 

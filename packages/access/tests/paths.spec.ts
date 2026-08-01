@@ -56,17 +56,20 @@ describe("isWithin / assertWithin", () => {
     expect(() => assertWithin(root, outside)).toThrow(OutsideProjectError);
   });
 
-  it("refuses a symlink inside the project that points outside", () => {
+  it("refuses a symlink inside the project that points outside", (ctx) => {
     const outside = join(dirname(root), "secret.md");
     writeFileSync(outside, "x");
     const link = join(root, "wiki", "link.md");
     try {
       symlinkSync(outside, link);
-    } catch {
-      // Some Windows accounts lack the symlink privilege; that is a different
-      // failure from the containment logic and should not fail this test.
-      rmSync(root, { recursive: true, force: true });
+    } catch (err) {
+      // Creating a symlink is privileged on most Windows accounts, and that is
+      // a different failure from the containment logic. **Reported as a skip,
+      // never as a pass**: a test that silently returns green is one nobody
+      // knows stopped running, and this is the check standing between a
+      // citation and a file anywhere on disk.
       rmSync(outside, { force: true });
+      ctx.skip(`symlink creation unavailable: ${err instanceof Error ? err.message : err}`);
       return;
     }
     try {
@@ -77,16 +80,21 @@ describe("isWithin / assertWithin", () => {
     }
   });
 
-  it("refuses a Windows directory junction pointing outside, without privilege", () => {
+  it("refuses a Windows directory junction pointing outside, without privilege", (ctx) => {
     const outside = join(dirname(root), "junction-target");
     mkdirSync(outside, { recursive: true });
     const junction = join(root, "wiki", "junction");
-    // A junction needs no privilege on Windows and is not a symlink.
     try {
       symlinkSync(outside, junction, "junction");
-    } catch {
-      rmSync(root, { recursive: true, force: true });
+    } catch (err) {
       rmSync(outside, { recursive: true, force: true });
+      // **On Windows this is a failure, not a skip.** A junction needs no
+      // privilege there — that is the entire reason this case exists beside the
+      // symlink one — so an account that cannot create one is telling us
+      // something is wrong with the test, not with the account. Elsewhere the
+      // call is emulated as a symlink and may genuinely be unavailable.
+      if (process.platform === "win32") throw err;
+      ctx.skip(`junction creation unavailable: ${err instanceof Error ? err.message : err}`);
       return;
     }
     try {

@@ -20,6 +20,7 @@ import {
   drainInbox,
   ensureInbox,
   inboxPath,
+  listInbox,
   watchInbox,
   MAX_SOURCE_BYTES,
   type InboxOutcome,
@@ -70,6 +71,22 @@ describe("the raw/_inbox doorway (3.7)", () => {
   let root: string;
   beforeEach(() => (root = tempProject()));
   afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  describe("listInbox", () => {
+    it("names what is waiting, without taking any of it", () => {
+      ensureInbox(root);
+      writeFileSync(join(root, "raw", INBOX, "b.md"), "# B\n");
+      writeFileSync(join(root, "raw", INBOX, "a.md"), "# A\n");
+      // Sorted, so a caller reports a stable order rather than the
+      // filesystem's.
+      expect(listInbox(root)).toEqual(["a.md", "b.md"]);
+      expect(listSources(root)).toEqual([]);
+    });
+
+    it("is empty when there is no doorway yet", () => {
+      expect(listInbox(root)).toEqual([]);
+    });
+  });
 
   describe("inboxPath / ensureInbox", () => {
     it("is raw/_inbox inside the project", () => {
@@ -237,6 +254,53 @@ describe("the raw/_inbox doorway (3.7)", () => {
       try {
         await until(() => seen.length > 0);
         expect(seen[0]).toMatchObject({ ok: true, id: "early.md" });
+      } finally {
+        await watcher.close();
+      }
+    });
+
+    it("leaves what was already there alone when told to, and still takes what arrives", async () => {
+      // `ingestExisting: false` is what the desktop application passes, and the
+      // reason is a threat rather than a preference: `raw/` arrives with a
+      // clone, so a repository can ship `raw/_inbox/x.pdf`. Ingesting on sight
+      // would parse a stranger's bytes in the privileged main process and
+      // delete the file out of the user's tree with nobody having clicked.
+      writeFileSync(join(root, "raw", INBOX, "cloned.md"), "# Cloned\n");
+      const seen: InboxOutcome[] = [];
+      const watcher = await watchInbox(
+        root,
+        { onOutcome: (o) => seen.push(o) },
+        { stabilityThreshold: 150, pollInterval: 25, ingestExisting: false },
+      );
+      try {
+        // What arrives afterwards is an agent handing something over, which is
+        // what the doorway is for — and it still works.
+        writeFileSync(join(root, "raw", INBOX, "handed-over.md"), "# Handed over\n");
+        await until(() => seen.length > 0);
+        expect(seen.map((o) => o.name)).toEqual(["handed-over.md"]);
+
+        // The cloned one is untouched: still in the doorway, still not a source.
+        expect(existsSync(join(root, "raw", INBOX, "cloned.md"))).toBe(true);
+        expect(listSources(root)).not.toContain("cloned.md");
+      } finally {
+        await watcher.close();
+      }
+    });
+
+    it("drains on request what it would not take on sight", async () => {
+      // Left alone is not lost. `drain()` is the explicit act, and it is what
+      // the window's "Add them" button reaches.
+      writeFileSync(join(root, "raw", INBOX, "cloned.md"), "# Cloned\n");
+      const watcher = await watchInbox(
+        root,
+        { onOutcome: () => undefined },
+        { stabilityThreshold: 20, pollInterval: 25, ingestExisting: false },
+      );
+      try {
+        const outcomes = await watcher.drain();
+        expect(outcomes).toHaveLength(1);
+        expect(outcomes[0]).toMatchObject({ ok: true, id: "cloned.md" });
+        expect(listInbox(root)).toEqual([]);
       } finally {
         await watcher.close();
       }

@@ -7,6 +7,7 @@ import {
   extractProvenanceLinks,
   listSourceStates,
   readWiki,
+  sourceExists,
   sourceState,
   type Finding,
   type SourceState,
@@ -58,13 +59,50 @@ export function sourceDetail(projectRoot: string, id: string): SourceRow {
 }
 
 /**
+ * One source a page cites, as the page needs it on screen (plan 6.5).
+ *
+ * It carries what 6.4's rows carry in the other direction — a readable title
+ * and somewhere to click — rather than the bare id the citation spells. A page
+ * listing `arquitetura-fenix.pdf` and a page listing "Fenix architecture, v3"
+ * are the same page; only one of them is worth reading.
+ */
+export interface PageSource {
+  /** The id as cited. */
+  id: string;
+  /** The source's title, or the id itself when there is nothing to read it from. */
+  title: string;
+  /**
+   * Null when the source cannot be described. The citation is shown anyway: a
+   * page pointing at a source nobody can open is exactly what 7.3 reports, and
+   * hiding it here would leave the reader believing the page is sourced.
+   */
+  kind: SourceState["kind"] | null;
+  /**
+   * Why it could not be described, when `kind` is null.
+   *
+   * Absent and unreadable are **not the same finding and do not have the same
+   * fix** — one is a citation pointing at nothing, the other a source that is
+   * there with a manifest nobody can read. Saying "there is no source named x"
+   * about a directory the reader can see would send them looking for the wrong
+   * problem, and 7.3 would be reporting something else about the same id.
+   */
+  reason?: string;
+  /**
+   * Where clicking opens it — the start of a recording, the first page of a
+   * document. The fragment goes back through `locateCitation` (8.6), so the
+   * panel that opens is the same one a provenance link in the prose opens.
+   */
+  fragment: string;
+}
+
+/**
  * Which sources a page came from (plan 6.5) — the inverse of 6.4.
  *
  * Read from the page's prose as well as its `sources` field, because 5.5
  * mirrors the body's citations into the field and a page written before that
  * ran has them only in the body.
  */
-export function sourcesOfPage(projectRoot: string, slug: string): string[] {
+export function sourcesOfPage(projectRoot: string, slug: string): PageSource[] {
   const page = readWiki(projectRoot).find((p) => p.slug === slug);
   if (!page) return [];
   const front = page.frontmatter?.["sources"];
@@ -76,7 +114,41 @@ export function sourcesOfPage(projectRoot: string, slug: string): string[] {
     const id = link.replace(/^(src|rec):\/\//, "").split("#")[0];
     if (id) ids.add(id);
   }
-  return [...ids].sort();
+  return [...ids].sort().map((id) => describeSource(projectRoot, id));
+}
+
+/**
+ * A cited id, described well enough to render and to open.
+ *
+ * A source that is not there is described as itself rather than thrown over:
+ * one broken citation on a page must not take the whole list with it, which is
+ * the same reason the drop reports per file (3.5).
+ */
+function describeSource(projectRoot: string, id: string): PageSource {
+  try {
+    const state = sourceState(projectRoot, id);
+    return {
+      id,
+      title: state.title,
+      kind: state.kind,
+      // `0:00` is the anchor `text.md` writes for the first passage of a
+      // recording (4.13), and `p1` the one `pdf.ts` writes for a first page —
+      // so both go through `locateCitation` as an ordinary citation would.
+      fragment: state.kind === "recording" ? "0:00" : "p1",
+    };
+  } catch (e) {
+    return {
+      id,
+      title: id,
+      kind: null,
+      fragment: "p1",
+      reason: sourceExists(projectRoot, id)
+        ? // It is there and could not be read — a malformed `manifest.json`,
+          // a permission error. The message names which.
+          `"${id}" is there but could not be read: ${e instanceof Error ? e.message : String(e)}`
+        : `there is no source named "${id}"`,
+    };
+  }
 }
 
 /** The integrity findings, for the panel 7.6 asks for. */

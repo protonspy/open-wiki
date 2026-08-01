@@ -59,9 +59,11 @@ export { resolveProvenance, extractProvenanceLinks } from "./store/provenance.js
 export { isStoreOnlyChange, pagesEqual, STORE_MANAGED_FIELDS } from "./store/staleness.js";
 export {
   readManifest,
+  parseManifest,
   listSources,
   sourceExists,
   MissingSourceError,
+  InvalidManifestError,
   type SourceManifest,
   type SourceKind,
 } from "./sources/manifest.js";
