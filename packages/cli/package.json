@@ -6,10 +6,17 @@
   "bin": {
     "ow": "src/cli.ts"
   },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ."
   },
   "dependencies": {
-    "@open-wiki/access": "workspace:*"
+    "@open-wiki/access": "workspace:*",
+    "@open-wiki/mcp": "workspace:*"
   }
 }

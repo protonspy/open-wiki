@@ -69,3 +69,33 @@ export function isStoreOnlyChange(author: string, disk: string): boolean {
 
   return stableStringify(aFm) === stableStringify(dFm);
 }
+
+/**
+ * True when two pages are semantically the same — the parsed frontmatter
+ * (every field, order- and quote-independent) and a byte-identical body. Unlike
+ * {@link isStoreOnlyChange} this counts the store-managed fields too, so the
+ * gate can tell a completion that actually filled `updated` or `sources` from
+ * one that only re-serialised the block it already had, and avoid rewriting a
+ * page the writer had already completed (plan 9.5).
+ */
+export function pagesEqual(a: string, b: string): boolean {
+  const ra = readFrontmatter(a);
+  const rb = readFrontmatter(b);
+  if (!ra && !rb) return a === b;
+  if (!!ra !== !!rb) return false;
+  const x = ra as Exclude<NonNullable<typeof ra>, null>;
+  const y = rb as Exclude<NonNullable<typeof rb>, null>;
+  if (!x.parsed || !y.parsed) return a === b;
+  if (x.body !== y.body) return false;
+  if (
+    x.frontmatter === null ||
+    typeof x.frontmatter !== "object" ||
+    Array.isArray(x.frontmatter) ||
+    y.frontmatter === null ||
+    typeof y.frontmatter !== "object" ||
+    Array.isArray(y.frontmatter)
+  ) {
+    return false;
+  }
+  return stableStringify(x.frontmatter) === stableStringify(y.frontmatter);
+}
