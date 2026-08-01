@@ -4,9 +4,28 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
+# A library plus a thin binary: everything the session does is testable without
+# a process, and `main.rs` is left with the two things a test cannot have — real
+# stdin and a real exit code.
+[lib]
+name = "recorder"
+path = "src/lib.rs"
+
 [[bin]]
 name = "recorder"
 path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hound = "3.5"
+
+# WASAPI is Windows-only, and so is this dependency. Everything above it — the
+# session, the time map, the track writer, the JSON-RPC — is platform-neutral
+# and tested everywhere, which is what keeps the capture layer a thin edge
+# rather than the part correctness rests on.
+[target.'cfg(windows)'.dependencies]
+wasapi = "0.23"
 
 [lints]
 workspace = true

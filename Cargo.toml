@@ -6,6 +6,9 @@ members = ["crates/recorder"]
 resolver = "2"
 
 [workspace.lints.rust]
-# WASAPI capture needs unsafe; until then, deny it so the skeleton cannot
-# quietly grow an unsafe block that group 4 did not decide to add.
+# Still denied, and group 4 did not need to lift it. WASAPI does need unsafe,
+# but the `wasapi` crate holds it: the recorder drives a safe wrapper rather
+# than hand-written FFI, so the blast radius of a mistake here is a wrong
+# argument rather than undefined behaviour. Keeping the deny means an unsafe
+# block cannot appear without someone deciding to change this line.
 unsafe_code = "deny"

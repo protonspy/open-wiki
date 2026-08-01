@@ -8,7 +8,9 @@ absent from this file is a finding.
 ## Capture
 
 - **Rust** — the recorder has to speak COM to WASAPI and hold a clock of its own for an hour with no GC pause. Standalone binary, no runtime to install. It is the **only** thing in this product written in Rust — see `adr:0014-typescript-everywhere-except-audio-capture`.
-- **`wasapi` crate** — direct access to WASAPI, including loopback of the render device, which is exactly what ffmpeg on Windows does not have. See `adr:0005-wasapi-capture-in-a-minimal-sidecar`.
+- **`wasapi` crate** — direct access to WASAPI, including loopback of the render device, which is exactly what ffmpeg on Windows does not have. See `adr:0005-wasapi-capture-in-a-minimal-sidecar`. It also keeps the `unsafe` on its side of the boundary: the recorder drives a safe wrapper rather than hand-written COM FFI, so the workspace's `unsafe_code = "deny"` still stands and group 4 never had to lift it. A Windows-only target dependency, so nothing else builds it.
+- **`serde` / `serde_json`** — the JSON-RPC contract of `adr:0005` and the recording's `manifest.json`. The six methods are an enum with `#[serde(tag = "method")]`, so a seventh cannot be answered by accident: an unknown method fails to parse rather than falling through to a catch-all.
+- **`hound`** — writes the intermediate WAV. A WAV header is simple enough to hand-roll and easy enough to get subtly wrong — a header claiming zero frames is what an unfinished file looks like, and every reader believes it. The file is read once by ffmpeg and deleted (`adr:0006-opus-as-the-provenance-format`).
 
 ## Pipeline
 

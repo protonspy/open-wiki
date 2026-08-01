@@ -126,11 +126,13 @@ fenix/                          a project — usually a repository the user alre
 
 ## 4 — Sources: audio recording
 
-- [ ] 4.1 (TDD) `recorder.exe`: capture the microphone and the WASAPI loopback into two WAV tracks aligned by the QPC clock, manufacturing silence when the API delivers no frames
-- [ ] 4.2 (TDD) Survive a default-device change mid-recording, reopening the stream and noting the event in `device_changes`
-- [ ] 4.3 (TDD) Pause and resume: both tracks stop and return at the same instant, the paused stretch leaves both as one block, and the time map still maps any recorded instant to the real clock instant
-- [ ] 4.4 (Unit) Emit `manifest.json` with the recording's title, the absolute timestamp of each track's first frame, and the pause intervals
-- [ ] 4.5 (Unit) Expose the sidecar over stdio JSON-RPC with `start`, `pause`, `resume`, `stop`, `status`, `devices`
+- [x] 4.1 (TDD) `recorder.exe`: capture the microphone and the WASAPI loopback into two WAV tracks aligned by the QPC clock, manufacturing silence when the API delivers no frames
+  - **Not verified against hardware, and that gap is real.** The device sits behind a `CaptureSource` trait; everything above it — alignment, manufactured silence, pause arithmetic, the time map, the manifest, the JSON-RPC — is tested on every platform. The WASAPI layer compiles for `x86_64-pc-windows-msvc` and passes clippy there, but no test in this repository has captured a frame: CI has no audio device.
+  - What that gap actually cost, on this branch: a review reading the source found the loopback stream was being opened as `(Render, Render)`, which never sets `AUDCLNT_STREAMFLAGS_LOOPBACK` — the system track could not capture and the sidecar exited at launch. It also found capture being started twice and failing with `AUDCLNT_E_NOT_STOPPED`. Both compiled, and both are invisible to every test that does not touch a device. **Green CI means the session logic is right and the binary builds. It does not mean audio works.** The three manual checks this group's notes call for are the only thing that can say that, and they are outstanding.
+- [x] 4.2 (TDD) Survive a default-device change mid-recording, reopening the stream and noting the event in `device_changes`
+- [x] 4.3 (TDD) Pause and resume: both tracks stop and return at the same instant, the paused stretch leaves both as one block, and the time map still maps any recorded instant to the real clock instant
+- [x] 4.4 (Unit) Emit `manifest.json` with the recording's title, the absolute timestamp of each track's first frame, and the pause intervals
+- [x] 4.5 (Unit) Expose the sidecar over stdio JSON-RPC with `start`, `pause`, `resume`, `stop`, `status`, `devices`
 - [ ] 4.6 (Unit) ffmpeg: downmix to 16 kHz mono, VAD cutting silence from 800 ms, encode to Opus 24 kbps
 - [ ] 4.7 (TDD) Emit the time map converting a compressed instant into a real instant, and the chunk boundaries at silence points
 - [ ] 4.8 (Unit) A `SttProvider` interface with `groq` and `whispercpp` adapters, swappable by configuration
