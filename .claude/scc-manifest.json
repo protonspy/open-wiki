@@ -1,0 +1,125 @@
+{
+  "files": [
+    {
+      "hash": "d3df118b69645ce23dabe31d45f2e83a8f58446054d0be504be824bb0fb662bd",
+      "path": ".claude/agents/code-review.md",
+      "version": "3"
+    },
+    {
+      "hash": "d7c644d10e6cd8d6db931043d9290a673714eb0cab49885fecc973d60b7bab33",
+      "path": ".claude/agents/security-review.md",
+      "version": "3"
+    },
+    {
+      "hash": "9d5f7c92e706247690fdbbed4fa74a34b1c10ed790f3984d3e593e591e3a8f24",
+      "path": ".claude/commands/scc-adr.md",
+      "version": "3"
+    },
+    {
+      "hash": "6ee3a8ce85c76c6f3c1d83fa1124f092bbe37793fea01ab79dabe9986ddc23d9",
+      "path": ".claude/commands/scc-codewiki.md",
+      "version": "3"
+    },
+    {
+      "hash": "6139363a873cc0ab8909351290bb2ed974cb8da1d61fe255e6fbe500f4bd34b5",
+      "path": ".claude/commands/scc-glossary.md",
+      "version": "3"
+    },
+    {
+      "hash": "2a7e1f3e6dd1be62f81e2ceedf0bd6c7361e83fc49bbfdedcbdf4825a2223208",
+      "path": ".claude/commands/scc-prd.md",
+      "version": "3"
+    },
+    {
+      "hash": "304b1ce1ec486edc0cffb85671810c19ca4343a8ddb048805cdbd97755633e35",
+      "path": ".claude/commands/scc-stack.md",
+      "version": "3"
+    },
+    {
+      "hash": "f0bba07b8e2cd1d67dcadd827843e21316de1a2c870171d7c13ad72fd58f5697",
+      "path": ".claude/commands/scc-wiki.md",
+      "version": "3"
+    },
+    {
+      "hash": "a47956d70f68539fbb43d079314f867d335d96551bac70d557cde3db6381f125",
+      "path": ".claude/rules/autonomy.md",
+      "version": "3"
+    },
+    {
+      "hash": "bd6ddefb740eb28a744a6386cf45f00b60d1cd71bf172a8d5f078c1c5d656133",
+      "path": ".claude/rules/delivery.md",
+      "version": "3"
+    },
+    {
+      "hash": "6b7f97193955e71c38535ced249774a97ff6125b4ce22ea6dbd55fe6ae9be1f4",
+      "path": ".claude/rules/knowledge-base.md",
+      "version": "3"
+    },
+    {
+      "hash": "6b9f2635ba2c9b46e4e8b163dba32ef8dd939d4b61b73218f9c1a98d3b783894",
+      "path": ".claude/rules/methodology.md",
+      "version": "3"
+    },
+    {
+      "hash": "075870d305b63294935b474d307ae3a01e704ddb0e97e73a3da26788c0867f2f",
+      "path": ".claude/rules/project.md",
+      "version": "3"
+    },
+    {
+      "hash": "529f5314d30963cc5982578ea72fce4e3e1ce0cf5385fcfbf9917bdd6e3f129b",
+      "path": ".claude/rules/routing.md",
+      "version": "3"
+    },
+    {
+      "hash": "c3d29267cfa27939fa67b57bf5d0b4d5a60b0145bdd162bcc2ecf1ecd46e9475",
+      "path": ".claude/rules/specs.md",
+      "version": "3"
+    },
+    {
+      "hash": "b5b65ffe6d6efbab71d4ecc95a312a50809e6f495bd535dfdd04cb724f2271d7",
+      "path": ".claude/rules/tasks.md",
+      "version": "3"
+    },
+    {
+      "hash": "42b6b2a6ea8a99c41d70217791834960052e84872d7c1cde6628d4867b8a1dff",
+      "path": ".claude/rules/verification.md",
+      "version": "3"
+    },
+    {
+      "hash": "8e64912779535e7105af1adebe2f767a3e3a28c0ac27e51f11df8cb9f26cf078",
+      "path": ".claude/skills/adr/SKILL.md",
+      "version": "3"
+    },
+    {
+      "hash": "0f780e54443f0e5efb2428028cf6f990cd4efb0d31d58e4884e5be3275d79159",
+      "path": ".claude/skills/codewiki/SKILL.md",
+      "version": "3"
+    },
+    {
+      "hash": "55c7721f76c04cb04f70574ed0910678398cc85ca6a06dd03585d339e4371fa8",
+      "path": ".claude/skills/glossary/SKILL.md",
+      "version": "3"
+    },
+    {
+      "hash": "c20487adb8d28b61fd30c6da9bba51ee0820c98caeb6a614a4e6d41df34ed406",
+      "path": ".claude/skills/prd/SKILL.md",
+      "version": "3"
+    },
+    {
+      "hash": "33cb161326359b8bb322cbf8774d978b13cc1f17a95d6836f44c7004d58ba7b2",
+      "path": ".claude/skills/stack/SKILL.md",
+      "version": "3"
+    },
+    {
+      "hash": "65a7b2fd196138f593325d3c4a87fd5a192f0b14c9d47597acf763c50d728baf",
+      "path": ".claude/skills/wiki/SKILL.md",
+      "version": "3"
+    },
+    {
+      "hash": "22e98c53ca69d2b6be0e29b5e46507fda9223c32f6b15b9af2872a4d858e4fc8",
+      "path": "CLAUDE.md",
+      "version": "3"
+    }
+  ],
+  "scc": "v0.0.2"
+}

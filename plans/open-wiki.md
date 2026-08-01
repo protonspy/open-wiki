@@ -95,31 +95,31 @@ fenix/                          a project — usually a repository the user alre
 
 ## 1 — Foundation
 
-- [ ] 1.1 (Unit) Set up the monorepo: a pnpm workspace for `apps/desktop` and `packages/*` — the access module, the CLI and the MCP process among them — a cargo workspace for `crates/recorder`, shared strict TypeScript
-- [ ] 1.2 (Unit) Fill in `.claude/rules/project.md` with the real build, test, scoped test, lint and format commands
-- [ ] 1.3 (Unit) CI on GitHub Actions on `windows-latest`: Rust and TS build, tests with a coverage floor of 76% per package, lint
-- [ ] 1.4 (Unit) Remove `.claude/` and `CLAUDE.md` from `.gitignore` — the methodology is versioned with the code, and today it exists only on this machine
-- [ ] 1.5 (Unit) Bundle `vendor/ffmpeg` through a download script with hash verification
+- [x] 1.1 (Unit) Set up the monorepo: a pnpm workspace for `apps/desktop` and `packages/*` — the access module, the CLI and the MCP process among them — a cargo workspace for `crates/recorder`, shared strict TypeScript
+- [x] 1.2 (Unit) Fill in `.claude/rules/project.md` with the real build, test, scoped test, lint and format commands
+- [x] 1.3 (Unit) CI on GitHub Actions on `windows-latest`: Rust and TS build, tests with a coverage floor of 76% per package, lint
+- [x] 1.4 (Unit) Remove `.claude/` and `CLAUDE.md` from `.gitignore` — the methodology is versioned with the code, and today it exists only on this machine
+- [x] 1.5 (Unit) Bundle `vendor/ffmpeg` through a download script with hash verification
 
 ## 2 — Project directory and safe writing
 
-- [ ] 2.1 (Unit) One scaffolder, in the access module of 9.1: it creates `raw/`, `wiki/` and `.state/`, refuses a directory already occupied by something else, and calls the settings of 2.7, the ignore entries of 2.8 and the skills of 9.3 rather than reimplementing any of them. `ow init`, the launcher and the first run all go through it, so a project is the same project whichever door it came through
-- [ ] 2.2 (TDD) A registry of known project paths, resolving a name to a directory for the launcher and for `.mcp.json` — a name is never a path segment, an unknown name is refused rather than guessed at, and a directory that moved degrades to a refusal, never to a search or to the current directory. It is a cache, never truth, and the names in it come from committed files
-- [ ] 2.3 (TDD) Write a page atomically — temporary file plus rename — snapshotting the touched pages into `.state/` before any write, with the snapshot callable on its own: on the hook path the agent's own tool does the writing, so the snapshot has to happen without this module performing the write it is protecting
-- [ ] 2.4 (TDD) Record every write in a log in `.state/`, with its origin (editor, CLI, hook), the affected pages and the time — it records what was observed, not only what this application performed
-- [ ] 2.5 (TDD) Undo an operation by its id, restoring the snapshot and removing what it created
-- [ ] 2.6 (TDD) Refuse a write that resolves outside the project — resolving the real path before comparing, and covering a relative path, a symbolic link and a Windows directory junction, which needs no privilege and is not a symlink
-- [ ] 2.7 (TDD) Split the configuration: project settings committed inside the project under a closed schema that refuses an unknown key and carries no local path, and every secret only in the application's data directory keyed by project path — never in the project directory, unconditionally, because `git init` a week later turns a conditional rule into a leak
-- [ ] 2.8 (TDD) Write the ignore entries at `ow init` so that recorded audio and `.state/` are out by default and committing them is opting in — `.state/` holds every page as it was before each write, which is where a redaction survives the redaction
+- [x] 2.1 (Unit) One scaffolder, in the access module of 9.1: it creates `raw/`, `wiki/` and `.state/`, refuses a directory already occupied by something else, and calls the settings of 2.7, the ignore entries of 2.8 and the skills of 9.3 rather than reimplementing any of them. `ow init`, the launcher and the first run all go through it, so a project is the same project whichever door it came through
+- [x] 2.2 (TDD) A registry of known project paths, resolving a name to a directory for the launcher and for `.mcp.json` — a name is never a path segment, an unknown name is refused rather than guessed at, and a directory that moved degrades to a refusal, never to a search or to the current directory. It is a cache, never truth, and the names in it come from committed files
+- [x] 2.3 (TDD) Write a page atomically — temporary file plus rename — snapshotting the touched pages into `.state/` before any write, with the snapshot callable on its own: on the hook path the agent's own tool does the writing, so the snapshot has to happen without this module performing the write it is protecting
+- [x] 2.4 (TDD) Record every write in a log in `.state/`, with its origin (editor, CLI, hook), the affected pages and the time — it records what was observed, not only what this application performed
+- [x] 2.5 (TDD) Undo an operation by its id, restoring the snapshot and removing what it created
+- [x] 2.6 (TDD) Refuse a write that resolves outside the project — resolving the real path before comparing, and covering a relative path, a symbolic link and a Windows directory junction, which needs no privilege and is not a symlink
+- [x] 2.7 (TDD) Split the configuration: project settings committed inside the project under a closed schema that refuses an unknown key and carries no local path, and every secret only in the application's data directory keyed by project path — never in the project directory, unconditionally, because `git init` a week later turns a conditional rule into a leak
+- [x] 2.8 (TDD) Write the ignore entries at `ow init` so that recorded audio and `.state/` are out by default and committing them is opting in — `.state/` holds every page as it was before each write, which is where a redaction survives the redaction
 
 ## 3 — Sources: files
 
-- [ ] 3.1 (TDD) Register a source in `raw/<id>/` with a `manifest.json` carrying its title, the original preserved, and the directory marked immutable once written — the id is derived from the source's name and frozen there, per `adr:0011-sources-are-named-by-what-they-are`
-- [ ] 3.2 (Unit) Upload Markdown and plain text: copy into `raw/` and normalise to `text.md`
+- [x] 3.1 (TDD) Register a source in `raw/<id>/` with a `manifest.json` carrying its title, the original preserved, and the directory marked immutable once written — the id is derived from the source's name and frozen there, per `adr:0011-sources-are-named-by-what-they-are`
+- [x] 3.2 (Unit) Upload Markdown and plain text: copy into `raw/` and normalise to `text.md`
 - [ ] 3.3 (Unit) Upload a PDF: extract the text to `text.md`, keeping the page number as a provenance anchor
 - [ ] 3.4 (Unit) Upload a DOCX: extract the text and the heading hierarchy to `text.md`
 - [ ] 3.5 (Unit) Drag files onto the window and see what was recognised and what was not
-- [ ] 3.6 (TDD) Derive the id: lowercase, accents folded, anything outside `[a-z0-9]` collapsed to one `-`, and refuse a filename already taken in this project instead of inventing a suffix
+- [x] 3.6 (TDD) Derive the id: lowercase, accents folded, anything outside `[a-z0-9]` collapsed to one `-`, and refuse a filename already taken in this project instead of inventing a suffix
 - [ ] 3.7 (Unit) Watch `raw/_inbox/` and ingest what lands there through the same path as 3.1 — the way an agent hands over material it fetched, now that no MCP tool ingests. The inbox is the one mutable thing under `raw/`: it is a doorway, emptied by ingestion, and it is not a source, so nothing enumerates it, cites it or reports it uncited
 
 ## 4 — Sources: audio recording
@@ -163,14 +163,14 @@ divide one module rather than each inventing its own:
 One implementation, three callers. What no path covers is a write made through the shell,
 which is 9.5's problem.
 
-- [ ] 5.1 (TDD) Validate the page frontmatter against the schema (`id`, `type`, `title`, `status`, `aliases`, `updated`, `sources`, `superseded-by`) and refuse the write with a reason, instead of storing something malformed — `index.md`, `changelog.md` and `log.md` are not entity pages and are validated as themselves, not against this schema
-- [ ] 5.2 (TDD) Record supersession as data, not only as struck-through prose: `status`, `superseded-by` and the date it happened, on the page that was replaced, so that "what replaced this, and when" is answerable by a traversal rather than by reading — without it 9.12's `ow graph superseded` has nothing to walk
-- [ ] 5.3 (TDD) Refuse a write whose wikilink does not resolve to an existing page, saying which link broke
-- [ ] 5.4 (TDD) Refuse a write whose provenance citation does not point at an existing source and, for audio, at an instant inside the recording
-- [ ] 5.5 (Unit) Fill in `updated` and append the source to `sources` automatically — returned as `updatedInput` on the hook path, so that it does not depend on the agent remembering rather than merely telling it to remember
-- [ ] 5.6 (Unit) Append a line to `log.md` and an entry to `changelog.md` after every write, with its origin
-- [ ] 5.7 (Unit) Maintain the index: register a new page in `index.md` and flag a page that became unreachable
-- [ ] 5.8 (TDD) Do not let a correction the store itself made read as somebody else's edit. Two paths produce it: a hook that rewrote the content through `updatedInput` leaves the agent holding a copy that no longer matches the disk, and the editor filling `updated` on save makes the next save from the same buffer look stale to 8.8. Both have to resolve without asking the writer to reconcile a change it did not make
+- [x] 5.1 (TDD) Validate the page frontmatter against the schema (`id`, `type`, `title`, `status`, `aliases`, `updated`, `sources`, `superseded-by`) and refuse the write with a reason, instead of storing something malformed — `index.md`, `changelog.md` and `log.md` are not entity pages and are validated as themselves, not against this schema
+- [x] 5.2 (TDD) Record supersession as data, not only as struck-through prose: `status`, `superseded-by` and the date it happened, on the page that was replaced, so that "what replaced this, and when" is answerable by a traversal rather than by reading — without it 9.12's `ow graph superseded` has nothing to walk
+- [x] 5.3 (TDD) Refuse a write whose wikilink does not resolve to an existing page, saying which link broke
+- [x] 5.4 (TDD) Refuse a write whose provenance citation does not point at an existing source and, for audio, at an instant inside the recording
+- [x] 5.5 (Unit) Fill in `updated` and append the source to `sources` automatically — returned as `updatedInput` on the hook path, so that it does not depend on the agent remembering rather than merely telling it to remember
+- [x] 5.6 (Unit) Append a line to `log.md` and an entry to `changelog.md` after every write, with its origin
+- [x] 5.7 (Unit) Maintain the index: register a new page in `index.md` and flag a page that became unreachable
+- [x] 5.8 (TDD) Do not let a correction the store itself made read as somebody else's edit. Two paths produce it: a hook that rewrote the content through `updatedInput` leaves the agent holding a copy that no longer matches the disk, and the editor filling `updated` on save makes the next save from the same buffer look stale to 8.8. Both have to resolve without asking the writer to reconcile a change it did not make
 
 ## 6 — Source flow
 
@@ -192,6 +192,7 @@ of record.
 - [ ] 7.3 (Unit) Report a provenance link that does not resolve to an existing source or instant
 - [ ] 7.4 (Unit) Report a synonym used where the project has a canonical term
 - [ ] 7.5 (Unit) Report a codewiki citation that no longer resolves or runs past the end of its file — the check that comes with scaffolding codewiki, per `adr:0015-the-convention-ships-as-skills`
+  - Design gap a review surfaced, to settle here: the gate accepts `codewiki/*.md` (top-level) but `listEntityPages`/`findOrphans`/`indexStructure` read only top-level `wiki/`, so a codewiki page is accepted by the gate yet invisible to the index, the orphans check, and `ow_index`. The codewiki skill prose also says `wiki/codewiki/`, which the gate's `wiki/` branch would treat as a wiki page named for its basename. Wiring codewiki into the store is a slug/index model decision (a `codewiki/` slug breaks the `^[a-z0-9-]+$` slug regex), deferred to group 7 with the rest of the integrity checks; the MVP closes on `wiki/` entity pages and does not exercise codewiki.
 - [ ] 7.6 (Unit) Expose the checks in the UI, with the correction path described per finding
 - [ ] 7.7 (Unit) Expose the same checks as `ow check`, so an agent and a CI job can run them without the application
 
@@ -212,22 +213,23 @@ of record.
 
 ## 9 — The CLI, MCP and the agent's contract
 
-- [ ] 9.1 (Unit) A project access module — scaffold, read, search, validate, write — one implementation, imported by the application, the CLI and the MCP process
-- [ ] 9.2 (Unit) `ow` in a directory opens the application scoped to it, and with a subcommand runs headless: the shim the installer puts on `PATH`, and the same package `npx open-wiki` reaches
-- [ ] 9.3 (Unit) Write the wiki and codewiki skills into `.claude/skills/`, overwriting nothing already there, and expose the scaffolder of 2.1 as `ow init` — `adr:0015-the-convention-ships-as-skills`
-- [ ] 9.4 (Unit) Generate a short project `CLAUDE.md` that points at the skills, duplicates nothing they say, and carries the one thing they cannot hold because it varies per project: the configured content language — regenerated when 8.12 changes it
-- [ ] 9.5 (TDD) Settle and build the write gate as a pair plus a fallback: a `PreToolUse` hook that snapshots, validates, completes the frontmatter through `updatedInput` and denies with a reason; a `PostToolUse` hook that appends the log, the changelog and the index entry, which describe a write that has actually happened; a CLI verb for harnesses with no hooks; and an answer for a write made through the shell, which no per-tool rule reaches — `adr:0013-the-project-directory-is-the-unit` leaves the composition open and it cannot ship open
-- [ ] 9.6 (TDD) Refuse an agent-mediated write that lands in `.claude/`, `.mcp.json` or `CLAUDE.md` — the gate's own configuration is inside the project, and a write path that reaches it edits away its own restraint through a change that reads as documentation in review
-- [ ] 9.7 (Unit) `ow mcp --project <name> --read-only`: an MCP server over stdio, spawned by the harness, serving exactly the one project it was launched for
-- [ ] 9.8 (Unit) `ow consult add <name>`: write the consulting entry into this project's `.mcp.json`, naming the other project rather than its path, so the file is committable and portable — nobody hand-writes the stdio invocation, which is the paste step the pivot was supposed to have removed
-- [ ] 9.9 (TDD) The MCP entrypoint does not import the write path at all, so read-only is what the process can do rather than what it agrees to do, and no tool resolves a path outside the launched project
-- [ ] 9.10 (Unit) Read tools: the index as structure, a page returned whole, and the sources with their state and their `text.md`
-- [ ] 9.11 (Unit) Announce the project in the server's name and description, so an agent with several configured says which base it answered from
-- [ ] 9.12 (Unit) `ow graph` first and `ow search` after — the structural queries have no other owner and the supersession walk depends on the fields 5.2 records, where lexical search is what a scan over a few megabytes already does. Both are the local queries `adr:0013-the-project-directory-is-the-unit` sends to the CLI rather than to MCP, printing JSON
-- [ ] 9.13 (Unit) A validation error readable enough for the agent to fix it on its own and try again — the same text whether it came from the CLI, a hook or the editor
+- [x] 9.1 (Unit) A project access module — scaffold, read, search, validate, write — one implementation, imported by the application, the CLI and the MCP process
+- [x] 9.2 (Unit) `ow` in a directory opens the application scoped to it, and with a subcommand runs headless: the shim the installer puts on `PATH`, and the same package `npx open-wiki` reaches
+- [x] 9.3 (Unit) Write the wiki and codewiki skills into `.claude/skills/`, overwriting nothing already there, and expose the scaffolder of 2.1 as `ow init` — `adr:0015-the-convention-ships-as-skills`
+- [x] 9.4 (Unit) Generate a short project `CLAUDE.md` that points at the skills, duplicates nothing they say, and carries the one thing they cannot hold because it varies per project: the configured content language — regenerated when 8.12 changes it
+- [x] 9.5 (TDD) Settle and build the write gate as a pair plus a fallback: a `PreToolUse` hook that snapshots, validates, completes the frontmatter through `updatedInput` and denies with a reason; a `PostToolUse` hook that appends the log, the changelog and the index entry, which describe a write that has actually happened; a CLI verb for harnesses with no hooks; and an answer for a write made through the shell, which no per-tool rule reaches — `adr:0013-the-project-directory-is-the-unit` leaves the composition open and it cannot ship open
+- [x] 9.6 (TDD) Refuse an agent-mediated write that lands in `.claude/`, `.mcp.json` or `CLAUDE.md` — the gate's own configuration is inside the project, and a write path that reaches it edits away its own restraint through a change that reads as documentation in review
+- [x] 9.7 (Unit) `ow mcp --project <name> --read-only`: an MCP server over stdio, spawned by the harness, serving exactly the one project it was launched for
+- [x] 9.8 (Unit) `ow consult add <name>`: write the consulting entry into this project's `.mcp.json`, naming the other project rather than its path, so the file is committable and portable — nobody hand-writes the stdio invocation, which is the paste step the pivot was supposed to have removed
+- [x] 9.9 (TDD) The MCP entrypoint does not import the write path at all, so read-only is what the process can do rather than what it agrees to do, and no tool resolves a path outside the launched project
+- [x] 9.10 (Unit) Read tools: the index as structure, a page returned whole, and the sources with their state and their `text.md`
+- [x] 9.11 (Unit) Announce the project in the server's name and description, so an agent with several configured says which base it answered from
+- [x] 9.12 (Unit) `ow graph` first and `ow search` after — the structural queries have no other owner and the supersession walk depends on the fields 5.2 records, where lexical search is what a scan over a few megabytes already does. Both are the local queries `adr:0013-the-project-directory-is-the-unit` sends to the CLI rather than to MCP, printing JSON
+- [x] 9.13 (Unit) A validation error readable enough for the agent to fix it on its own and try again — the same text whether it came from the CLI, a hook or the editor
 - [ ] 9.14 (TDD) Pay down cold start: bundle the CLI to a single file, and talk to the running application over a local socket when there is one — the socket carries read and validate and never write, so the write verb always pays the standalone path, and both paths produce the same answer
-- [ ] 9.15 (Unit) Verify end to end that Claude Code, working inside a project and starting from a single source, builds valid pages and then answers by citing them
-- [ ] 9.16 (Unit) Verify that a second project with no wiki of its own consults the first through a committed `.mcp.json` naming it, and answers citing its pages
+  - Deferred to group 8: the socket peer is the running desktop application, which does not exist until group 8, and bundling the CLI now then re-touching it for the socket is doing the work twice. The unbundled CLI runs the whole MVP path; the bundle is a cold-start optimisation, not a functional one.
+- [x] 9.15 (Unit) Verify end to end that Claude Code, working inside a project and starting from a single source, builds valid pages and then answers by citing them
+- [x] 9.16 (Unit) Verify that a second project with no wiki of its own consults the first through a committed `.mcp.json` naming it, and answers citing its pages
 
 ## 10 — Distribution
 

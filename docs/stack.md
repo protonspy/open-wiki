@@ -1,11 +1,9 @@
 # Stack
 
 Every adopted technology, with one line on why it earned its place. What is not here is an
-open decision, never something adopted silently.
-
-Nothing on this list is installed yet — the monorepo is task 1.1 of
-`plans/open-wiki.md`. The list exists before the dependencies because it is what makes
-adding each one a deliberate act.
+open decision, never something adopted silently — and because the dependency manifests are
+structured data, the gap is checkable: a dependency in a `package.json` or `Cargo.toml` that is
+absent from this file is a finding.
 
 ## Capture
 
@@ -34,6 +32,10 @@ The application neither reads nor writes a git repository —
 `adr:0002-workspace-as-a-local-markdown-folder`. The project directory usually *is* one,
 and that is the user's business, not a technology this product adopted.
 
+## Libraries
+
+- **yaml** — parses and writes the frontmatter the store validates. The page schema is the contract; a real YAML parser is what keeps it from drifting into "the subset we happened to hand-roll."
+
 ## Text extraction from sources
 
 Each source adapter has a single responsibility — becoming `text.md` with provenance
@@ -46,6 +48,18 @@ anchors, and the path stops writing there — see
 ## MCP server
 
 - **MCP TypeScript SDK** — how a project with no wiki of its own consults one that has: read-only, over stdio, spawned by the harness. It is not how the local wiki is reached, because the harness already has the directory open. See `adr:0013-the-project-directory-is-the-unit`.
+- **zod** — the schema the MCP read tools declare their arguments with. The SDK accepts a zod shape directly, so a tool's contract is one object rather than a hand-written JSON Schema drifting from the handler.
+
+## Development tooling
+
+The repo's own tooling — what builds, lints and formats the code above. It is not
+shipped to the user.
+
+- **ESLint** (`eslint`, `@eslint/js`, `typescript-eslint`) — the lint layer the methodology requires alongside tests. Non-type-checked on purpose: the strict `tsconfig.base.json` already catches type errors, and a type-aware pass across every package is slow enough to tempt skipping the per-task loop.
+- **`eslint-config-prettier`** — turns off every eslint rule that fights Prettier, so the two tools never argue about formatting.
+- **`globals`** — the Node globals ESLint needs for `no-undef` without a per-package config.
+- **Prettier** — formatting. One pass from the repo root; markdown is excluded because its rewrap mangles prose (the plan, the ADRs, the wiki).
+- **esbuild** — bundles the CLI to a single file, because a hook fires it on every page write and an unbundled CLI pays module resolution each time — see `adr:0014-typescript-everywhere-except-audio-capture`.
 
 ## Testing and verification
 

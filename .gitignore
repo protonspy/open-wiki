@@ -142,5 +142,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
-.claude/
-CLAUDE.md
+# Vendored ffmpeg is fetched by scripts/fetch-ffmpeg.mjs and checked by hash.
+vendor/ffmpeg/
+# Rust build output (crates/)
+/target/
