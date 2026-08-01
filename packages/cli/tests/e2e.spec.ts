@@ -172,6 +172,21 @@ describe("e2e: agent builds and cites a page (9.15)", () => {
     expect(pre?.hookSpecificOutput.permissionDecisionReason ?? "").toContain("no-such-source");
     expect(existsSync(join(root, "wiki", "bogus.md"))).toBe(false);
   });
+
+  it("ow graph does not throw on a fresh project with no index.md", () => {
+    // A project that has wiki/ but no index.md yet: readIndex creates an empty
+    // one, so the structural queries answer rather than ENOENT.
+    const fresh = mkdtempSync(join(tmpdir(), "ow-e2e-fresh-"));
+    mkdirSync(join(fresh, "wiki"), { recursive: true });
+    try {
+      const graph = JSON.parse(runGraph(fresh, undefined));
+      expect(graph.pages).toEqual([]);
+      expect(graph.orphans).toEqual([]);
+      expect(graph.superseded).toEqual([]);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
 });
 
 /** Drive a page through the hook path and return the on-disk content. */

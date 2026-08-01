@@ -52,6 +52,10 @@ describe("detectShellWrite (9.5)", () => {
     expect(detectShellWrite(`echo hi > notes/fenix.md`, "/p")).toBeNull();
     expect(detectShellWrite(`echo hi > README.md`, "/p")).toBeNull();
   });
+  it("flags a shell write that uses Windows backslash separators", () => {
+    expect(detectShellWrite(`echo hi > wiki\\fenix.md`, "/p")).toBe("wiki/fenix.md");
+    expect(detectShellWrite(`cp /tmp/x codewiki\\dispatch.md`, "/p")).toBe("codewiki/dispatch.md");
+  });
 });
 
 describe("runPreToolUse — Bash (9.5)", () => {

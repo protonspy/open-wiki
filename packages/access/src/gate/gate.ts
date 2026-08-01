@@ -1,4 +1,5 @@
 import { basename, relative, resolve } from "node:path";
+import { assertWithin, OutsideProjectError } from "../paths.js";
 import { isConfigWrite, configWriteReason } from "./guard.js";
 import { completeFrontmatter } from "../store/complete.js";
 import { resolveWikilinks } from "../store/wikilinks.js";
@@ -48,6 +49,21 @@ function gatedPageRel(projectRoot: string, filePath: string): string | null {
 
 export function gateWrite(input: GateInput): GateDecision {
   const { projectRoot, filePath, content, date } = input;
+
+  // Confine first, with real-path resolution so a Windows junction or symlink
+  // inside the project that points outside is refused before any write — and
+  // before classification. This is the write path's job (plan 2.6), and it is
+  // shared by both doors (the PreToolUse hook and the `ow write` verb), so it
+  // lives here rather than in either caller. `allow` is "no opinion", not
+  // "write anywhere": a non-gated file outside the project is denied too.
+  try {
+    assertWithin(projectRoot, resolve(projectRoot, filePath));
+  } catch (e) {
+    if (e instanceof OutsideProjectError) {
+      return { action: "deny", reasons: [e.message] };
+    }
+    throw e;
+  }
 
   if (isConfigWrite(filePath, projectRoot)) {
     return { action: "deny", reasons: [configWriteReason(filePath)] };

@@ -80,6 +80,22 @@ describe("supersedePage (5.2)", () => {
     expect(ops[1]!.pages[0]!.existed).toBe(true); // it modified, not created
   });
 
+  it("records the supersession in log.md and changelog.md (5.6)", () => {
+    const result = supersedePage(
+      root,
+      join("wiki", "fenix.md"),
+      "project:fenix-2",
+      "2026-08-01",
+      "cli",
+    );
+    expect(result.ok).toBe(true);
+    const log = readFileSync(join(root, "wiki", "log.md"), "utf8");
+    const changelog = readFileSync(join(root, "wiki", "changelog.md"), "utf8");
+    expect(log).toContain("superseded [[fenix → fenix-2]]");
+    expect(changelog).toContain("Superseded [[fenix]] with [[fenix-2]]");
+    expect(log).toContain("cli");
+  });
+
   it("refuses when the page to supersede does not exist", () => {
     const result = supersedePage(
       root,

@@ -103,14 +103,19 @@ export function readSourceText(projectRoot: string, id: string): string {
   return readFileSync(file, "utf8");
 }
 
-/** The confined path of a page file; throws if the slug escapes the project. */
+/** The confined path of a page file; throws if the slug escapes `wiki/`. */
 function pagePath(projectRoot: string, slug: string): string {
-  return assertWithin(projectRoot, join(projectRoot, "wiki", `${slug}.md`));
+  // Confine to the `wiki/` directory, not just the project: a slug like
+  // `../README` would otherwise resolve to `<root>/README.md`, which is inside
+  // the project but is not a wiki page. The server serves `wiki/` only.
+  const wikiDir = join(projectRoot, "wiki");
+  return assertWithin(wikiDir, join(wikiDir, `${slug}.md`));
 }
 
-/** The confined path of a source's `text.md`; throws if the id escapes. */
+/** The confined path of a source's `text.md`; throws if the id escapes `raw/`. */
 function sourceTextPath(projectRoot: string, id: string): string {
-  return assertWithin(projectRoot, join(projectRoot, "raw", id, "text.md"));
+  const rawDir = join(projectRoot, "raw");
+  return assertWithin(rawDir, join(rawDir, id, "text.md"));
 }
 
 /** Best-effort frontmatter for a page; `null` when it has none or will not parse. */

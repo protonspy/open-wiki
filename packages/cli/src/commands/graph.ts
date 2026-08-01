@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findOrphans, listEntityPages, readFrontmatter } from "@open-wiki/access";
+import { findOrphans, listEntityPages, readFrontmatter, readIndex } from "@open-wiki/access";
 
 /**
  * `ow graph [superseded|orphans|index]` — the structural queries (plan 9.12).
@@ -49,7 +49,7 @@ function supersessionWalk(projectRoot: string, pages: string[]): SupersededEntry
 }
 
 function indexState(projectRoot: string, pages: string[]): string[] {
-  const indexText = readFileSync(join(projectRoot, "wiki", "index.md"), "utf8");
+  const indexText = readIndex(projectRoot);
   return pages.filter((slug) => new RegExp(`\\[\\[${slug}(\\||#|\\]\\])`).test(indexText));
 }
 

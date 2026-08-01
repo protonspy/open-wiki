@@ -83,6 +83,14 @@ describe("MCP read tools — path confinement (9.9)", () => {
     expect(() => readPageWhole(root, "..%2f..%2f")).toThrow();
   });
 
+  it("refuses a slug that stays in the project but leaves wiki/ — no root-file leak", () => {
+    // A slug like `../README` resolves to `<root>/README.md`: inside the project,
+    // but not a wiki page. The server serves `wiki/` only, so it must refuse
+    // before reading a file the agent never put in the wiki.
+    writeFileSync(join(root, "README.md"), "project root secret\n", "utf8");
+    expect(() => readPageWhole(root, "../README")).toThrow(OutsideProjectError);
+  });
+
   it("lists the index as structure: which pages are indexed, which are orphans, and status", () => {
     // index.md links to fenix.
     writeFileSync(

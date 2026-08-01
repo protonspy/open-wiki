@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { gateWrite } from "../src/gate/gate.js";
 import { formatDenial } from "../src/gate/errors.js";
 
@@ -156,6 +156,54 @@ describe("gateWrite — refusal (9.5, 9.13)", () => {
     });
     expect(d.action).toBe("deny");
     if (d.action === "deny") expect(d.reasons.join(" ")).toContain("frontmatter");
+  });
+});
+
+describe("gateWrite — path confinement (2.6, the review's HIGH finding)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("denies a write whose path escapes the project via .. — even a non-gated file", () => {
+    // A non-gated file outside the project is denied too: `allow` is "no opinion",
+    // not "write anywhere". This is the door the PreToolUse hook goes through,
+    // so the agent's own tool would otherwise land the write outside the project.
+    const d = gateWrite({
+      projectRoot: root,
+      filePath: join(root, "wiki", "..", "..", "elsewhere.md"),
+      content: "x",
+      date: DATE,
+    });
+    expect(d.action).toBe("deny");
+    if (d.action === "deny") expect(d.reasons.join(" ")).toContain("outside the project");
+  });
+
+  it("denies a write through a junction inside the project that points outside", () => {
+    const outside = join(dirname(root), "junction-target");
+    mkdirSync(outside, { recursive: true });
+    const junction = join(root, "wiki", "junction");
+    try {
+      symlinkSync(outside, junction, "junction");
+    } catch {
+      // Some Windows accounts lack even the junction privilege; that is a
+      // different failure from the containment logic and should not fail here.
+      rmSync(outside, { recursive: true, force: true });
+      return;
+    }
+    try {
+      const d = gateWrite({
+        projectRoot: root,
+        filePath: join(junction, "page.md"),
+        content: page(GOOD_FM),
+        date: DATE,
+      });
+      expect(d.action).toBe("deny");
+      if (d.action === "deny") expect(d.reasons.join(" ")).toContain("outside the project");
+      // And nothing was written through the junction.
+      expect(existsSync(join(outside, "page.md"))).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 

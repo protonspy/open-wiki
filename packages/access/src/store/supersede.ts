@@ -4,6 +4,7 @@ import { assertWithin } from "../paths.js";
 import { readFrontmatter, validatePage, type PageIssue } from "./page.js";
 import { writePage } from "../write/atomic-write.js";
 import type { Origin } from "../write/log.js";
+import { recordWrite } from "./record.js";
 
 /**
  * Record supersession as **data**, not only as struck-through prose
@@ -109,5 +110,15 @@ export function supersedePage(
   if (!validation.ok) return { ok: false, errors: validation.errors };
 
   writePage(projectRoot, pagePath, next, origin);
+  // Record the supersession in the wiki's own records (plan 5.6): `log.md` and
+  // `changelog.md` carry the `superseded` action and the replacement, so the
+  // change shows up alongside every other observed write.
+  recordWrite(projectRoot, {
+    slug,
+    action: "superseded",
+    origin,
+    date,
+    replacementSlug: replacementId.slice(replacementId.indexOf(":") + 1),
+  });
   return { ok: true };
 }

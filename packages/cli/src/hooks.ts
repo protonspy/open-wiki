@@ -109,8 +109,11 @@ const SHELL_WRITE_TARGETS: ReadonlyArray<RegExp> = [
 ];
 
 export function detectShellWrite(command: string, _projectRoot: string): string | null {
+  // Normalise backslashes to forward slashes first: the targets anchor on
+  // `(?:wiki|codewiki)/`, and on Windows a shell write may use `wiki\fenix.md`.
+  const posix = command.replace(/\\/g, "/");
   for (const re of SHELL_WRITE_TARGETS) {
-    const m = re.exec(command);
+    const m = re.exec(posix);
     if (m && m[1]) return m[1];
   }
   return null;

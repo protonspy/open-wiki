@@ -7,9 +7,11 @@ import { relative, resolve } from "node:path";
  * that lands in `.claude/`, `.mcp.json` or `CLAUDE.md` before it lands.
  *
  * Path confinement (plan 2.6) is the write path's job, done with real-path
- * resolution so a junction cannot escape the project. This guard is a pre-check
- * that classifies a project-relative path, so plain `resolve`/`relative` is
- * enough here — the actual write still goes through `assertWithin`.
+ * resolution so a junction cannot escape the project. It is the first act of
+ * `gateWrite`, which calls `assertWithin` before this guard runs — so anything
+ * that resolves outside the project is already refused, and this guard only
+ * classifies paths that are real-inside it. Plain `resolve`/`relative` is
+ * enough here as a result; the actual write still goes through `assertWithin`.
  */
 export function isConfigWrite(filePath: string, projectRoot: string): boolean {
   const root = resolve(projectRoot);

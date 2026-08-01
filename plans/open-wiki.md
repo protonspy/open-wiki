@@ -192,6 +192,7 @@ of record.
 - [ ] 7.3 (Unit) Report a provenance link that does not resolve to an existing source or instant
 - [ ] 7.4 (Unit) Report a synonym used where the project has a canonical term
 - [ ] 7.5 (Unit) Report a codewiki citation that no longer resolves or runs past the end of its file — the check that comes with scaffolding codewiki, per `adr:0015-the-convention-ships-as-skills`
+  - Design gap a review surfaced, to settle here: the gate accepts `codewiki/*.md` (top-level) but `listEntityPages`/`findOrphans`/`indexStructure` read only top-level `wiki/`, so a codewiki page is accepted by the gate yet invisible to the index, the orphans check, and `ow_index`. The codewiki skill prose also says `wiki/codewiki/`, which the gate's `wiki/` branch would treat as a wiki page named for its basename. Wiring codewiki into the store is a slug/index model decision (a `codewiki/` slug breaks the `^[a-z0-9-]+$` slug regex), deferred to group 7 with the rest of the integrity checks; the MVP closes on `wiki/` entity pages and does not exercise codewiki.
 - [ ] 7.6 (Unit) Expose the checks in the UI, with the correction path described per finding
 - [ ] 7.7 (Unit) Expose the same checks as `ow check`, so an agent and a CI job can run them without the application
 
