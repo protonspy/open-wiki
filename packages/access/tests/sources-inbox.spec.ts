@@ -105,12 +105,18 @@ describe("the raw/_inbox doorway (3.7)", () => {
       expect(existsSync(join(root, "raw", INBOX, "a.md"))).toBe(false);
     });
 
+    // The one test in this file that loads pdfjs. Cold, on a CI runner, the
+    // dynamic import and the first parse together run past the 5 s default —
+    // which made this the only flaky test in the repository, failing on
+    // machine speed rather than on anything about the code. The timeout is
+    // deliberately generous rather than tuned: a number chosen to *just* pass
+    // is the same flake again on a slower day.
     it("ingests a PDF dropped in, with its page anchors", async () => {
       writeFileSync(join(root, "raw", INBOX, "paper.pdf"), buildPdf([["page one"]]));
       const outcomes = await drainInbox(root);
       expect(outcomes[0]).toMatchObject({ ok: true, format: "pdf", removed: true });
       expect(readFileSync(join(root, "raw", "paper.pdf", "text.md"), "utf8")).toContain("## p1");
-    });
+    }, 30_000);
 
     it("reports every file in a batch, in a stable order", async () => {
       writeFileSync(join(root, "raw", INBOX, "b.md"), "b");
