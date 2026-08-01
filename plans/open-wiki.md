@@ -119,7 +119,7 @@ fenix/                          a project — usually a repository the user alre
 - [ ] 3.3 (Unit) Upload a PDF: extract the text to `text.md`, keeping the page number as a provenance anchor
 - [ ] 3.4 (Unit) Upload a DOCX: extract the text and the heading hierarchy to `text.md`
 - [ ] 3.5 (Unit) Drag files onto the window and see what was recognised and what was not
-- [ ] 3.6 (TDD) Derive the id: lowercase, accents folded, anything outside `[a-z0-9]` collapsed to one `-`, and refuse a filename already taken in this project instead of inventing a suffix
+- [x] 3.6 (TDD) Derive the id: lowercase, accents folded, anything outside `[a-z0-9]` collapsed to one `-`, and refuse a filename already taken in this project instead of inventing a suffix
 - [ ] 3.7 (Unit) Watch `raw/_inbox/` and ingest what lands there through the same path as 3.1 — the way an agent hands over material it fetched, now that no MCP tool ingests. The inbox is the one mutable thing under `raw/`: it is a doorway, emptied by ingestion, and it is not a source, so nothing enumerates it, cites it or reports it uncited
 
 ## 4 — Sources: audio recording
@@ -163,9 +163,9 @@ divide one module rather than each inventing its own:
 One implementation, three callers. What no path covers is a write made through the shell,
 which is 9.5's problem.
 
-- [ ] 5.1 (TDD) Validate the page frontmatter against the schema (`id`, `type`, `title`, `status`, `aliases`, `updated`, `sources`, `superseded-by`) and refuse the write with a reason, instead of storing something malformed — `index.md`, `changelog.md` and `log.md` are not entity pages and are validated as themselves, not against this schema
-- [ ] 5.2 (TDD) Record supersession as data, not only as struck-through prose: `status`, `superseded-by` and the date it happened, on the page that was replaced, so that "what replaced this, and when" is answerable by a traversal rather than by reading — without it 9.12's `ow graph superseded` has nothing to walk
-- [ ] 5.3 (TDD) Refuse a write whose wikilink does not resolve to an existing page, saying which link broke
+- [x] 5.1 (TDD) Validate the page frontmatter against the schema (`id`, `type`, `title`, `status`, `aliases`, `updated`, `sources`, `superseded-by`) and refuse the write with a reason, instead of storing something malformed — `index.md`, `changelog.md` and `log.md` are not entity pages and are validated as themselves, not against this schema
+- [x] 5.2 (TDD) Record supersession as data, not only as struck-through prose: `status`, `superseded-by` and the date it happened, on the page that was replaced, so that "what replaced this, and when" is answerable by a traversal rather than by reading — without it 9.12's `ow graph superseded` has nothing to walk
+- [x] 5.3 (TDD) Refuse a write whose wikilink does not resolve to an existing page, saying which link broke
 - [ ] 5.4 (TDD) Refuse a write whose provenance citation does not point at an existing source and, for audio, at an instant inside the recording
 - [ ] 5.5 (Unit) Fill in `updated` and append the source to `sources` automatically — returned as `updatedInput` on the hook path, so that it does not depend on the agent remembering rather than merely telling it to remember
 - [ ] 5.6 (Unit) Append a line to `log.md` and an entry to `changelog.md` after every write, with its origin

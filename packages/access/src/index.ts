@@ -47,3 +47,18 @@ export {
 export { undo, UnknownOperationError } from "./write/undo.js";
 export { writeIgnore, OPEN_BLOCK, CLOSE_BLOCK } from "./ignore.js";
 export { scaffoldSkills, SKILLS_VERSION } from "./skills.js";
+
+// The validated store (group 5)
+export {
+  isEntityPage,
+  readFrontmatter,
+  validatePage,
+  validateFrontmatter,
+  NON_ENTITY_PAGES,
+  type PageFrontmatter,
+  type PageIssue,
+  type PageValidation,
+  type FrontmatterBlock,
+} from "./store/page.js";
+export { supersedePage, type SupersessionResult } from "./store/supersede.js";
+export { resolveWikilinks } from "./store/wikilinks.js";
