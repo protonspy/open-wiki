@@ -1,0 +1,12 @@
+# Normalise text files to LF in the working copy as well as the repo, matching
+# prettier's endOfLine: lf. Binary files are left alone.
+* text=auto eol=lf
+
+# Windows installer artifacts and the vendored binary are binary.
+*.exe binary
+*.msi binary
+*.zip binary
+*.opus binary
+*.wav binary
+*.png binary
+*.ico binary
