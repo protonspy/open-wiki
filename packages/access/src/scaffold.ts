@@ -3,8 +3,11 @@ import { join } from "node:path";
 import { writeSettings, type ProjectSettings } from "./config/settings.js";
 import { writeIgnore } from "./ignore.js";
 import { scaffoldSkills } from "./skills.js";
+import { INBOX } from "./sources/manifest.js";
 
-const DIRS = ["raw", "wiki", ".state"];
+// `raw/_inbox` is created here rather than on first use: a doorway nobody can
+// see is a doorway nobody drops anything through (plan 3.7).
+const DIRS = ["raw", join("raw", INBOX), "wiki", ".state"];
 
 export class DirectoryOccupiedError extends Error {
   constructor(public readonly dir: string) {

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { INBOX } from "./manifest.js";
 
 /**
  * A source's directory name is derived from what the source is, and frozen
@@ -36,8 +37,6 @@ export function deriveId(name: string): string {
   if (trimmed === "") throw new EmptyNameError(name);
   return trimmed + ext;
 }
-
-const INBOX = "_inbox";
 
 /** True when a source directory with this id already exists under `raw/`. */
 export function isIdTaken(projectRoot: string, id: string): boolean {
