@@ -19,3 +19,8 @@ export * from "./absolute.js";
 export * from "./journal.js";
 export * from "./transcribe.js";
 export * from "./stt/index.js";
+export * from "./finish.js";
+export * from "./recording-text.js";
+export * from "./seal.js";
+export * from "./timeline.js";
+export * from "./vtt.js";

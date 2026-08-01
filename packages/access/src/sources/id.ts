@@ -17,6 +17,20 @@ export class EmptyNameError extends Error {
   }
 }
 
+/**
+ * The slugging rule itself, with no opinion about extensions. Empty in, empty
+ * out — the caller decides whether that is an error (`deriveId`) or a reason
+ * to fall back to the timestamp (`recordingId`, plan 4.16).
+ */
+export function slugify(text: string): string {
+  // Fold accents: NFD splits a letter into its base + combining mark(s); strip
+  // the marks to leave the ASCII base (São → Sao). \p{M} matches any mark.
+  const folded = text.normalize("NFD").replace(/\p{M}/gu, "");
+  const lower = folded.toLowerCase();
+  const collapsed = lower.replace(/[^a-z0-9]+/g, "-");
+  return collapsed.replace(/^-+|-+$/g, "");
+}
+
 export function deriveId(name: string): string {
   // A file source keeps its extension in the id (adr:0011): the directory is
   // `raw/arquitetura-fenix.pdf/` and the citation is `src://arquitetura-fenix.pdf#p12`.
@@ -28,12 +42,7 @@ export function deriveId(name: string): string {
   const extMatch = name.match(/\.[a-z]{1,8}$/i);
   const base = extMatch ? name.slice(0, name.length - extMatch[0].length) : name;
   const ext = extMatch ? extMatch[0] : "";
-  // Fold accents: NFD splits a letter into its base + combining mark(s); strip
-  // the marks to leave the ASCII base (São → Sao). \p{M} matches any mark.
-  const folded = base.normalize("NFD").replace(/\p{M}/gu, "");
-  const lower = folded.toLowerCase();
-  const collapsed = lower.replace(/[^a-z0-9]+/g, "-");
-  const trimmed = collapsed.replace(/^-+|-+$/g, "");
+  const trimmed = slugify(base);
   if (trimmed === "") throw new EmptyNameError(name);
   return trimmed + ext;
 }

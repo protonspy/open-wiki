@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -239,7 +239,7 @@ describe("preprocessRecording", () => {
   it("leaves no temporary file where a half-written map could be read as one", async () => {
     write(manifest());
     await preprocessRecording(fakeFfmpeg({ silence: [silent5to10] }).run, dir);
-    expect(existsSync(join(dir, "timemap.json.tmp"))).toBe(false);
+    expect(readdirSync(dir).filter((f) => f.startsWith(".ow-tmp-"))).toEqual([]);
   });
 
   it("gives both tracks the identical cut list", async () => {
