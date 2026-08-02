@@ -132,9 +132,14 @@ export function occasionQuestion(): Question {
   return {
     kind: "prompt",
     title: "What are you recording?",
+    // 6.4 — the draft's sentence, and it is the thing worth saying before
+    // capture starts: *two* tracks, and one of them is everything the machine
+    // plays. Somebody who does not know that is somebody recording the other
+    // people in a call without having decided to.
     detail:
-      "The occasion names the recording's directory, which is how you find it later. " +
-      "Without one it is named by the moment it started.",
+      "Your microphone and everything this machine plays are captured as two separate tracks, " +
+      "so who said what survives into the pages. The occasion names the recording's directory, " +
+      "which is how you find it later — without one it is named by the moment it started.",
     label: "Occasion",
     placeholder: "weekly sync",
     confirmLabel: "Start recording",

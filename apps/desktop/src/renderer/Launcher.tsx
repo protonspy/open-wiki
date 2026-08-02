@@ -135,6 +135,12 @@ function NewProject({
   return (
     <section className="launcher__new">
       <h3>New project</h3>
+      {/* 6.4 — what a project *is*, said where one is made. The draft's
+          sentence, and the answer to the question somebody making their second
+          project actually has. */}
+      <p className="empty">
+        Its own sources, its own pages, its own history. Nothing is shared with the projects above.
+      </p>
       <label>
         Name
         <input

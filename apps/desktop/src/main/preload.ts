@@ -39,6 +39,8 @@ const api = {
   rename: (from: string, to: string) => ipcRenderer.invoke(CHANNELS.rename, from, to),
   remove: (slug: string) => ipcRenderer.invoke(CHANNELS.remove, slug),
   addToIndex: (slug: string) => ipcRenderer.invoke(CHANNELS.addToIndex, slug),
+  saveAsCopy: (slug: string, markdown: string) =>
+    ipcRenderer.invoke(CHANNELS.saveAsCopy, slug, markdown),
   history: () => ipcRenderer.invoke(CHANNELS.history),
   undo: (id: string) => ipcRenderer.invoke(CHANNELS.undo, id),
 

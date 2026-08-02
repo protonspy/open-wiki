@@ -24,6 +24,7 @@ export const CHANNELS = {
   rename: "wiki:rename",
   remove: "wiki:delete",
   addToIndex: "wiki:add-to-index",
+  saveAsCopy: "wiki:save-as-copy",
   history: "history:list",
   undo: "history:undo",
 

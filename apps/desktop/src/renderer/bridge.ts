@@ -2,6 +2,7 @@ import type { Finding, Language, Operation, ProjectSettings } from "@open-wiki/a
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type {
   CreateInput,
+  CopyResult,
   IndexResult,
   RenameResult,
   SaveInput,
@@ -52,6 +53,8 @@ export interface OwBridge {
   remove(slug: string): Promise<{ operationId: string }>;
   /** 5.3 — the one-click fix for 7.1's `page.orphan`. */
   addToIndex(slug: string): Promise<IndexResult>;
+  /** 6.4 — the third answer to 8.8: keep both, and name the copy. */
+  saveAsCopy(slug: string, markdown: string): Promise<CopyResult>;
   history(): Promise<Operation[]>;
   undo(id: string): Promise<void>;
 

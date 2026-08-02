@@ -176,7 +176,7 @@ The three panes whose behaviour is built and whose surface is a debug list.
 - [x] 6.1 (Unit) The settings sheet as drawn, over the two files that actually exist — `ow.json` in the project, secrets in the app data directory — with the file shown underneath, which is the draft's point and is truer here than in the draft because there is no backend to ask
 - [x] 6.2 (Unit) The history drawer, reached from the status bar rather than the rail, with the origin, the time, what changed, and Undo per line. Keeps 8.11's honesty note visible in the drawer: this covers what was observed
 - [ ] 6.3 (Unit) First run as the draft's four steps — project, language, transcription, done — with step 1 picking a project directory rather than a workspace, per the table above. The language step already exists in `Launcher.tsx` and moves here rather than being rewritten
-- [ ] 6.4 (Unit) The dialogs of the "moments something can be lost" plate, each saying what will happen and each button saying the same thing as the sentence above it. **Three, not the draft's four** — "Serve atlas instead of fenix?" was a consequence of one server holding one current project, and `adr:0018` serves every permitted project at once, so there is nothing to switch and nobody to disconnect
+- [x] 6.4 (Unit) The dialogs of the "moments something can be lost" plate, each saying what will happen and each button saying the same thing as the sentence above it. **Three, not the draft's four** — "Serve atlas instead of fenix?" was a consequence of one server holding one current project, and `adr:0018` serves every permitted project at once, so there is nothing to switch and nobody to disconnect
 
 ## 7 — The MCP pane
 

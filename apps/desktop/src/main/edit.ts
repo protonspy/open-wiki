@@ -360,6 +360,61 @@ export function renamePage(projectRoot: string, from: string, to: string): Renam
   return { repointed, operationId: operation.id };
 }
 
+/**
+ * A `SaveResult`, plus the slug the copy landed under.
+ *
+ * An intersection rather than an `extends`, because `SaveResult` is a union:
+ * the caller still has to narrow on `saved` before reading `markdown`, and the
+ * new page's name is knowable either way.
+ */
+export type CopyResult = SaveResult & {
+  /** The slug the copy landed under, once one was free. */
+  slug: string;
+};
+
+/**
+ * Save the buffer as a page of its own, rather than over the one that changed
+ * underneath it (desktop-ui 6.4, and the plan's table against the draft's 8.8).
+ *
+ * **A named copy is not a silent pick.** 8.8 refuses to overwrite and shows
+ * both versions, on the ground that choosing one silently is the only
+ * unrecoverable outcome here. That argument does not forbid a third answer — it
+ * forbids an *unannounced* one — and "keep both, I will reconcile them" is what
+ * somebody actually wants when two hours of writing meets somebody else's edit.
+ *
+ * The copy takes a free slug beside the original and its `id` follows: the
+ * schema is `type:slug` (5.1), so a copy keeping the original's id would be
+ * refused on its very next save.
+ */
+export function savePageAsCopy(
+  projectRoot: string,
+  slug: string,
+  markdown: string,
+  today: Clock,
+): CopyResult {
+  const free = freeSlug(projectRoot, slug);
+  const saved = createPage(projectRoot, { slug: free, markdown: renameId(markdown, free) }, today);
+  return { ...saved, slug: free };
+}
+
+/**
+ * `<slug>-copy`, then `-copy-2`, until one is free.
+ *
+ * Bounded, and the bound is not defensive politeness: `pageRef` walks the wiki
+ * on every call, so an unbounded loop over a project that somehow holds a
+ * thousand copies is a frozen main process. Past the bound it hands the last
+ * candidate to `createPage`, which refuses it by name — a message somebody can
+ * act on, rather than a spin.
+ */
+function freeSlug(projectRoot: string, slug: string): string {
+  const base = `${slug}-copy`;
+  for (let n = 1; n <= 50; n++) {
+    const candidate = n === 1 ? base : `${base}-${n}`;
+    if (!pageRef(projectRoot, candidate)) return candidate;
+  }
+  return `${base}-50`;
+}
+
 export interface IndexResult {
   /** False when the page was already linked from the index. */
   added: boolean;
