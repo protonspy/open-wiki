@@ -106,6 +106,14 @@ function keyFor(runtime: RuntimeLike | undefined, filePath: string): string {
   return `${threadOf(runtime)}\u0000${filePath}`;
 }
 
+/** Forget every expectation captured for one thread. */
+function dropThread(expected: Map<string, Hash>, thread: string): void {
+  const prefix = `${thread}\u0000`;
+  for (const key of expected.keys()) {
+    if (key.startsWith(prefix)) expected.delete(key);
+  }
+}
+
 function sameHash(a: Hash, b: Hash): boolean {
   if (a === null && b === null) return true;
   if (typeof a === "string" && typeof b === "string") return a === b;
@@ -129,6 +137,14 @@ export function pageGuardMiddleware({ projectRoot }: { projectRoot: string }) {
       const messages = ((state as { messages?: unknown[] }).messages ?? []) as unknown[];
       const last = [...messages].reverse().find((m) => AIMessage.isInstance(m)) as
         { tool_calls?: Array<{ name: string; args?: Record<string, unknown> }> } | undefined;
+      // Drop anything this thread captured earlier and never consumed. Only the
+      // tool's own execution consumes an entry, and a run can end without one —
+      // `chat:cancel` aborts the stream mid-pause, and a run error ends it the
+      // same way — so without this the map only ever grows. It is also the
+      // moment it is provably safe: a thread's runs are sequential, so every
+      // entry standing when this hook fires belongs to a turn that is over.
+      dropThread(expected, threadOf(runtime));
+
       const toolCalls = last?.tool_calls;
       if (!Array.isArray(toolCalls) || toolCalls.length === 0) return;
       for (const tc of toolCalls) {

@@ -32,6 +32,7 @@
 - [x] 2.11 (Unit) Force every tracing switch `@langchain/core` reads — `LANGSMITH_TRACING_V2`, `LANGCHAIN_TRACING_V2`, `LANGSMITH_TRACING`, `LANGCHAIN_TRACING` — to `"false"`, since any one of them reading `"true"` turns tracing on; and clear the alternative transports `langsmith` reads (`LANGSMITH_TRACING_MODE`, `LANGSMITH_OTEL_ENABLED`, `OTEL_ENABLED`) plus the replica-endpoint list `LANGSMITH_RUNS_ENDPOINTS` — R2.6
 - [x] 2.12 (Unit) Key the page guard's expectation map by thread id and path, not path alone: one agent is cached per window and every thread shares the closure, so two threads writing one page swap hashes and leave the guard off for both — R5.5, R7.1
 - [x] 2.13 (Unit) Answer an unparseable agent-prefs file the way an absent one is answered, so a truncated write does not throw out of `readAgentPrefs` and into the renderer as an unhandled rejection — R2.5, R2.7
+- [x] 2.14 (TDD) Clear a thread's uncollected page-guard expectations at the start of its next turn: only the tool's own execution consumes one, and `chat:cancel` and a run error both end a turn without reaching the tool, so the map otherwise grows for the window's whole life — R5.5, R7.1
 
 ## 3 · IPC channels
 
