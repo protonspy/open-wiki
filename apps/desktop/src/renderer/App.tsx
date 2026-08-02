@@ -27,7 +27,8 @@ import {
 } from "./notices.js";
 import { Reader, readerState } from "./Reader.js";
 import { Side } from "./Side.js";
-import { Findings, History as HistoryPanel, SourceAt } from "./Panels.js";
+import { ChecksPane } from "./ChecksPane.js";
+import { History as HistoryPanel, SourceAt } from "./Panels.js";
 import { Rail } from "./Rail.js";
 import { Reported } from "./Reported.js";
 import { WikiPane } from "./WikiPane.js";
@@ -47,6 +48,15 @@ import { Sources } from "./Sources.js";
  * `readPage` walk the whole tree.
  */
 const COALESCE_MS = 120;
+
+/**
+ * The panes that draw their own bar and scroll their own body.
+ *
+ * Listed rather than derived by excluding chat, so a pane added later gets the
+ * padded `<main>` — the old behaviour — until somebody gives it a frame, rather
+ * than silently rendering edge to edge with no bar at all.
+ */
+const FRAMED_PANES: ReadonlySet<Pane> = new Set<Pane>(["wiki", "sources", "checks"]);
 
 /**
  * The shell (plan 8.2), browsing the wiki inside it (8.5), and the screens
@@ -340,7 +350,11 @@ export function App(): React.JSX.Element {
       <div className="app-body">
         <Rail current={location.pane} onGoTo={goTo} language={project?.language ?? "en"} />
 
-        <main className={location.pane === "wiki" ? "main main--bleed" : "main"}>
+        {/* Three of the four panes draw their own frame — a bar, and a body
+            that scrolls inside it — so `<main>` stops padding and stops
+            scrolling for them. The chat pane is not one of them and keeps the
+            padded `<main>` it was built against. */}
+        <main className={FRAMED_PANES.has(location.pane) ? "main main--bleed" : "main"}>
           {/* Beside the controls they are about: the recording notice under
               the titlebar, the shell's own above every pane. */}
           <div className="main__notices">
@@ -431,10 +445,11 @@ export function App(): React.JSX.Element {
             <Sources
               reloadKey={reloadKey}
               onOpenPage={(slug) => visit({ pane: "wiki", selection: slug })}
+              onOpenSource={(id, fragment) => show({ kind: "provenance", source: id, fragment })}
             />
           ) : null}
           {location.pane === "checks" ? (
-            <Findings reloadKey={reloadKey} onCount={setFindings} />
+            <ChecksPane reloadKey={reloadKey} onCount={setFindings} />
           ) : null}
           {/* The chat pane stays mounted and is hidden when you are elsewhere.
               Unmounting it would reset the reducer holding the transcript and

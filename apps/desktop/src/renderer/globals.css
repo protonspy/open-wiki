@@ -831,6 +831,121 @@ button[aria-current="true"],
   flex: 1;
 }
 
+/* What the pane is doing, said once in the bar rather than repeated per row. */
+.pane-bar__note {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* --- Sources and checks: a bar, and a body that scrolls under it. Same two
+   rows as the wiki pane, without its columns. */
+.sources-pane,
+.checks-pane {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sources-body {
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.checks-body {
+  overflow-y: auto;
+  padding: var(--space-3) 14px;
+}
+
+.check-group {
+  margin-bottom: var(--space-6);
+}
+
+.check-group > h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 400;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Which task in the plan owns this check. Quieter than the group's own name:
+   it answers "why does this project check this at all", once, for somebody who
+   goes looking. */
+.task-tag {
+  color: #5c6675;
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 6px;
+  padding: 10px var(--space-3);
+  border: 1px solid var(--border);
+  border-left-width: 2px;
+  border-radius: var(--radius);
+  background: var(--background);
+}
+
+/* Severity is the left edge, and the icon says it again in a shape — a reader
+   who cannot tell red from amber still has to be able to tell an error from a
+   warning. */
+.check--error {
+  border-left-color: var(--destructive);
+}
+
+.check--error svg {
+  color: var(--destructive-foreground);
+}
+
+.check--warning {
+  border-left-color: var(--primary);
+}
+
+.check--warning svg {
+  color: var(--primary);
+}
+
+.check svg {
+  margin-top: 2px;
+}
+
+.check__what {
+  font-size: var(--text-sm);
+}
+
+/* The correction path, which every finding carries. Quieter than the problem
+   and directly under it: it is the second sentence, not a second finding. */
+.check__fix {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.check__where {
+  display: block;
+  margin-top: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--muted-foreground);
+}
+
+.checks-body__note {
+  max-width: 70ch;
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
 /* Where the open page sits, in the bar rather than on the paper. Truncated
    from the left, because the end of a path is the part that identifies it. */
 .pane-bar__path {
@@ -1250,33 +1365,98 @@ a:hover,
   background: var(--card);
 }
 
-/* --- The sources screen (6.2 to 6.7). Dense: one row per source. */
-.source {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-2) var(--space-3);
-  background: var(--card);
-}
-
-.source__head {
+/* --- The sources pane (6.2 to 6.7, then desktop-ui 5.1). One table row per
+   source: five facts, the same five each time, compared down a column. */
+.src-name {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.source__title {
-  font-weight: 600;
+.src-name svg {
+  flex: 0 0 auto;
+  color: var(--primary);
 }
 
-.source__id,
-.operation__pages {
+.src-name__id,
+.operation__pages,
+.launcher__path {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--muted-foreground);
 }
 
-.source__cited {
-  margin: var(--space-1) 0 0;
+/* Why it stopped, in the row it stopped in. */
+.src-name__error,
+.src-name__note {
+  display: block;
+  margin-top: var(--space-1);
+  max-width: 60ch;
+  font-size: var(--text-xs);
+}
+
+.src-name__error {
+  color: var(--destructive-foreground);
+}
+
+.src-name__note {
+  color: var(--muted-foreground);
+}
+
+.row--error td {
+  background: var(--destructive-dim);
+}
+
+/* Per-chunk progress (6.3) — chunks are the retry unit, so the bar is drawn in
+   chunks. The cells are a quantity: none of them claims to be the one that
+   failed, because the row carries a count and not a map. */
+.chunks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.chunk {
+  width: 14px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--border);
+}
+
+.chunk--done {
+  background: var(--ok);
+}
+
+.chunk--doing {
+  background: var(--primary);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.chunks__label {
+  margin-left: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* The cited count is the way into 6.4, so it is a control and looks like the
+   number it replaced rather than like a button dropped into a column. */
+.table__count {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.table__count:hover {
+  color: var(--primary);
+}
+
+.table__detail {
   font-size: var(--text-xs);
   color: var(--muted-foreground);
 }

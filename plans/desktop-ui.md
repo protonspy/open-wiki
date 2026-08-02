@@ -155,8 +155,8 @@ citations as tokens with `data-ow-page`, which is what the amber chips and the
 
 The three panes whose behaviour is built and whose surface is a debug list.
 
-- [ ] 5.1 (Unit) The sources table as drawn: source with its icon and frozen id, state pill, per-chunk progress, cited count, row actions. Replaces the `<ul>` in `Sources.tsx`
-- [ ] 5.2 (Unit) The checks pane grouped by check family with the task tag, severity, the `where`, and the `fix` the finding already carries — 7.6 shipped the rendering, this gives it the draft's shape
+- [x] 5.1 (Unit) The sources table as drawn: source with its icon and frozen id, state pill, per-chunk progress, cited count, row actions. Replaces the `<ul>` in `Sources.tsx`
+- [x] 5.2 (Unit) The checks pane grouped by check family with the task tag, severity, the `where`, and the `fix` the finding already carries — 7.6 shipped the rendering, this gives it the draft's shape
 - [ ] 5.3 (Unit) The fix buttons the draft draws — *Create the page*, *Add to index*, *Open the source*, *Open at 58:04*, *Replace*. Each one is an existing operation; what is new is reaching it from the finding that named it
 - [ ] 5.4 (TDD) The provenance viewer: transport, the instant, seek-to-citation, copy this citation. Test-first because it is the time map's last mile — 8.6 seeks to an instant, and an off-by-one here points a citation at the wrong moment while reading perfectly, which is the failure family the plan's own notes reserve TDD for
 - [ ] 5.5 (Unit) The waveform, drawn from the Opus. Static and rendered once per source, not live — the draft is explicit that a waveform earns its keep here and nowhere else

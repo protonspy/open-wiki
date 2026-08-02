@@ -1,90 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Finding, Operation } from "@open-wiki/access";
+import { useCallback, useEffect, useState } from "react";
+import type { Operation } from "@open-wiki/access";
 import type { SourceLocation } from "../main/sources.js";
 import { bridge } from "./bridge.js";
 
 /**
- * The panels that hang off the main view: the checks (7.6), the operation
- * history (8.11) and what a provenance link opens (8.6).
+ * The panels that hang off the main view: the operation history (8.11) and what
+ * a provenance link opens (8.6).
  *
- * Where the open page came from (6.5) used to be here too. It moved into
- * `Side.tsx` when the wiki pane gained a side column, because that is now the
- * only place it is shown and two renderings of one question drift.
+ * Two things that used to be here have left, and for one reason: a pane is now
+ * a pane. Where the open page came from (6.5) moved into `Side.tsx` with the
+ * wiki pane's side column, and the checks (7.6) moved into `ChecksPane.tsx`
+ * when they gained a bar and their groups. Two renderings of one question
+ * drift, so neither was copied.
  */
-
-/**
- * The integrity findings (plan 7.6).
- *
- * Rendering, not new checking. Every finding already carries its correction
- * path — the plan's own note says so — so the panel's job is to put the `fix`
- * where the person reading the problem is, and never to invent advice of its
- * own.
- */
-export function Findings({
-  reloadKey,
-  onCount,
-}: {
-  reloadKey: number;
-  /**
-   * How many there were, for the status bar (spec `desktop-shell`, R5.2).
-   *
-   * Handed up from this one load rather than counted again: `ow check` walks
-   * the whole project, and running it a second time to fill in a number in the
-   * frame is how a status bar becomes the slowest thing in the window.
-   */
-  onCount?: (count: number) => void;
-}): React.JSX.Element {
-  const [findings, setFindings] = useState<Finding[] | null>(null);
-  // Read through a ref so the effect below depends on `reloadKey` alone. A
-  // caller passing a fresh closure each render would otherwise re-run the
-  // whole check on every render.
-  const report = useRef(onCount);
-  report.current = onCount;
-
-  useEffect(() => {
-    // Guarded, like `PageSources` above and for a sharper reason: two
-    // `reloadKey` bumps can overlap, and a slow answer for the older one
-    // arriving last would put a stale count in the status bar as well as stale
-    // findings on screen.
-    let live = true;
-    void bridge()
-      .findings()
-      .then((found) => {
-        if (!live) return;
-        setFindings(found);
-        report.current?.(found.length);
-      })
-      .catch(() => {
-        if (!live) return;
-        setFindings([]);
-        report.current?.(0);
-      });
-    return () => {
-      live = false;
-    };
-  }, [reloadKey]);
-
-  if (!findings) return <p className="empty">Checking…</p>;
-  if (findings.length === 0) return <p className="empty">Nothing to fix.</p>;
-
-  return (
-    <ul className="list findings">
-      {findings.map((finding, i) => (
-        <li key={`${finding.code}-${i}`} className={`finding finding--${finding.severity}`}>
-          <div className="finding__head">
-            <code>{finding.code}</code>
-            <span className="finding__where">
-              {finding.page ?? finding.source ?? ""}
-              {finding.line ? `:${finding.line}` : ""}
-            </span>
-          </div>
-          <p>{finding.message}</p>
-          <p className="finding__fix">{finding.fix}</p>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 /**
  * The operation history, with undo (plan 8.11).

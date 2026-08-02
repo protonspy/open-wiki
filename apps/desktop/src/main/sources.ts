@@ -13,6 +13,9 @@ import {
   type SourceState,
 } from "@open-wiki/access/read";
 import { parseInstant, toWallMs, type TimeMap } from "@open-wiki/audio/timemap";
+// From `shared/`: the sources pane opens a source at its start too, and the two
+// must not disagree about what "the start" is spelled as.
+import { startFragment } from "../shared/sources.js";
 
 /**
  * The sources screen and what it links to (plan 6.2, 6.4, 6.5, 6.6, 7.6, 8.6).
@@ -131,10 +134,7 @@ function describeSource(projectRoot: string, id: string): PageSource {
       id,
       title: state.title,
       kind: state.kind,
-      // `0:00` is the anchor `text.md` writes for the first passage of a
-      // recording (4.13), and `p1` the one `pdf.ts` writes for a first page —
-      // so both go through `locateCitation` as an ordinary citation would.
-      fragment: state.kind === "recording" ? "0:00" : "p1",
+      fragment: startFragment(state.kind),
     };
   } catch (e) {
     return {
