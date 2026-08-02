@@ -41,6 +41,9 @@ export const CHANNELS = {
   // the run 6.3 starts.
   credential: "settings:credential",
   saveCredential: "settings:save-credential",
+  /** The agent's model list + current selection (specs/embedded-agent, R2.5). */
+  agentModels: "settings:agent-models",
+  selectModel: "settings:select-model",
   language: "settings:language",
   setLanguage: "settings:set-language",
   knownProjects: "launcher:projects",
@@ -48,10 +51,19 @@ export const CHANNELS = {
   forgetProject: "launcher:forget",
   transcribe: "sources:transcribe",
 
+  // The embedded agent (specs/embedded-agent): the renderer drives a run and
+  // receives its stream over the push channel — the model and the credential
+  // stay in the main process (R2.1, R2.7).
+  chatSend: "chat:send",
+  chatResume: "chat:resume",
+  chatCancel: "chat:cancel",
+
   /** Main → renderer, for 8.10. */
   changed: "project:changed",
   /** Main → renderer, for the inbox doorway of 3.7. */
   inbox: "sources:inbox",
+  /** Main → renderer — the agent's stream (token/tool/interrupt/done/error). */
+  chatEvent: "chat:event",
 } as const;
 
 export type Channel = (typeof CHANNELS)[keyof typeof CHANNELS];
@@ -66,4 +78,5 @@ export type Channel = (typeof CHANNELS)[keyof typeof CHANNELS];
 export const PUSH_CHANNELS: ReadonlySet<string> = new Set<string>([
   CHANNELS.changed,
   CHANNELS.inbox,
+  CHANNELS.chatEvent,
 ]);

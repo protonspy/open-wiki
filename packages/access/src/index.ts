@@ -45,6 +45,12 @@ export {
   type Origin,
 } from "./write/log.js";
 export { undo, UnknownOperationError, CorruptOperationError } from "./write/undo.js";
+export {
+  deletePage,
+  renamePage,
+  type DeleteResult,
+  type RenameResult,
+} from "./write/rename-delete.js";
 export { writeIgnore, OPEN_BLOCK, CLOSE_BLOCK } from "./ignore.js";
 export { scaffoldSkills, SKILLS_VERSION } from "./skills.js";
 export { generateClaudeMd, writeClaudeMd } from "./claude-md.js";

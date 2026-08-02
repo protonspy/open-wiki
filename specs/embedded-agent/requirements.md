@@ -49,12 +49,18 @@ lands.
 - **R2.4** While the project has no Groq credential, the desktop application shall disable
   the embedded agent and state in the settings screen that a Groq key is required for the
   agent and serves transcription and the agent both.
-- **R2.5** The settings screen shall offer a curated model selection for the agent, not the
-  raw provider model list, with one default chosen for tool-calling reliability.
+- **R2.5** The settings screen shall offer the agent's model as a selection the user
+  chooses, drawn from the models the saved Groq key can access — the list Groq's
+  `/models` endpoint returns — with `openai/gpt-oss-120b` as the default when it is
+  available.
 - **R2.6** The embedded agent shall send project content only to Groq; it shall not read
   tracing or telemetry environment variables, shall set tracing disabled before the agent's
   dependencies are imported (so library-level auto-initialization does not fire), and shall
   not transmit prompts, tool calls, or tool results to any third party.
+- **R2.7** When the user saves a Groq key, the desktop application shall fetch the
+  `/models` list as the key's validation, persist the returned list and the user's
+  chosen model in the application data directory keyed by project, and shall not
+  write either into the project directory or the repository.
 
 ## R3 · Reading — unrestricted within the project
 
@@ -71,10 +77,15 @@ lands.
   which validates frontmatter, resolves wikilinks and citations, writes atomically, logs the
   operation, and leaves it undoable.
 - **R4.2** The embedded agent shall have `rename_page` and `delete_page` tools that act on
-  wiki pages through the validated store — `gateWrite`, then `writePage` or `supersedePage`,
-  then `appendOperation`, with origin `agent` — using a gated delete primitive in
-  `@open-wiki/access`. The desktop's existing `deletePage` writes with `node:fs` and a
-  hardcoded origin, so it shall not be reused.
+  wiki pages through the validated store with origin `agent`, each a single undoable
+  operation. `rename_page` writes the new page through `gateWrite` + `writePage` and marks
+  the old superseded by it. `delete_page` is gated removal — snapshot then unlink, one
+  operation, undoable — using a gated delete primitive in `@open-wiki/access`. The desktop's
+  existing `deletePage` writes with `node:fs` and a hardcoded origin, so it shall not be
+  reused.
+- **R4.7** If a `rename_page` fails partway, then the embedded agent shall roll back both
+  pages to the content they had before it started and report the failure — a rename
+  half-applied leaves one entity live twice, with nothing saying which is current.
 - **R4.3** If a write path resolves outside wiki, then the embedded agent shall return an
   error and write nothing.
 - **R4.4** The embedded agent shall not expose the `execute` (shell) or `task` (subagent)

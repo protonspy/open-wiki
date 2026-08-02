@@ -1,4 +1,4 @@
-import { BookText, CircleCheck, Globe, Layers } from "lucide-react";
+import { BookText, CircleCheck, Globe, Layers, MessagesSquare } from "lucide-react";
 import type { Pane } from "./navigation.js";
 import { ICON_MD, type Icon } from "./ui/icons.js";
 
@@ -28,6 +28,7 @@ export const PANES: readonly RailPane[] = [
   { pane: "wiki", label: "Wiki", icon: BookText },
   { pane: "sources", label: "Sources", icon: Layers },
   { pane: "checks", label: "Checks", icon: CircleCheck },
+  { pane: "chat", label: "Chat", icon: MessagesSquare },
 ];
 
 export interface RailProps {

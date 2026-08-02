@@ -34,6 +34,7 @@ import { StatusBar } from "./StatusBar.js";
 import { Titlebar } from "./Titlebar.js";
 import { Drawer } from "./ui/Drawer.js";
 import { Sheet } from "./ui/Sheet.js";
+import { Chat } from "./Chat.js";
 import { Launcher } from "./Launcher.js";
 import { Settings } from "./Settings.js";
 import { Sources } from "./Sources.js";
@@ -415,6 +416,12 @@ export function App(): React.JSX.Element {
           {location.pane === "checks" ? (
             <Findings reloadKey={reloadKey} onCount={setFindings} />
           ) : null}
+          {location.pane === "chat" ? (
+            <Chat
+              active={location.pane === "chat"}
+              onOpenSettings={() => show({ kind: "settings" })}
+            />
+          ) : null}
         </main>
       </div>
 
@@ -665,11 +672,13 @@ function EmptyWiki({ root }: { root: string }): React.JSX.Element {
       <p className="doorway__lead">This wiki is empty, and this window is not what fills it.</p>
       <p>
         open-wiki scaffolds a project, checks what is written into it, records every write and shows
-        you the result. The pages themselves are your agent&rsquo;s to write — there is no model
-        behind this window, and an empty wiki is the ordinary way a project starts.
+        you the result. The pages themselves are an agent&rsquo;s to write — open the{" "}
+        <strong>Chat</strong> pane to run the embedded agent against this project, or open this
+        directory in your harness. An empty wiki is the ordinary way a project starts.
       </p>
       <p>
-        Open this directory in your harness and ask it for a page. The scaffold left{" "}
+        The Chat pane runs the agent in this window, reading the project and writing pages through
+        the gate, pausing for your approval on every write. The scaffold left{" "}
         <code>.claude/skills/</code> and a <code>CLAUDE.md</code> inside it that say how a page here
         is written, linked from <code>wiki/index.md</code> and recorded in{" "}
         <code>wiki/changelog.md</code>.

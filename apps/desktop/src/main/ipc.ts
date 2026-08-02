@@ -3,6 +3,13 @@ import { recordingId, type Language, type Operation } from "@open-wiki/access";
 import type { Finding, SourceState } from "@open-wiki/access/read";
 import type { PageView, ProjectInfo, WikiIndex } from "./api.js";
 import { projectInfo, readPage, sources, wikiIndex } from "./api.js";
+import type {
+  ChatCancelInput,
+  ChatResumeInput,
+  ChatRunStarted,
+  ChatSendInput,
+} from "./agent/chat-events.js";
+import type { ChatControl } from "./agent/chat-control.js";
 import {
   createPage,
   deletePage,
@@ -28,11 +35,14 @@ import {
   knownProjects,
   saveCredential,
   setLanguage,
+  agentModels,
+  selectAgentModel,
   type CredentialCheck,
   type CredentialState,
   type KnownProject,
   type SaveCredentialInput,
 } from "./settings.js";
+import type { AgentPrefs } from "./agent/agent-prefs.js";
 import { runTranscription, type TranscribeOutcome } from "./transcribe-run.js";
 import type { RecorderSession, RecorderStatus } from "./recorder.js";
 import {
@@ -86,6 +96,8 @@ export interface Deps {
   recorder?: RecorderControl;
   /** The window's inbox watcher (3.7), when its initial scan has finished. */
   inbox?: InboxControl;
+  /** The window's embedded agent (specs/embedded-agent), built where the push lives. */
+  chat?: ChatControl;
   /** Injected so a test does not depend on today's date. */
   now?: () => Date;
 }
@@ -165,12 +177,21 @@ export interface DesktopApi {
 
   credential(): CredentialState;
   saveCredential(input: SaveCredentialInput): Promise<CredentialCheck>;
+  /** The agent's model list + current selection (R2.5). */
+  agentModels(): AgentPrefs;
+  /** Record the user's model pick; refuses a model the list never offered. */
+  selectModel(model: string): AgentPrefs;
   language(): Language;
   setLanguage(language: Language): Language;
   knownProjects(): KnownProject[];
   createProject(name: string, directory: string, language: Language): KnownProject;
   forgetProject(name: string): void;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
+
+  /** The embedded agent — drive a run (R1.2, R5.2–R5.5, R7.2). */
+  chatSend(input: ChatSendInput): ChatRunStarted;
+  chatResume(input: ChatResumeInput): ChatRunStarted;
+  chatCancel(input: ChatCancelInput): void;
 }
 
 export class NoProjectError extends Error {
@@ -178,6 +199,12 @@ export class NoProjectError extends Error {
     super("this window has no project open");
     this.name = "NoProjectError";
   }
+}
+
+/** The agent runs only in a project window; a launcher has none to open it on. */
+function chatControl(deps: Deps): ChatControl {
+  if (!deps.chat) throw new Error("the agent is not available in this window");
+  return deps.chat;
 }
 
 export function createApi(deps: Deps): DesktopApi {
@@ -258,12 +285,18 @@ export function createApi(deps: Deps): DesktopApi {
 
     credential: () => credentialState(root()),
     saveCredential: (input) => saveCredential(root(), input),
+    agentModels: () => agentModels(root()),
+    selectModel: (model) => selectAgentModel(root(), model),
     language: () => currentLanguage(root()),
     setLanguage: (language) => setLanguage(root(), language),
     knownProjects: () => knownProjects(),
     createProject: (name, directory, language) => createProject(name, directory, language),
     forgetProject: (name) => forgetProject(name),
     transcribe: (id, restart) => runTranscription(root(), id, { restart }),
+
+    chatSend: (input) => chatControl(deps).send(input),
+    chatResume: (input) => chatControl(deps).resume(input),
+    chatCancel: (input) => chatControl(deps).cancel(input),
   };
 }
 
@@ -329,6 +362,13 @@ export async function dispatch(
       if (!input) throw new Error("that is not a transcription provider");
       return api.saveCredential(input);
     }
+    case CHANNELS.agentModels:
+      return api.agentModels();
+    case CHANNELS.selectModel: {
+      const model = String(args[0] ?? "");
+      if (!model) throw new Error("select-model needs a model id");
+      return api.selectModel(model);
+    }
     case CHANNELS.language:
       return api.language();
     case CHANNELS.setLanguage:
@@ -354,6 +394,35 @@ export async function dispatch(
       return api.inboxWaiting();
     case CHANNELS.inboxDrain:
       return api.inboxDrain();
+
+    case CHANNELS.chatSend: {
+      const input = args[0] as ChatSendInput | undefined;
+      if (!input || typeof input.text !== "string" || typeof input.threadId !== "string") {
+        throw new Error("chat:send needs { text, threadId }");
+      }
+      return api.chatSend(input);
+    }
+    case CHANNELS.chatResume: {
+      const input = args[0] as ChatResumeInput | undefined;
+      if (
+        !input ||
+        typeof input.threadId !== "string" ||
+        !Array.isArray(input.decisions) ||
+        typeof input.interruptId !== "string" ||
+        typeof input.runId !== "string"
+      ) {
+        throw new Error("chat:resume needs { threadId, decisions, interruptId, runId }");
+      }
+      return api.chatResume(input);
+    }
+    case CHANNELS.chatCancel: {
+      const input = args[0] as ChatCancelInput | undefined;
+      if (!input || typeof input.runId !== "string") {
+        throw new Error("chat:cancel needs { runId }");
+      }
+      api.chatCancel(input);
+      return undefined;
+    }
 
     default:
       throw new Error(`unknown channel "${channel}"`);

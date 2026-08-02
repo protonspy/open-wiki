@@ -23,6 +23,14 @@ import {
   type SttSecret,
 } from "@open-wiki/access/secrets";
 import { GROQ_URL, type FetchLike } from "@open-wiki/audio";
+import {
+  DEFAULT_MODEL,
+  parseModelList,
+  readAgentPrefs,
+  resolveModel,
+  writeAgentPrefs,
+  type AgentPrefs,
+} from "./agent/agent-prefs.js";
 
 /**
  * The credential (plan 8.3), the launcher (8.4) and the content language
@@ -49,7 +57,12 @@ export function credentialState(projectRoot: string, appDataDir?: string): Crede
   return { provider: secrets.stt.provider, hasKey: Boolean(secrets.stt.apiKey) };
 }
 
-export type CredentialCheck = { ok: true } | { ok: false; reason: string };
+/**
+ * The credential check doubles as the model-list fetch (R2.5, 5.4): a successful
+ * `GET /models` proves the key and returns the catalogue, so the list comes
+ * back with the verdict and is persisted beside the secrets file.
+ */
+export type CredentialCheck = { ok: true; models: string[] } | { ok: false; reason: string };
 
 export interface SaveCredentialInput {
   provider: SttSecret["provider"];
@@ -131,7 +144,17 @@ export async function checkCredential(
       redirect: "error",
       signal: AbortSignal.timeout(15_000),
     });
-    if (response.ok) return { ok: true };
+    if (response.ok) {
+      // The validation call is the model-list fetch (R2.5, 5.4). A body that
+      // does not parse still validates the key — the list is empty, not wrong.
+      let models: string[] = [];
+      try {
+        models = parseModelList(await response.json());
+      } catch {
+        models = [];
+      }
+      return { ok: true, models };
+    }
     if (response.status === 401 || response.status === 403) {
       return { ok: false, reason: "Groq did not accept that key" };
     }
@@ -168,7 +191,56 @@ export async function saveCredential(
     stt: { provider: input.provider, apiKey: input.apiKey ?? "" },
   };
   writeSecrets(projectRoot, secrets, deps.appDataDir ?? defaultAppDataDir());
-  return { ok: true };
+
+  // The validation call doubled as the model-list fetch (5.4): persist the list
+  // beside the secrets file, with the default selected. whisper.cpp carries no
+  // agent model — its list stays empty and the agent refuses to run for it
+  // (R2.4, 5.3).
+  if (input.provider === "groq") {
+    writeAgentPrefs(
+      projectRoot,
+      {
+        models: check.models,
+        selectedModel: resolveModel({ models: check.models, selectedModel: "" }),
+      },
+      deps.appDataDir ?? defaultAppDataDir(),
+    );
+  }
+  return { ok: true, models: check.models };
+}
+
+/**
+ * The agent's model list and current selection, for the settings screen (R2.5).
+ * Empty when no Groq credential has been saved — the screen shows nothing to
+ * pick until a key is checked, which is also when the agent can run.
+ */
+export function agentModels(
+  projectRoot: string,
+  appDataDir: string = defaultAppDataDir(),
+): AgentPrefs {
+  const prefs = readAgentPrefs(projectRoot, appDataDir);
+  if (prefs) return prefs;
+  return { models: [], selectedModel: DEFAULT_MODEL };
+}
+
+/**
+ * Record the model the user picked from the list (R2.5). The selection must be
+ * one Groq offered — a model the catalogue never returned is refused, so a stale
+ * dropdown choice or a hand-edited value cannot become the agent's model.
+ */
+export function selectAgentModel(
+  projectRoot: string,
+  model: string,
+  appDataDir: string = defaultAppDataDir(),
+): AgentPrefs {
+  const prefs = readAgentPrefs(projectRoot, appDataDir);
+  const models = prefs?.models ?? [];
+  if (!models.includes(model)) {
+    throw new Error(`"${model}" is not one of the models Groq offered for this project`);
+  }
+  const next: AgentPrefs = { models, selectedModel: model };
+  writeAgentPrefs(projectRoot, next, appDataDir);
+  return next;
 }
 
 /**

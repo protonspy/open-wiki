@@ -85,6 +85,15 @@ describe("operation log (2.4)", () => {
     expect(ops[0]!.time.length).toBeGreaterThan(0);
   });
 
+  it("records an agent write with origin 'agent' — R4.5", () => {
+    // The embedded agent's writes carry origin "agent" so a bad run is one undo
+    // rather than an archaeology. The variant exists on the union; the log
+    // round-trips it like any other origin.
+    const op = writePage(root, join("wiki", "agent-page.md"), "agent wrote this", "agent");
+    expect(op.origin).toBe("agent");
+    expect(listOperations(root)[0]!.origin).toBe("agent");
+  });
+
   it("getOperation retrieves an operation by id", () => {
     const op = writePage(root, join("wiki", "a.md"), "a", "editor");
     expect(getOperation(root, op.id)?.id).toBe(op.id);

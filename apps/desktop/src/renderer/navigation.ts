@@ -18,8 +18,14 @@ import { FRAGMENT_ATTR, PAGE_ATTR, SOURCE_ATTR } from "./markdown.js";
  * where that separation is enforced.
  */
 
-/** The panes the rail offers. MCP joins them with `specs/mcp-pane/`. */
-export type Pane = "wiki" | "sources" | "checks";
+/**
+ * The panes the rail offers. MCP joins them with `specs/mcp-pane/`.
+ *
+ * `chat` carries the embedded agent (specs/embedded-agent): a window where the
+ * agent reads this project and writes the wiki through the gate, pausing for
+ * approval on every write.
+ */
+export type Pane = "wiki" | "sources" | "checks" | "chat";
 
 export interface Location {
   pane: Pane;
