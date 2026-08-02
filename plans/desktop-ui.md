@@ -113,10 +113,10 @@ a renderer nobody can create a page in.
 The draft's tokens, verbatim, and the primitives every later group is assembled
 from. `8.1` shipped tokens only; this is the other half.
 
-- [ ] 2.1 (Unit) Port `tokens.css` to `globals.css` with the draft's names and values: `--background`/`--foreground`/`--card`/`--popover`/`--muted`/`--border`, the warm `--paper` triple, `--primary` amber `#d99a4e`, the semantic four kept separate from the accent, the 10→32px type scale, `--row: 30px` and `--control: 28px`. Every existing `--surface-*`/`--ink-*` reference migrates in the same task, because a half-migrated palette is two palettes
-- [ ] 2.2 (Unit) Adopt `lucide-react` and `clsx` — manifest **and** `docs/stack.md`, one line each on why
-- [ ] 2.3 (Unit) The primitives, one file each, matching the draft's Components plate: `Button` (default, primary, ghost, sm), `IconButton`, `Pill` (neutral, ok, error, cited), `Card`, `Table`, `Switch`, `Dialog`, `Sheet`, `Drawer`, `SearchInput`
-- [ ] 2.4 (Unit) Focus is visible on every one of them. 8.1 named this and it is the thing a component rewrite silently loses: `outline: none` with nothing in its place is how a desktop UI stops being usable by keyboard
+- [x] 2.1 (Unit) Port `tokens.css` to `globals.css` with the draft's names and values: `--background`/`--foreground`/`--card`/`--popover`/`--muted`/`--border`, the warm `--paper` triple, `--primary` amber `#d99a4e`, the semantic four kept separate from the accent, the 10→32px type scale, `--row: 30px` and `--control: 28px`. Every existing `--surface-*`/`--ink-*` reference migrates in the same task, because a half-migrated palette is two palettes
+- [x] 2.2 (Unit) Adopt `lucide-react` and `clsx` — manifest **and** `docs/stack.md`, one line each on why
+- [x] 2.3 (Unit) The primitives, one file each, matching the draft's Components plate: `Button` (default, primary, ghost, sm), `IconButton`, `Pill` (neutral, ok, error, cited), `Card`, `Table`, `Switch`, `Dialog`, `Sheet`, `Drawer`, `SearchInput`
+- [x] 2.4 (Unit) Focus is visible on every one of them. 8.1 named this and it is the thing a component rewrite silently loses: `outline: none` with nothing in its place is how a desktop UI stops being usable by keyboard
 
 ## 3 — The shell
 

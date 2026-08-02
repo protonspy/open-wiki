@@ -1,0 +1,1055 @@
+/*
+ * The design system (plan 8.1, then desktop-ui 2.1).
+ *
+ * Dense and dark, because of what this window is for: somebody reads a wiki
+ * beside the harness they are talking to, and glances at it while a meeting is
+ * being recorded. Neither is a task that wants generous whitespace — the
+ * measure of this UI is how much of a page is on screen at once, not how
+ * comfortable one paragraph looks.
+ *
+ * **The tokens are `design/desktop-draft.html`'s, name for name and value for
+ * value.** 8.1 shipped a palette of its own invention — `--surface-*`,
+ * `--ink-*`, a blue accent — while the draft had been sitting in the repository
+ * the whole time being nothing's acceptance criterion. These names are
+ * shadcn/ui's on purpose, which is what the draft means when it says the port
+ * is a copy into `globals.css`: no shadcn runtime is installed, because shadcn
+ * is copied-in source rather than a package.
+ *
+ * Two colour worlds, and the argument for them is the whole visual idea: a
+ * **cold instrument** — blue-biased slate — holding a **warm reading
+ * surface**, paper under a lamp. Amber is not decoration either; it means
+ * provenance, and it appears where something is traced to a source.
+ *
+ * Dark only. The draft is deliberate about that, and this does not invent a
+ * light theme nobody would then be looking at while it rotted.
+ */
+
+:root {
+  /* --- Ground. Cool slate, blue-biased. The instrument. */
+  --background: #0b0e13;
+  --foreground: #e6e9ef;
+  --card: #12161d;
+  --card-foreground: #e6e9ef;
+  --popover: #161b23;
+  --muted: #1a202a;
+  --muted-foreground: #8a93a3;
+  --border: #232a35;
+  --input: #1a202a;
+  /* The hover border the draft writes as a literal in four places. */
+  --border-strong: #33404f;
+
+  /* --- Content. Warm-shifted: paper under a lamp, inside the instrument. */
+  --paper: #16130f;
+  --paper-foreground: #ece7de;
+  --paper-border: #2a241c;
+
+  /* --- Accent. Amber is provenance — citations, sources, traced to something.
+     One accent, and never used to mean "this button is the pretty one". */
+  --primary: #d99a4e;
+  --primary-foreground: #1a1206;
+  --primary-hover: #e8a95c;
+  --ring: #d99a4e;
+
+  /* --- Semantic. Separate from the accent, never decorative. The dim of each
+     pair is the fill; the bright one is the ink and the border. */
+  --ok: #4cc38a;
+  --ok-dim: #17301f;
+  --destructive: #e5484d;
+  --destructive-dim: #34161a;
+  --destructive-foreground: #ff9ea1;
+  --record: #e5484d;
+
+  /* --- Type. */
+  --font-ui:
+    "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    "Cascadia Mono", "Cascadia Code", ui-monospace, Consolas, "Liberation Mono", monospace;
+
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+
+  --leading: 1.55;
+  --leading-tight: 1.15;
+
+  /* --- Space. A 4px grid. Not in the draft, which writes its pixels inline;
+     kept because a scale is what stops the next screen inventing a seventh
+     gap that is one pixel off the six that exist. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* --- Geometry. Dense: rows 30px, controls 28px, hairline borders. */
+  --radius-sm: 3px;
+  --radius: 5px;
+  --radius-lg: 8px;
+  --row: 30px;
+  --control: 28px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading);
+  -webkit-font-smoothing: antialiased;
+  /* The window is a document, not a page: nothing here scrolls sideways. */
+  overflow: hidden;
+}
+
+/*
+ * Focus is visible on everything, always (2.4). An Electron app is used with a
+ * keyboard by exactly the people who cannot use it any other way, and
+ * `outline: none` with nothing in its place is the single most common way a
+ * desktop UI becomes unusable for them — and the thing a component rewrite
+ * loses silently, because nothing looks broken until somebody puts the mouse
+ * down. `:focus-visible` keeps it off a mouse click, which is the only reason
+ * anyone removed it in the first place.
+ *
+ * One rule for the whole document, so a primitive cannot forget it: the ring
+ * is amber, which reads against the cold surfaces and against the paper.
+ */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.chrome__project {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.chrome__spacer {
+  flex: 1;
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* ===========================================================================
+   The primitives (2.3), as the draft's Components plate draws them.
+
+   `button, .btn` share one rule on purpose. The primitive renders `.btn`, and
+   every screen this plan has not reached yet still renders a bare `<button>` —
+   one rule means converting a call site is a no-op on screen rather than a
+   before-and-after nobody planned. When groups 3 to 8 have converted the last
+   one, the bare selector comes off and nothing moves.
+   ======================================================================== */
+
+button,
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled),
+.btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: #202733;
+}
+
+button:disabled,
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Amber, and the only place a control is filled with the accent: the primary
+   action of a screen, one per screen. */
+.btn--primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+/* `.danger` is the class the screens written before this used. Both are here
+   so the repaint is not also a rename. */
+.btn--danger,
+button.danger {
+  background: var(--destructive-dim);
+  border-color: rgb(229 72 77 / 45%);
+  color: var(--destructive-foreground);
+}
+
+.btn--danger:hover:not(:disabled),
+button.danger:hover:not(:disabled) {
+  background: #45191d;
+  border-color: rgb(229 72 77 / 70%);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted-foreground);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--muted);
+  border-color: transparent;
+  color: var(--foreground);
+}
+
+.btn--sm {
+  height: 22px;
+  padding: 0 7px;
+  font-size: var(--text-xs);
+}
+
+button[aria-current="true"],
+.btn[aria-current="true"] {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* An icon and nothing else: square, so a row of them is a row rather than a
+   ragged line of differently-wide buttons. 24px, not `--control`: the draft
+   draws it smaller than a labelled control on purpose, because a bare glyph
+   needs none of the padding a word does. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/*
+ * State pills. **Form carries the state, not only the word** — every pill has
+ * a dot, and the one state that matters most carries its meaning in the shape
+ * rather than the colour: a source nothing cites is drawn hollow and dashed,
+ * because its failure mode is disappearing quietly, and a filled pill in a
+ * list of filled pills is exactly how it disappears.
+ */
+.pill,
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.pill::before,
+.badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.pill--ok,
+.badge--text-ready {
+  background: var(--ok-dim);
+  color: var(--ok);
+  border-color: rgb(76 195 138 / 30%);
+}
+
+.pill--cited,
+.badge--cited {
+  background: rgb(217 154 78 / 12%);
+  color: var(--primary);
+  border-color: rgb(217 154 78 / 30%);
+}
+
+.pill--error,
+.badge--failed {
+  background: var(--destructive-dim);
+  color: var(--destructive-foreground);
+  border-color: rgb(229 72 77 / 40%);
+}
+
+/* Working: the dot is amber and pulses, and the word stays legible. */
+.pill--working,
+.badge--transcribing {
+  background: var(--muted);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.pill--working::before,
+.badge--transcribing::before {
+  background: var(--primary);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.pill--uncited,
+.badge--warn {
+  background: transparent;
+  color: var(--muted-foreground);
+  border: 1px dashed var(--border-strong);
+}
+
+.pill--uncited::before,
+.badge--warn::before {
+  background: transparent;
+  border: 1px solid currentcolor;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  padding: 13px 14px;
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 10px;
+}
+
+.card__head h3 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+/* The header is a label, not content: mono, small, upper, quiet. */
+.table thead th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  font-weight: 400;
+  padding: 0 10px 7px;
+  border-bottom: 1px solid var(--border);
+}
+
+.table tbody td {
+  padding: var(--space-2) 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background: rgb(255 255 255 / 2%);
+}
+
+.table__num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.table__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* A switch is a control whose state has to be readable without reading: the
+   knob moves, the track changes colour, and `aria-checked` drives both — so
+   what a screen reader is told and what the eye is shown cannot disagree. */
+.switch {
+  position: relative;
+  width: 34px;
+  height: 19px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  cursor: pointer;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.switch[aria-checked="true"] {
+  background: rgb(76 195 138 / 25%);
+  border-color: rgb(76 195 138 / 50%);
+}
+
+.switch[aria-checked="true"]::after {
+  transform: translateX(15px);
+  background: var(--ok);
+}
+
+.switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control);
+  width: 240px;
+  padding: 0 9px;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted-foreground);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  /* Removed here and put back on the box below, so the ring is drawn around
+     the whole control rather than inside its border. */
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.search:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-color: var(--ring);
+}
+
+/* --- The three overlays. All modal `<dialog>`s: the top layer, the focus
+   trap, Escape and the return of focus are the platform's, and what differs
+   between them is where they sit and how wide they are. */
+.sheet,
+.drawer {
+  padding: 0;
+  color: var(--foreground);
+  background: var(--popover);
+  border: 1px solid var(--border);
+  font: inherit;
+}
+
+.sheet {
+  width: 560px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 80%);
+}
+
+/* Against the right edge, full height — the draft's "beside the work, not on
+   top of it" placement for history. */
+.drawer {
+  width: 400px;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0 0 0 auto;
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  border-radius: 0;
+  border-left: 1px solid var(--border);
+  box-shadow: -24px 0 60px -20px rgb(0 0 0 / 80%);
+}
+
+.overlay__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer .overlay__head {
+  padding: 0 14px;
+}
+
+.overlay__head h3 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.drawer .overlay__head h3 {
+  font-size: var(--text-base);
+}
+
+.overlay__body {
+  padding: 6px 16px 16px;
+}
+
+.drawer .overlay__body {
+  overflow-y: auto;
+  padding: 6px 14px 14px;
+}
+
+.sheet::backdrop,
+.drawer::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+/*
+ * The recording indicator. It is persistent and it is not subtle: this
+ * application captures a meeting, and somebody who forgets it is running has a
+ * recording of a conversation the other people in it think ended. The dot
+ * pulses; `prefers-reduced-motion` gets a steady one, which is still red and
+ * still there.
+ */
+.recording {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--record);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+}
+
+.recording__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--record);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* Paused keeps the colour and drops the pulse, as the draft draws it.
+   Recolouring it would say the thing that is red has stopped being red. */
+.recording--paused .recording__dot {
+  animation: none;
+  opacity: 0.55;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.main {
+  overflow: auto;
+  padding: var(--space-6);
+}
+
+.page {
+  max-width: 78ch;
+}
+
+.page h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-4);
+}
+
+.page h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+/* Relative, not a step off the scale, and deliberately unlike its neighbours
+   here: the draft sizes inline code in prose as `0.92em` (`.inline-code`), so
+   a code span tracks the paragraph it interrupts instead of being one fixed
+   size in a reader whose text is set larger than the chrome around it. */
+.page code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--background);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.page pre {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  overflow-x: auto;
+}
+
+.frontmatter {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.frontmatter dt {
+  color: var(--muted-foreground);
+}
+
+.frontmatter dd {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+}
+
+a,
+.wikilink {
+  color: var(--primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a:hover,
+.wikilink:hover {
+  text-decoration: underline;
+}
+
+/*
+ * A broken wikilink looks broken where the reader would have clicked it. A
+ * link to nowhere that looks like a link is worse than obviously missing
+ * text — and it is the same thing 7.1 reports.
+ */
+.wikilink--broken {
+  color: var(--destructive-foreground);
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.provenance {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  border-bottom: 1px dotted var(--border-strong);
+}
+
+.provenance:hover {
+  color: var(--primary);
+}
+
+/* Errors say what happened and what to do, and never look like content. */
+.error {
+  color: var(--destructive-foreground);
+  background: var(--destructive-dim);
+  border: 1px solid rgb(229 72 77 / 40%);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  font-size: var(--text-base);
+}
+
+/* The one class in the tier shift that the draft draws itself, and therefore
+   the one that is not restored to the size it had: the draft's own `.empty`
+   is `--text-sm`, and the draft wins where the draft has an opinion. */
+.empty {
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.list button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+
+.list button:hover {
+  background: var(--card);
+}
+
+/* --- The sources screen (6.2 to 6.7). Dense: one row per source. */
+.source {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  background: var(--card);
+}
+
+.source__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.source__title {
+  font-weight: 600;
+}
+
+.source__id,
+.operation__pages {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.source__cited {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* --- The editor (8.7, 8.8). Source and preview side by side. */
+.editor {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: var(--space-3);
+  height: 100%;
+}
+
+.editor__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.editor__panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.editor__source {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  line-height: var(--leading);
+  color: var(--foreground);
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  resize: none;
+}
+
+/* --- The findings (7.6). The fix is as prominent as the problem. */
+.finding {
+  border-left: 3px solid var(--border-strong);
+  padding: var(--space-1) var(--space-3);
+}
+
+.finding--error {
+  border-left-color: var(--destructive);
+}
+
+/* Amber, because amber is also what the draft's "working" state uses. */
+.finding--warning {
+  border-left-color: var(--primary);
+}
+
+.finding__head {
+  display: flex;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.finding p {
+  margin: var(--space-1) 0;
+}
+
+.finding__fix {
+  color: var(--foreground);
+  font-size: var(--text-base);
+}
+
+/* --- The operation history (8.11). */
+.operation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.operation__time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* --- What a citation opens (8.6), beside the page rather than over it. */
+.source-at {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  width: min(480px, calc(100vw - var(--space-8)));
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 80%);
+}
+
+.source-at audio {
+  width: 100%;
+}
+
+/* --- A drop in progress (3.5). The whole window is the target. */
+.app--dragging {
+  outline: 2px dashed var(--primary);
+  outline-offset: -6px;
+}
+
+/* --- Creating a project (8.4), and the language it is born in (8.12).
+   The fieldset is reset rather than styled: a browser's default is a raised
+   border drawn for a light document, and on this surface it reads as a box
+   somebody forgot to finish. */
+.launcher__new {
+  display: grid;
+  gap: var(--space-3);
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+}
+
+.launcher__new label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--foreground);
+}
+
+.launcher__languages {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.launcher__languages legend {
+  font-size: var(--text-sm);
+  color: var(--foreground);
+  padding: 0;
+}
+
+/* A radio and its words are one target, and they sit on one line — the grid
+   above is for the stacked text fields, not for these. */
+.launcher__languages label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* --- What an empty wiki says (1.4). It is prose, so it is set as prose: a
+   reading measure, and not the dimmed one-liner an empty list gets. The thing
+   it explains is the shape of the product, and dimming that is how it stopped
+   being said at all. */
+.doorway {
+  max-width: 62ch;
+  display: grid;
+  gap: var(--space-3);
+  color: var(--foreground);
+  font-size: var(--text-base);
+}
+
+.doorway__lead {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+
+.doorway p {
+  margin: 0;
+}
+
+.doorway code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--foreground);
+  background: var(--background);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+/* --- The questions this window asks (1.1), as the draft draws a dialog: the
+   sentence and the buttons separated by a rule, the buttons on their own
+   surface, so what is being said and what is about to happen do not run
+   together. The `<dialog>` itself does the rest — see `Ask.tsx`. */
+.ask {
+  width: 440px;
+  max-width: calc(100vw - var(--space-8));
+  padding: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 80%);
+  font: inherit;
+}
+
+.ask::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.ask__form {
+  display: grid;
+}
+
+.ask__title {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-4) var(--space-4) 0;
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+/* The sentence that says what the button is about to do. It is not decoration,
+   so it goes one step of contrast down and no further. */
+.ask__detail {
+  margin: 0;
+  padding: 0 var(--space-4);
+  max-width: 56ch;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.ask__field {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4) 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.ask__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+  background: var(--background);
+}
+
+/* The path is there to be read off the screen and typed into a terminal. */
+.doorway__path {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  overflow-wrap: anywhere;
+  user-select: all;
+}

@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { answerOf, buttonsFor, canAnswer, type Question } from "./dialogs.js";
+import { Button } from "./ui/Button.js";
+import { Dialog } from "./ui/Dialog.js";
 
 /**
  * Asking a question, in the renderer, because the platform will not (plan 1.1).
  *
- * **A native `<dialog>` opened with `showModal`.** Chromium puts it in the top
- * layer, makes the rest of the document inert, moves focus into it, traps
- * focus there, closes it on Escape and returns focus to where it came from.
- * Every one of those is what "focus-trapped and Escape-dismissable" asks for,
- * and every hand-rolled version of them is a list of the ones it forgot.
- *
- * The form is `method="dialog"`, so the submitting button's `value` lands on
- * `returnValue` and every way out arrives at one handler — `onClose` — rather
- * than three that have to agree. Which button submits is not decoration:
- * `buttonsFor` says why.
+ * The modal itself is `ui/Dialog` (2.3) — the same one the sheet and the
+ * drawer are, so the focus trap, Escape and the return of focus are settled in
+ * one place rather than three. What is left here is the question: a form that
+ * is `method="dialog"`, so the submitting button's `value` lands on
+ * `returnValue` and every way out arrives at one handler. Which button submits
+ * is not decoration; `buttonsFor` says why.
  */
 
 export interface Dialogs {
@@ -95,64 +93,58 @@ function Ask({
   question: Question;
   onAnswer: (answer: string | null) => void;
 }): React.JSX.Element {
-  const ref = useRef<HTMLDialogElement>(null);
   const [typed, setTyped] = useState(question.initial ?? "");
 
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog || dialog.open) return;
-    dialog.showModal();
-  }, []);
-
   return (
-    <dialog
-      ref={ref}
+    <Dialog
       className="ask"
-      aria-labelledby="ask-title"
-      aria-describedby="ask-detail"
-      // The one exit. Escape leaves `returnValue` empty, a button leaves its
-      // own value, and `answerOf` reads the difference.
-      onClose={(event) => onAnswer(answerOf(event.currentTarget.returnValue, typed))}
+      labelledBy="ask-title"
+      describedBy="ask-detail"
+      // The one exit. Escape leaves `returnValue` empty, the answering button
+      // leaves its own, and `answerOf` reads the difference.
+      onClose={(returnValue) => onAnswer(answerOf(returnValue, typed))}
     >
-      <form method="dialog" className="ask__form">
-        <h2 id="ask-title" className="ask__title">
-          {question.title}
-        </h2>
-        <p id="ask-detail" className="ask__detail">
-          {question.detail}
-        </p>
-        {question.kind === "prompt" ? (
-          <label className="ask__field">
-            {question.label}
-            <input
-              className="editor__source"
-              value={typed}
-              placeholder={question.placeholder}
-              autoFocus
-              onChange={(event) => setTyped(event.target.value)}
-            />
-          </label>
-        ) : null}
-        <div className="ask__buttons">
-          {buttonsFor(question).map((button) => (
-            <button
-              key={button.value}
-              // The one that answers submits; the one that cancels closes the
-              // dialog itself. Both leave the `returnValue` they would have
-              // left as submit buttons — the cancel button's is Escape's own
-              // empty string, so `answerOf` cannot tell those two exits apart
-              // and does not have to.
-              type={button.submits ? "submit" : "button"}
-              value={button.value}
-              className={button.danger ? "danger" : undefined}
-              disabled={button.submits && !canAnswer(question, typed)}
-              onClick={button.submits ? undefined : () => ref.current?.close("")}
-            >
-              {button.label}
-            </button>
-          ))}
-        </div>
-      </form>
-    </dialog>
+      {(close) => (
+        <form method="dialog" className="ask__form">
+          <h2 id="ask-title" className="ask__title">
+            {question.title}
+          </h2>
+          <p id="ask-detail" className="ask__detail">
+            {question.detail}
+          </p>
+          {question.kind === "prompt" ? (
+            <label className="ask__field">
+              {question.label}
+              <input
+                className="editor__source"
+                value={typed}
+                placeholder={question.placeholder}
+                autoFocus
+                onChange={(event) => setTyped(event.target.value)}
+              />
+            </label>
+          ) : null}
+          <div className="ask__buttons">
+            {buttonsFor(question).map((button) => (
+              <Button
+                key={button.value}
+                // The one that answers submits; the one that cancels closes the
+                // dialog itself. Both leave the `returnValue` they would have
+                // left as submit buttons — the cancel button's is Escape's own
+                // empty string, so `answerOf` cannot tell those two exits apart
+                // and does not have to.
+                type={button.submits ? "submit" : "button"}
+                value={button.value}
+                variant={button.danger ? "danger" : "default"}
+                disabled={button.submits && !canAnswer(question, typed)}
+                onClick={button.submits ? undefined : () => close()}
+              >
+                {button.label}
+              </Button>
+            ))}
+          </div>
+        </form>
+      )}
+    </Dialog>
   );
 }
