@@ -1550,22 +1550,64 @@ a:hover,
 }
 
 /* --- What a citation opens (8.6), beside the page rather than over it. */
+/* --- What a citation opens (8.6, then desktop-ui 5.4).
+   Beside the page and not over it: you open a citation to check a claim you are
+   in the middle of reading, and a panel that hides the paragraph has answered
+   the question by taking away the thing that raised it. */
 .source-at {
   position: fixed;
   right: var(--space-4);
   bottom: var(--space-4);
-  width: min(480px, calc(100vw - var(--space-8)));
+  width: min(520px, calc(100vw - var(--space-8)));
+  overflow: hidden;
   background: var(--popover);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-3);
+  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 80%);
+}
+
+.source-at__body {
   display: grid;
   gap: var(--space-2);
-  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 80%);
+  padding: var(--space-3);
 }
 
 .source-at audio {
   width: 100%;
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The instant, in the one place a reader looks to check it. Tabular, because
+   it changes several times a second while playing and a proportional font
+   makes the whole row jitter. */
+.transport__at {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  color: var(--foreground);
+}
+
+/* Where in the recording this is. 5.5's waveform is drawn behind it; until
+   then the bar is the shape of the answer without pretending to be the sound. */
+.playbar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--muted);
+}
+
+.playbar__head {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--primary);
 }
 
 /* --- A drop in progress (3.5). The whole window is the target. */
