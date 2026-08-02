@@ -1,20 +1,42 @@
 import { FRAGMENT_ATTR, PAGE_ATTR, SOURCE_ATTR } from "./markdown.js";
 
 /**
- * Where the reader is, and how they get back (plan 8.5).
+ * Where the reader is, and how they get back (plan 8.5, spec `desktop-shell`).
  *
  * A wiki is read by following links and returning, so "go back" is not a
  * convenience — it is half of how the content is used. Kept as a stack of
- * visited slugs with a cursor rather than a list of "previous": following a
+ * visited locations with a cursor rather than a list of "previous": following a
  * link after going back has to discard the forward history, exactly as a
  * browser does, or Back stops meaning "where I came from".
+ *
+ * **A location is a pane and a selection within it; an overlay is neither.**
+ * This used to be one flat `view` that also carried `settings` and `history`,
+ * which made opening the settings a place you had gone — so Back after closing
+ * them landed on the pane *before* the one you opened them from, the settings
+ * having eaten the press that should have taken you there. `Shell` below is
+ * where that separation is enforced.
  */
 
+/** The panes the rail offers. MCP joins them with `specs/mcp-pane/`. */
+export type Pane = "wiki" | "sources" | "checks";
+
 export interface Location {
-  /** `wiki` browses a page; the other screens have no page. */
-  view: "wiki" | "sources" | "checks" | "history" | "settings";
-  slug?: string;
+  pane: Pane;
+  /** What is selected inside it — a page's slug, a source's id. */
+  selection?: string;
 }
+
+/**
+ * What sits *over* a location: consulted or adjusted, never travelled to.
+ *
+ * Each is a modal `<dialog>` (group 2), so the document behind it is inert and
+ * two at once is not a layout question but a state that cannot be reached.
+ * `Shell` holds one value rather than a set for that reason.
+ */
+export type Overlay =
+  | { kind: "settings" }
+  | { kind: "history" }
+  | { kind: "provenance"; source: string; fragment: string };
 
 export class History {
   private readonly entries: Location[] = [];
@@ -66,7 +88,109 @@ export class History {
 }
 
 function same(a: Location, b: Location): boolean {
-  return a.view === b.view && a.slug === b.slug;
+  return a.pane === b.pane && a.selection === b.selection;
+}
+
+/**
+ * The window's position, and the one thing that is not part of it.
+ *
+ * Three facts live here rather than in `App`: where you are, what each pane was
+ * left showing, and which overlay is open. They are together because every rule
+ * worth having is about the relationship between them —
+ *
+ * - **an overlay is never recorded** (R2.2), so closing one returns to the
+ *   location it was opened over rather than to the one before that;
+ * - **nothing navigates while an overlay is open** (R2.4). The modal already
+ *   makes the pane behind it unclickable, but the keyboard shortcuts of 8.1 are
+ *   not behind that inert layer, so the rule is asserted rather than assumed;
+ * - **a pane remembers what it was showing** (R1.7). Kept beside the history
+ *   rather than dug out of it: walking backwards for the most recent entry with
+ *   a given pane is the same fact stored twice and read the long way round.
+ */
+export class Shell {
+  private readonly history = new History();
+  private readonly lastSeen: Partial<Record<Pane, string>> = {};
+  private open: Overlay | null = null;
+
+  constructor(start: Location = { pane: "wiki" }) {
+    this.history.visit(start);
+  }
+
+  get location(): Location {
+    return this.history.current ?? { pane: "wiki" };
+  }
+
+  get overlay(): Overlay | null {
+    return this.open;
+  }
+
+  get canGoBack(): boolean {
+    return this.history.canGoBack;
+  }
+
+  get canGoForward(): boolean {
+    return this.history.canGoForward;
+  }
+
+  /**
+   * Enter a pane, at whatever it was last showing (R1.7).
+   *
+   * Coming back to the wiki after a detour through Sources lands on the page
+   * that was being read, which is the whole point of remembering: the rail is
+   * how you leave a page for a moment, not how you close it.
+   */
+  goTo(pane: Pane): Location {
+    return this.navigate({ pane, selection: this.lastSeen[pane] });
+  }
+
+  /** Select something inside the pane you are in (R1.3). */
+  select(selection: string): Location {
+    return this.navigate({ pane: this.location.pane, selection });
+  }
+
+  /** Somewhere new outright — a wikilink to a page, say. */
+  visit(location: Location): Location {
+    return this.navigate(location);
+  }
+
+  back(): Location {
+    return this.step(() => this.history.back());
+  }
+
+  forward(): Location {
+    return this.step(() => this.history.forward());
+  }
+
+  /** Open an overlay over where you are. At most one (R2.5). */
+  show(overlay: Overlay): void {
+    this.open = overlay;
+  }
+
+  /** Close it, onto the location it was opened over (R2.3). */
+  dismiss(): void {
+    this.open = null;
+  }
+
+  private navigate(to: Location): Location {
+    if (this.open) return this.location;
+    const at = this.history.visit(to);
+    this.remember(at);
+    return at;
+  }
+
+  private step(move: () => Location | null): Location {
+    if (this.open) return this.location;
+    move();
+    this.remember(this.location);
+    return this.location;
+  }
+
+  private remember(at: Location): void {
+    // Only a real selection. A pane entered with nothing selected must not
+    // erase what it was showing, or Back and the rail would disagree about
+    // what "the wiki" means the moment you visited its index.
+    if (at.selection) this.lastSeen[at.pane] = at.selection;
+  }
 }
 
 /**

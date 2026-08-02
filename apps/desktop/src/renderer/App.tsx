@@ -16,7 +16,7 @@ import {
 } from "./dialogs.js";
 import { Editor } from "./Editor.js";
 import { renderPageBody } from "./markdown.js";
-import { History, linkTarget, type Location } from "./navigation.js";
+import { linkTarget, Shell, type Location, type Overlay, type Pane } from "./navigation.js";
 import {
   clearAt,
   clearFailureAt,
@@ -28,8 +28,12 @@ import {
   type Place,
 } from "./notices.js";
 import { Findings, History as HistoryPanel, PageSources, SourceAt } from "./Panels.js";
-import { RecordingIndicator } from "./RecordingIndicator.js";
-import { useRecording, type RecordingState } from "./recording.js";
+import { Rail } from "./Rail.js";
+import { useRecording } from "./recording.js";
+import { StatusBar } from "./StatusBar.js";
+import { Titlebar } from "./Titlebar.js";
+import { Drawer } from "./ui/Drawer.js";
+import { Sheet } from "./ui/Sheet.js";
 import { Launcher } from "./Launcher.js";
 import { Settings } from "./Settings.js";
 import { Sources } from "./Sources.js";
@@ -62,14 +66,20 @@ export function App(): React.JSX.Element {
   // 1.5 — one slot per place rather than one for the window. What failed is
   // said where it failed, and a failure in one place no longer erases another.
   const [notices, setNotices] = useState<readonly Notice[]>([]);
-  const history = useRef(new History());
-  const [location, setLocation] = useState<Location>({ view: "wiki" });
+  // Where the window is, and the overlays that are not places. The `Shell`
+  // owns the rules (spec `desktop-shell`); these two mirror it so React
+  // re-renders, because a mutable object in a ref does not.
+  const shell = useRef(new Shell());
+  const [location, setLocation] = useState<Location>(shell.current.location);
+  const [overlay, setOverlay] = useState<Overlay | null>(null);
   const recording = useRecording();
   // 1.1 — every question this shell asks. `window.prompt` answers nothing in
   // Electron, so the four controls that used it did nothing at all.
   const { ask, confirm, element: dialog } = useDialogs();
 
-  const [openSource, setOpenSource] = useState<{ id: string; fragment: string } | null>(null);
+  /** How many findings the checks last reported; null until they have run. */
+  const [findings, setFindings] = useState<number | null>(null);
+  const [lastWrite, setLastWrite] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [dropped, setDropped] = useState<DropOutcome[] | null>(null);
@@ -102,21 +112,28 @@ export function App(): React.JSX.Element {
     [say],
   );
 
-  const go = useCallback((next: Location | null) => {
-    if (!next) return;
+  /** Arrive somewhere: whatever the `Shell` decided, put it on screen. */
+  const arrive = useCallback((at: Location) => {
     setEditing(false);
-    setLocation(next);
+    setLocation(at);
     // The page left behind takes its notices with it. A rename's note is set
     // after the navigation that carried it, so it survives this on purpose.
     setNotices((current) => clearAt(current, "page"));
   }, []);
 
-  const visit = useCallback(
-    (next: Location) => {
-      go(history.current.visit(next));
-    },
-    [go],
-  );
+  const visit = useCallback((next: Location) => arrive(shell.current.visit(next)), [arrive]);
+
+  const goTo = useCallback((pane: Pane) => arrive(shell.current.goTo(pane)), [arrive]);
+
+  const show = useCallback((next: Overlay) => {
+    shell.current.show(next);
+    setOverlay(next);
+  }, []);
+
+  const dismiss = useCallback(() => {
+    shell.current.dismiss();
+    setOverlay(null);
+  }, []);
 
   useEffect(() => {
     // The two failures that really are the window's, and the only two: without
@@ -142,12 +159,12 @@ export function App(): React.JSX.Element {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let reloadPage = false;
     const unsubscribe = bridge().onChanged((change) => {
-      reloadPage ||= isOpenPage(change, location.slug);
+      reloadPage ||= isOpenPage(change, location.selection);
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
         void refreshIndex();
-        if (reloadPage && location.slug) void reload(location.slug);
+        if (reloadPage && location.selection) void reload(location.selection);
         reloadPage = false;
         setReloadKey((n) => n + 1);
       }, COALESCE_MS);
@@ -156,7 +173,7 @@ export function App(): React.JSX.Element {
       if (timer) clearTimeout(timer);
       unsubscribe();
     };
-  }, [location.slug, refreshIndex, reload]);
+  }, [location.selection, refreshIndex, reload]);
 
   // 3.7 — the doorway. A file an agent wrote into `raw/_inbox/` while this
   // window was open becomes a source with nobody clicking anything, so the
@@ -173,12 +190,24 @@ export function App(): React.JSX.Element {
     });
   }, []);
 
+  // Whether there is anything to undo (R5.4, R5.5). The newest operation, and
+  // nothing of it beyond the fact that it exists — the drawer is what shows the
+  // rest, and a copy of it in the status bar would be a second record of one
+  // fact, which is the one that goes stale.
   useEffect(() => {
-    if (location.view !== "wiki" || !location.slug) {
+    if (!hasBridge()) return;
+    void bridge()
+      .history()
+      .then((operations) => setLastWrite(operations[0]?.id ?? null))
+      .catch(() => setLastWrite(null));
+  }, [reloadKey]);
+
+  useEffect(() => {
+    if (location.pane !== "wiki" || !location.selection) {
       setPage(null);
       return;
     }
-    void reload(location.slug);
+    void reload(location.selection);
   }, [location, reload]);
 
   const html = useMemo(
@@ -199,10 +228,10 @@ export function App(): React.JSX.Element {
       // the system browser.
       if (target.kind === "page") {
         event.preventDefault();
-        visit({ view: "wiki", slug: target.slug });
+        visit({ pane: "wiki", selection: target.slug });
       } else if (target.kind === "source") {
         event.preventDefault();
-        setOpenSource({ id: target.id, fragment: target.fragment });
+        show({ kind: "provenance", source: target.id, fragment: target.fragment });
       }
     },
     [visit],
@@ -291,120 +320,123 @@ export function App(): React.JSX.Element {
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
     >
-      <header className="chrome">
-        <span className="chrome__project">{project?.name ?? "…"}</span>
-        <nav className="nav">
-          <button onClick={() => go(history.current.back())} disabled={!history.current.canGoBack}>
-            ←
-          </button>
-          <button
-            onClick={() => go(history.current.forward())}
-            disabled={!history.current.canGoForward}
-          >
-            →
-          </button>
-          {(["wiki", "sources", "checks", "history", "settings"] as const).map((view) => (
-            <button
-              key={view}
-              aria-current={location.view === view}
-              onClick={() => visit({ view })}
-            >
-              {view[0]!.toUpperCase() + view.slice(1)}
-            </button>
-          ))}
-        </nav>
-        <span className="chrome__spacer" />
-        <RecordingIndicator recording={recording} />
-        <RecordControls state={recording.state} onAction={(a) => void record(a)} />
-      </header>
+      <Titlebar
+        project={project?.name ?? "…"}
+        recording={recording}
+        onRecord={(action) => void record(action)}
+        onSettings={() => show({ kind: "settings" })}
+      />
 
-      {/* Beside the controls it is about, and above every pane because it is
-          about the window rather than about any one of them. */}
-      <Reported notices={notices} place="recording" />
-      <Reported notices={notices} place="shell" />
+      <div className="app-body">
+        <Rail current={location.pane} onGoTo={goTo} language={project?.language ?? "en"} />
 
-      <main className="main">
-        {dropped ? <Dropped outcomes={dropped} onDismiss={() => setDropped(null)} /> : null}
-        <InboxWaiting
-          reloadKey={reloadKey}
-          onTaken={(outcomes) => {
-            setDropped((current) => [...(current ?? []), ...outcomes]);
-            setReloadKey((n) => n + 1);
-          }}
-        />
-        {dragging ? <p className="empty">Drop files to add them as sources.</p> : null}
-
-        {location.view === "wiki" && !location.slug ? (
-          <>
-            {/* The wiki pane's own: reading the index failed, or creating a
-                page from this list did. */}
-            <Reported notices={notices} place="wiki" />
-            <PageList
-              index={index}
-              root={project?.root ?? ""}
-              onOpen={(slug) => visit({ view: "wiki", slug })}
-              onCreate={() => void createPage(index, ask, visit, say)}
-            />
-          </>
-        ) : null}
-
-        {location.view === "wiki" && !page && location.slug ? (
-          <Reported notices={notices} place="page" />
-        ) : null}
-
-        {location.view === "wiki" && page && !editing ? (
-          <article className="page">
-            <PageBar
-              page={page}
-              onEdit={() => setEditing(true)}
-              onRename={() => void renameFlow(page.slug, ask, visit, say)}
-              onDelete={() => void deleteFlow(page.slug, confirm, visit, say)}
-            />
-            {/* On the page, under the bar whose buttons caused it. */}
-            <Reported notices={notices} place="page" />
-            <Frontmatter page={page} />
-            {/* 6.5 — where this page came from, and a way into each source. */}
-            <PageSources
-              slug={page.slug}
-              reloadKey={reloadKey}
-              onOpen={(id, fragment) => setOpenSource({ id, fragment })}
-            />
-            {/* Rendered with `html: false` and two token rules, so what reaches
-                here is a closed set of tags this renderer produced. */}
-            <div
-              onClick={onPageClick}
-              onAuxClick={onPageClick}
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
-          </article>
-        ) : null}
-
-        {location.view === "wiki" && page && editing ? (
-          <Editor
-            page={page}
-            slugs={index.slugs}
-            onSaved={() => {
-              setEditing(false);
-              void reload(page.slug);
+        <main className="main">
+          {/* Beside the controls they are about: the recording notice under
+              the titlebar, the shell's own above every pane. */}
+          <Reported notices={notices} place="recording" />
+          <Reported notices={notices} place="shell" />
+          {dropped ? <Dropped outcomes={dropped} onDismiss={() => setDropped(null)} /> : null}
+          <InboxWaiting
+            reloadKey={reloadKey}
+            onTaken={(outcomes) => {
+              setDropped((current) => [...(current ?? []), ...outcomes]);
+              setReloadKey((n) => n + 1);
             }}
-            onCancel={() => setEditing(false)}
           />
-        ) : null}
+          {dragging ? <p className="empty">Drop files to add them as sources.</p> : null}
 
-        {location.view === "sources" ? (
-          <Sources reloadKey={reloadKey} onOpenPage={(slug) => visit({ view: "wiki", slug })} />
-        ) : null}
-        {location.view === "checks" ? <Findings reloadKey={reloadKey} /> : null}
-        {location.view === "history" ? <HistoryPanel reloadKey={reloadKey} /> : null}
-        {location.view === "settings" ? <Settings /> : null}
-      </main>
+          {location.pane === "wiki" && !location.selection ? (
+            <>
+              {/* The wiki pane's own: reading the index failed, or creating a
+                page from this list did. */}
+              <Reported notices={notices} place="wiki" />
+              <PageList
+                index={index}
+                root={project?.root ?? ""}
+                onOpen={(slug) => visit({ pane: "wiki", selection: slug })}
+                onCreate={() => void createPage(index, ask, visit, say)}
+              />
+            </>
+          ) : null}
 
-      {openSource ? (
-        <SourceAt
-          id={openSource.id}
-          fragment={openSource.fragment}
-          onClose={() => setOpenSource(null)}
-        />
+          {location.pane === "wiki" && !page && location.selection ? (
+            <Reported notices={notices} place="page" />
+          ) : null}
+
+          {location.pane === "wiki" && page && !editing ? (
+            <article className="page">
+              <PageBar
+                page={page}
+                onEdit={() => setEditing(true)}
+                onRename={() => void renameFlow(page.slug, ask, visit, say)}
+                onDelete={() => void deleteFlow(page.slug, confirm, visit, say)}
+              />
+              {/* On the page, under the bar whose buttons caused it. */}
+              <Reported notices={notices} place="page" />
+              <Frontmatter page={page} />
+              {/* 6.5 — where this page came from, and a way into each source. */}
+              <PageSources
+                slug={page.slug}
+                reloadKey={reloadKey}
+                onOpen={(id, fragment) => show({ kind: "provenance", source: id, fragment })}
+              />
+              {/* Rendered with `html: false` and two token rules, so what reaches
+                here is a closed set of tags this renderer produced. */}
+              <div
+                onClick={onPageClick}
+                onAuxClick={onPageClick}
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            </article>
+          ) : null}
+
+          {location.pane === "wiki" && page && editing ? (
+            <Editor
+              page={page}
+              slugs={index.slugs}
+              onSaved={() => {
+                setEditing(false);
+                void reload(page.slug);
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : null}
+
+          {location.pane === "sources" ? (
+            <Sources
+              reloadKey={reloadKey}
+              onOpenPage={(slug) => visit({ pane: "wiki", selection: slug })}
+            />
+          ) : null}
+          {location.pane === "checks" ? (
+            <Findings reloadKey={reloadKey} onCount={setFindings} />
+          ) : null}
+        </main>
+      </div>
+
+      <StatusBar
+        root={project?.root ?? ""}
+        findings={findings}
+        onGoToChecks={() => goTo("checks")}
+        onUndo={lastWrite ? () => show({ kind: "history" }) : null}
+      />
+
+      {/* The overlays. None of them is a place you went (R2.2), so none is in
+          the history — closing one puts you back exactly where it opened. */}
+      {overlay?.kind === "settings" ? (
+        <Sheet title="Settings" onClose={dismiss}>
+          <Settings />
+        </Sheet>
+      ) : null}
+
+      {overlay?.kind === "history" ? (
+        <Drawer title="History" onClose={dismiss}>
+          <HistoryPanel reloadKey={reloadKey} />
+        </Drawer>
+      ) : null}
+
+      {overlay?.kind === "provenance" ? (
+        <SourceAt id={overlay.source} fragment={overlay.fragment} onClose={dismiss} />
       ) : null}
 
       {/* The open question, if there is one. A modal is in the top layer, so
@@ -430,31 +462,6 @@ function Reported({
   const notice = noticeAt(notices, place);
   if (!notice) return null;
   return <p className={notice.tone === "error" ? "error" : "empty"}>{notice.text}</p>;
-}
-
-/** Record, pause, stop — the affordance 8.2 asks for. */
-function RecordControls({
-  state,
-  onAction,
-}: {
-  state: RecordingState;
-  onAction: (action: "start" | "pause" | "resume" | "stop") => void;
-}): React.JSX.Element {
-  if (state === "idle") {
-    return <button onClick={() => onAction("start")}>Record</button>;
-  }
-  return (
-    <span className="nav">
-      {state === "paused" ? (
-        <button onClick={() => onAction("resume")}>Resume</button>
-      ) : (
-        <button onClick={() => onAction("pause")}>Pause</button>
-      )}
-      <button className="danger" onClick={() => onAction("stop")}>
-        Stop
-      </button>
-    </span>
-  );
 }
 
 /** What a drop did — 3.5 asks for what was recognised *and* what was not. */
@@ -537,7 +544,7 @@ async function createPage(
       );
       return;
     }
-    visit({ view: "wiki", slug });
+    visit({ pane: "wiki", selection: slug });
   } catch (e) {
     say(failure("wiki", e));
   }
@@ -575,7 +582,7 @@ async function renameFlow(
     // **After the navigation, and a note rather than an error.** It reported a
     // success through the error channel before, in the same red box a failed
     // rename used — so the one outcome worth reading looked like the other.
-    visit({ view: "wiki", slug: to });
+    visit({ pane: "wiki", selection: to });
     if (result.repointed.length > 0) {
       say(note("page", `Renamed. Repointed the links on: ${result.repointed.join(", ")}`));
     }
@@ -597,7 +604,7 @@ async function deleteFlow(
   if (!(await confirm(deleteQuestion(slug)))) return;
   try {
     await bridge().remove(slug);
-    visit({ view: "wiki" });
+    visit({ pane: "wiki" });
   } catch (e) {
     // Still on the page, because the delete did not happen.
     say(failure("page", e));
