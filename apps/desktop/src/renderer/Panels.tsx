@@ -1,84 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Finding, Operation } from "@open-wiki/access";
-import type { PageSource, SourceLocation } from "../main/sources.js";
+import type { SourceLocation } from "../main/sources.js";
 import { bridge } from "./bridge.js";
 
 /**
  * The panels that hang off the main view: the checks (7.6), the operation
- * history (8.11), what a provenance link opens (8.6), and where the open page
- * came from (6.5).
- */
-
-/**
- * Which sources the open page came from (plan 6.5) — the inverse of the sources
- * screen's "cited by" (6.4).
+ * history (8.11) and what a provenance link opens (8.6).
  *
- * It sits on the page itself rather than behind a button, because the question
- * it answers is the one a reader has while they are reading. Clicking one opens
- * the same panel a provenance link in the prose opens, at the source's start.
- *
- * A citation whose source is not there is **shown as broken, not hidden** — the
- * same choice 8.5 makes for a wikilink that does not resolve. Dropping it would
- * leave the reader believing the page is sourced, which is the one wrong answer
- * available here.
+ * Where the open page came from (6.5) used to be here too. It moved into
+ * `Side.tsx` when the wiki pane gained a side column, because that is now the
+ * only place it is shown and two renderings of one question drift.
  */
-export function PageSources({
-  slug,
-  reloadKey,
-  onOpen,
-}: {
-  slug: string;
-  reloadKey: number;
-  onOpen: (id: string, fragment: string) => void;
-}): React.JSX.Element | null {
-  const [sources, setSources] = useState<PageSource[] | null>(null);
-
-  useEffect(() => {
-    // **Cleared first.** The component survives navigation — same instance, no
-    // `key` — so without this the previous page's sources stay on screen under
-    // the new page's title and body until the walk over the wiki returns. For a
-    // component whose whole job is saying where the page in front of you came
-    // from, attributing one page's provenance to another is the one wrong
-    // answer available.
-    setSources(null);
-    // Guarded as well, and against a different failure: a slow answer for the
-    // page we have left arriving after the fast one for the page we are on.
-    let live = true;
-    void bridge()
-      .sourcesOfPage(slug)
-      .then((found) => {
-        if (live) setSources(found);
-      })
-      .catch(() => {
-        if (live) setSources([]);
-      });
-    return () => {
-      live = false;
-    };
-  }, [slug, reloadKey]);
-
-  if (!sources || sources.length === 0) return null;
-
-  return (
-    <p className="source__cited">
-      From{" "}
-      {sources.map((source, i) => (
-        <span key={source.id}>
-          {i > 0 ? ", " : ""}
-          {source.kind === null ? (
-            <span className="wikilink--broken" title={source.reason ?? source.id}>
-              {source.id}
-            </span>
-          ) : (
-            <a title={source.id} onClick={() => onOpen(source.id, source.fragment)}>
-              {source.title}
-            </a>
-          )}
-        </span>
-      ))}
-    </p>
-  );
-}
 
 /**
  * The integrity findings (plan 7.6).

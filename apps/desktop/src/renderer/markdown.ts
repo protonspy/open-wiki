@@ -60,6 +60,23 @@ const WIKILINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 // and the checks do not.
 const PROVENANCE = /\b(src|rec):\/\/([^\s#)\]]+)#([p\d:]+)/g;
 
+/**
+ * What a citation chip reads (spec `wiki-pane`, R2.7).
+ *
+ * **The label is the fragment, not the URL.** `rec://fenix-weekly-2026-07-31#14:32`
+ * in the middle of a sentence is forty characters of machinery in a line of
+ * prose; what the reader wants is *14:32*, and the id is already in the chip's
+ * attributes and in the panel the chip opens.
+ *
+ * `p12` becomes `p.12`, which is how a page is written outside a URL. The
+ * fragment itself is untouched — it is what `resolveProvenance` validates and
+ * what 8.6 seeks by, so it is never rewritten, only shown differently.
+ */
+export function citationLabel(scheme: string, fragment: string): string {
+  const page = scheme === "src" ? /^p(\d+)$/.exec(fragment) : null;
+  return page ? `p.${page[1]}` : fragment;
+}
+
 /** Every wikilink in a body, in order. Position matters, so nothing is deduplicated. */
 export function extractWikilinks(body: string, slugs: readonly string[]): Wikilink[] {
   const known = new Set(slugs);
@@ -159,7 +176,13 @@ function splitProvenance(state: StateCore, token: Token): Token[] {
     open.attrSet("class", `provenance provenance--${match[1]!}`);
     open.attrSet(SOURCE_ATTR, match[2]!);
     open.attrSet(FRAGMENT_ATTR, match[3]!);
-    out.push(open, textToken(state, match[0]), new state.Token("provenance_close", "a", -1));
+    // The chip reads as its fragment; the id and the fragment ride the
+    // attributes, which is what the seek and the checks use.
+    out.push(
+      open,
+      textToken(state, citationLabel(match[1]!, match[3]!)),
+      new state.Token("provenance_close", "a", -1),
+    );
     cursor = at + match[0].length;
   }
   if (out.length === 0) return [token];

@@ -9,6 +9,9 @@ import {
   type PageRef,
   type SourceState,
 } from "@open-wiki/access/read";
+// From `shared/`: the renderer's reader needs `titleOfPage` too, and a page's
+// name must not be one thing in the tree and another on the page itself.
+import { groupOfPage, titleOfPage } from "../shared/pages.js";
 
 /**
  * Everything the renderer is allowed to ask for (plan 8.2 and 8.5).
@@ -36,16 +39,74 @@ export interface PageView {
   frontmatterBroken: boolean;
 }
 
+/**
+ * A page as the tree shows it: where it sits, what it is called, and which
+ * band it is listed under (spec `wiki-pane`, R1.1 and R1.3).
+ *
+ * The two extra fields live here rather than on `PageRef`, which belongs to
+ * `@open-wiki/access` and answers a different question — where a page *is*.
+ * What it is *called* is a screen's concern, and the store has no opinion on it.
+ */
+export interface IndexedPage extends PageRef {
+  /** The page's `title`, or its slug when it has none (R1.3). */
+  title: string;
+  /** The folder under `wiki/`, or null for a page at the top (R1.2). */
+  group: string | null;
+}
+
 export interface WikiIndex {
-  pages: PageRef[];
+  pages: IndexedPage[];
   /** Slugs, so the renderer can tell a live wikilink from a dead one. */
   slugs: string[];
 }
 
-/** Every page in the wiki, wherever it sits — `adr:0016-a-page-is-its-slug-wherever-it-sits`. */
+/**
+ * Every page in the wiki, wherever it sits — `adr:0016-a-page-is-its-slug-wherever-it-sits`.
+ *
+ * **This reads every page**, where it used to only list them: the tree shows
+ * titles, and a title is in the frontmatter. That is O(pages) reads on every
+ * coalesced folder change, which is bounded by the page count and is the cost
+ * `specs/wiki-pane/design.md` accepted — if it ever stops being bounded the
+ * answer is a cache with an invalidation story, not a tree of slugs.
+ *
+ * A page whose frontmatter is absent, broken or not a mapping is listed under
+ * its slug rather than dropped. It is a group 7 finding, and a wiki that hides
+ * its malformed pages is a wiki nobody fixes.
+ */
 export function wikiIndex(projectRoot: string): WikiIndex {
-  const pages = listPages(projectRoot);
+  const pages = listPages(projectRoot).map((ref) => ({
+    ...ref,
+    title: titleOfPage(frontmatterOf(projectRoot, ref), ref.slug),
+    group: groupOfPage(ref.path),
+  }));
   return { pages, slugs: pages.map((p) => p.slug) };
+}
+
+/** One page's frontmatter for the index, or null for any reason it has none. */
+function frontmatterOf(projectRoot: string, ref: PageRef): Record<string, unknown> | null {
+  try {
+    const file = assertWithin(projectRoot, join(projectRoot, ref.path));
+    return asObject(readFrontmatter(readFileSync(file, "utf8")));
+  } catch {
+    // A page listed a moment ago and unreadable now — deleted mid-walk, or on a
+    // share that raised EPERM. The index is what the screen redraws from, so it
+    // degrades to the slug rather than taking the whole redraw with it.
+    return null;
+  }
+}
+
+/**
+ * The frontmatter as a mapping, or null.
+ *
+ * A page whose frontmatter is a list, or a bare string, is malformed rather
+ * than absent — both answer null here, and `readPage` keeps the distinction
+ * through `frontmatterBroken` so the reader can say which.
+ */
+function asObject(block: ReturnType<typeof readFrontmatter>): Record<string, unknown> | null {
+  const parsed = block?.parsed === true ? block.frontmatter : null;
+  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : null;
 }
 
 export class NoSuchPageError extends Error {
@@ -71,7 +132,6 @@ export function readPage(projectRoot: string, slug: string): PageView {
   if (!existsSync(file)) throw new NoSuchPageError(slug);
   const markdown = readFileSync(file, "utf8");
   const block = readFrontmatter(markdown);
-  const parsed = block?.parsed === true ? block.frontmatter : null;
   return {
     slug: ref.slug,
     path: ref.path,
@@ -79,10 +139,7 @@ export function readPage(projectRoot: string, slug: string): PageView {
     body: block?.body ?? markdown,
     // A page whose frontmatter is a list, or a string, is malformed rather
     // than absent; the screen shows the body either way and 7.x reports it.
-    frontmatter:
-      typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-        ? (parsed as Record<string, unknown>)
-        : null,
+    frontmatter: asObject(block),
     frontmatterBroken: block?.parsed === false,
   };
 }

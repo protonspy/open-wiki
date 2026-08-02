@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type { DropOutcome } from "../main/ingest.js";
 // From `shared/`, never from `main/watcher.js`. That module starts a chokidar
@@ -15,8 +15,7 @@ import {
   renameQuestion,
 } from "./dialogs.js";
 import { Editor } from "./Editor.js";
-import { renderPageBody } from "./markdown.js";
-import { linkTarget, Shell, type Location, type Overlay, type Pane } from "./navigation.js";
+import { Shell, type LinkTarget, type Location, type Overlay, type Pane } from "./navigation.js";
 import {
   clearAt,
   clearFailureAt,
@@ -25,10 +24,13 @@ import {
   noticeAt,
   replaceAt,
   type Notice,
-  type Place,
 } from "./notices.js";
-import { Findings, History as HistoryPanel, PageSources, SourceAt } from "./Panels.js";
+import { Reader, readerState } from "./Reader.js";
+import { Side } from "./Side.js";
+import { Findings, History as HistoryPanel, SourceAt } from "./Panels.js";
 import { Rail } from "./Rail.js";
+import { Reported } from "./Reported.js";
+import { WikiPane } from "./WikiPane.js";
 import { useRecording } from "./recording.js";
 import { StatusBar } from "./StatusBar.js";
 import { Titlebar } from "./Titlebar.js";
@@ -63,6 +65,8 @@ export function App(): React.JSX.Element {
   /** Null until the first answer arrives; false once we know there is none. */
   const [hasProject, setHasProject] = useState<boolean | null>(null);
   const [index, setIndex] = useState<WikiIndex>({ pages: [], slugs: [] });
+  /** False until the first index read comes back — see `readerState`. */
+  const [indexKnown, setIndexKnown] = useState(false);
   const [page, setPage] = useState<PageView | null>(null);
   // 1.5 — one slot per place rather than one for the window. What failed is
   // said where it failed, and a failure in one place no longer erases another.
@@ -94,6 +98,9 @@ export function App(): React.JSX.Element {
   const refreshIndex = useCallback(async () => {
     try {
       setIndex(await bridge().index());
+      // Only on success: `indexKnown` is what tells an empty wiki apart from a
+      // wiki nobody has read yet, and a failed read has not read it.
+      setIndexKnown(true);
       setNotices((current) => clearFailureAt(current, "wiki"));
     } catch (e) {
       say(failure("wiki", e));
@@ -211,32 +218,30 @@ export function App(): React.JSX.Element {
     void reload(location.selection);
   }, [location, reload]);
 
-  const html = useMemo(
-    () => (page ? renderPageBody(page.body, { slugs: index.slugs }) : ""),
-    [page, index.slugs],
-  );
-
-  // One handler for the whole rendered page. `onAuxClick` as well, because
-  // Chromium dispatches the middle button as `auxclick` — and a middle click
-  // on a link is what asks Electron to open a new window.
-  const onPageClick = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      const anchor = (event.target as HTMLElement).closest("a, span[title]");
-      if (!anchor) return;
-      const target = linkTarget(anchor);
-      // Only what the application handles is cancelled. An external link is
-      // left to the main process, which allowlists the scheme and hands it to
-      // the system browser.
-      if (target.kind === "page") {
-        event.preventDefault();
-        visit({ pane: "wiki", selection: target.slug });
-      } else if (target.kind === "source") {
-        event.preventDefault();
+  /**
+   * Where a link in the prose goes. The reader decides what was clicked; this
+   * decides what that means, because navigating and opening an overlay are the
+   * shell's, not the page's.
+   */
+  const onLink = useCallback(
+    (target: LinkTarget) => {
+      if (target.kind === "page") visit({ pane: "wiki", selection: target.slug });
+      else if (target.kind === "source") {
         show({ kind: "provenance", source: target.id, fragment: target.fragment });
       }
+      // An external link is left to the main process, which allowlists the
+      // scheme and hands it to the system browser.
     },
-    [visit],
+    [visit, show],
   );
+
+  /** What the reader column is showing, when it is not showing a page (R4). */
+  const reading = readerState({
+    pageCount: indexKnown ? index.pages.length : null,
+    selection: location.selection,
+    loaded: page !== null,
+    failed: noticeAt(notices, "page")?.tone === "error",
+  });
 
   const record = useCallback(
     async (action: "start" | "pause" | "resume" | "stop") => {
@@ -335,75 +340,90 @@ export function App(): React.JSX.Element {
       <div className="app-body">
         <Rail current={location.pane} onGoTo={goTo} language={project?.language ?? "en"} />
 
-        <main className="main">
+        <main className={location.pane === "wiki" ? "main main--bleed" : "main"}>
           {/* Beside the controls they are about: the recording notice under
               the titlebar, the shell's own above every pane. */}
-          <Reported notices={notices} place="recording" />
-          <Reported notices={notices} place="shell" />
-          {dropped ? <Dropped outcomes={dropped} onDismiss={() => setDropped(null)} /> : null}
-          <InboxWaiting
-            reloadKey={reloadKey}
-            onTaken={(outcomes) => {
-              setDropped((current) => [...(current ?? []), ...outcomes]);
-              setReloadKey((n) => n + 1);
-            }}
-          />
-          {dragging ? <p className="empty">Drop files to add them as sources.</p> : null}
-
-          {location.pane === "wiki" && !location.selection ? (
-            <>
-              {/* The wiki pane's own: reading the index failed, or creating a
-                page from this list did. */}
-              <Reported notices={notices} place="wiki" />
-              <PageList
-                index={index}
-                root={project?.root ?? ""}
-                onOpen={(slug) => visit({ pane: "wiki", selection: slug })}
-                onCreate={() => void createPage(index, ask, visit, say)}
-              />
-            </>
-          ) : null}
-
-          {location.pane === "wiki" && !page && location.selection ? (
-            <Reported notices={notices} place="page" />
-          ) : null}
-
-          {location.pane === "wiki" && page && !editing ? (
-            <article className="page">
-              <PageBar
-                page={page}
-                onEdit={() => setEditing(true)}
-                onRename={() => void renameFlow(page.slug, ask, visit, say)}
-                onDelete={() => void deleteFlow(page.slug, confirm, visit, say)}
-              />
-              {/* On the page, under the bar whose buttons caused it. */}
-              <Reported notices={notices} place="page" />
-              <Frontmatter page={page} />
-              {/* 6.5 — where this page came from, and a way into each source. */}
-              <PageSources
-                slug={page.slug}
-                reloadKey={reloadKey}
-                onOpen={(id, fragment) => show({ kind: "provenance", source: id, fragment })}
-              />
-              {/* Rendered with `html: false` and two token rules, so what reaches
-                here is a closed set of tags this renderer produced. */}
-              <div
-                onClick={onPageClick}
-                onAuxClick={onPageClick}
-                dangerouslySetInnerHTML={{ __html: html }}
-              />
-            </article>
-          ) : null}
-
-          {location.pane === "wiki" && page && editing ? (
-            <Editor
-              page={page}
-              slugs={index.slugs}
-              onSaved={() => {
-                setEditing(false);
-                void reload(page.slug);
+          <div className="main__notices">
+            <Reported notices={notices} place="recording" />
+            <Reported notices={notices} place="shell" />
+            {dropped ? <Dropped outcomes={dropped} onDismiss={() => setDropped(null)} /> : null}
+            <InboxWaiting
+              reloadKey={reloadKey}
+              onTaken={(outcomes) => {
+                setDropped((current) => [...(current ?? []), ...outcomes]);
+                setReloadKey((n) => n + 1);
               }}
-              onCancel={() => setEditing(false)}
+            />
+            {dragging ? <p className="empty">Drop files to add them as sources.</p> : null}
+          </div>
+
+          {location.pane === "wiki" ? (
+            <WikiPane
+              index={index}
+              page={page}
+              selection={location.selection}
+              notices={notices}
+              onOpen={(slug) => visit({ pane: "wiki", selection: slug })}
+              onCreate={() => void createPage(index, ask, visit, say)}
+              onEdit={() => setEditing(true)}
+              onRename={() => {
+                if (page) void renameFlow(page.slug, ask, visit, say);
+              }}
+              onDelete={() => {
+                if (page) void deleteFlow(page.slug, confirm, visit, say);
+              }}
+              side={
+                page ? (
+                  /* 6.5 — where this page came from, and what the checks say
+                     about it, beside the page rather than behind a button. */
+                  <Side
+                    page={page}
+                    reloadKey={reloadKey}
+                    onOpenSource={(id, fragment) =>
+                      show({ kind: "provenance", source: id, fragment })
+                    }
+                  />
+                ) : undefined
+              }
+              reader={
+                <>
+                  {/* R4 — each of these rendered nothing before, which reads as
+                      "there is nothing here" whichever of them it was. */}
+                  {reading === "loading-wiki" ? (
+                    <p className="empty">Reading the wiki&hellip;</p>
+                  ) : null}
+
+                  {reading === "empty-wiki" ? <EmptyWiki root={project?.root ?? ""} /> : null}
+
+                  {reading === "no-selection" ? (
+                    <p className="empty">Pick a page on the left to read it.</p>
+                  ) : null}
+
+                  {reading === "loading" ? <p className="empty">Opening&hellip;</p> : null}
+
+                  {reading === "failed" ? <Reported notices={notices} place="page" /> : null}
+
+                  {page && !editing ? (
+                    <>
+                      {/* On the page, under the bar whose buttons caused it. */}
+                      <Reported notices={notices} place="page" />
+                      <Reader page={page} slugs={index.slugs} onLink={onLink} />
+                    </>
+                  ) : null}
+
+                  {page && editing ? (
+                    <Editor
+                      page={page}
+                      slugs={index.slugs}
+                      onSaved={() => {
+                        setEditing(false);
+                        void reload(page.slug);
+                      }}
+                      onCancel={() => setEditing(false)}
+                    />
+                  ) : null}
+                </>
+              }
             />
           ) : null}
 
@@ -464,24 +484,6 @@ export function App(): React.JSX.Element {
   );
 }
 
-/**
- * What one place has to say, if it has anything (plan 1.5).
- *
- * Rendered at each place rather than once at the top, which is the whole of
- * this task: the component is trivial and where it is put is the point.
- */
-function Reported({
-  notices,
-  place,
-}: {
-  notices: readonly Notice[];
-  place: Place;
-}): React.JSX.Element | null {
-  const notice = noticeAt(notices, place);
-  if (!notice) return null;
-  return <p className={notice.tone === "error" ? "error" : "empty"}>{notice.text}</p>;
-}
-
 /** What a drop did — 3.5 asks for what was recognised *and* what was not. */
 function Dropped({
   outcomes,
@@ -509,30 +511,6 @@ function Dropped({
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function PageBar({
-  page,
-  onEdit,
-  onRename,
-  onDelete,
-}: {
-  page: PageView;
-  onEdit: () => void;
-  onRename: () => void;
-  onDelete: () => void;
-}): React.JSX.Element {
-  return (
-    <div className="editor__bar">
-      <code>{page.path}</code>
-      <span className="chrome__spacer" />
-      <button onClick={onEdit}>Edit</button>
-      <button onClick={onRename}>Rename</button>
-      <button className="danger" onClick={onDelete}>
-        Delete
-      </button>
     </div>
   );
 }
@@ -629,37 +607,6 @@ async function deleteFlow(
   }
 }
 
-function PageList({
-  index,
-  root,
-  onOpen,
-  onCreate,
-}: {
-  index: WikiIndex;
-  root: string;
-  onOpen: (slug: string) => void;
-  onCreate: () => void;
-}): React.JSX.Element {
-  return (
-    <>
-      <div className="editor__bar">
-        <button onClick={onCreate}>New page</button>
-      </div>
-      {index.pages.length === 0 ? (
-        <EmptyWiki root={root} />
-      ) : (
-        <ul className="list">
-          {index.pages.map((ref) => (
-            <li key={ref.path}>
-              <button onClick={() => onOpen(ref.slug)}>{ref.slug}</button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
-}
-
 /**
  * What an empty wiki says (plan 1.4).
  *
@@ -695,24 +642,6 @@ function EmptyWiki({ root }: { root: string }): React.JSX.Element {
         Writing the first one yourself is fine too — <strong>New page</strong>, above.
       </p>
     </div>
-  );
-}
-
-/** The page's frontmatter, shown as itself — 8.5 asks for it on the page. */
-function Frontmatter({ page }: { page: PageView }): React.JSX.Element | null {
-  if (page.frontmatterBroken) {
-    return <p className="error">This page&rsquo;s frontmatter will not parse.</p>;
-  }
-  if (!page.frontmatter) return null;
-  return (
-    <dl className="frontmatter">
-      {Object.entries(page.frontmatter).map(([key, value]) => (
-        <div key={key} style={{ display: "contents" }}>
-          <dt>{key}</dt>
-          <dd>{Array.isArray(value) ? value.join(", ") : String(value ?? "")}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 
