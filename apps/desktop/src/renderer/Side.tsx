@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { PageView } from "../main/api.js";
 import type { PageSource } from "../main/sources.js";
 import { bridge } from "./bridge.js";
+import { failed, LOADING, ready, valueOf, type Loaded } from "./loaded.js";
 import { ICON_SM } from "./ui/icons.js";
 
 /**
@@ -51,7 +52,7 @@ export function PageProvenance({
   reloadKey: number;
   onOpen: (id: string, fragment: string) => void;
 }): React.JSX.Element | null {
-  const [sources, setSources] = useState<PageSource[] | null>(null);
+  const [loaded, setLoaded] = useState<Loaded<PageSource[]>>(LOADING);
 
   useEffect(() => {
     // **Cleared first.** This component survives navigation — same instance, no
@@ -59,23 +60,36 @@ export function PageProvenance({
     // the new page's body until the walk over the wiki returns. For a panel
     // whose whole job is saying where the page in front of you came from,
     // attributing one page's provenance to another is the one wrong answer.
-    setSources(null);
+    setLoaded(LOADING);
     // Guarded as well, against a different failure: a slow answer for the page
     // we have left arriving after the fast one for the page we are on.
     let live = true;
     void bridge()
       .sourcesOfPage(slug)
       .then((found) => {
-        if (live) setSources(found);
+        if (live) setLoaded(ready(found));
       })
-      .catch(() => {
-        if (live) setSources([]);
+      // 8.3 — **not an empty list.** A read that failed used to omit the
+      // section, which reads as "this page rests on nothing" — the opposite
+      // claim, made silently, on the panel whose subject is provenance.
+      .catch((e: unknown) => {
+        if (live) setLoaded(failed(e));
       });
     return () => {
       live = false;
     };
   }, [slug, reloadKey]);
 
+  if (loaded.state === "failed") {
+    return (
+      <>
+        <p className="side-title">Where this page came from</p>
+        <p className="error">Could not read this page&rsquo;s sources: {loaded.why}</p>
+      </>
+    );
+  }
+
+  const sources = valueOf(loaded);
   if (!sources || sources.length === 0) return null;
 
   return (
@@ -133,24 +147,37 @@ export function PageFindings({
   path: string;
   reloadKey: number;
 }): React.JSX.Element | null {
-  const [findings, setFindings] = useState<Finding[] | null>(null);
+  const [loaded, setLoaded] = useState<Loaded<Finding[]>>(LOADING);
 
   useEffect(() => {
-    setFindings(null);
+    setLoaded(LOADING);
     let live = true;
     void bridge()
       .findings()
       .then((found) => {
-        if (live) setFindings(found);
+        if (live) setLoaded(ready(found));
       })
-      .catch(() => {
-        if (live) setFindings([]);
+      // 8.3 — the checks pane says this loudly and so does this: an empty list
+      // here would claim there is nothing wrong with the page, which is a
+      // verdict, and a read that failed reached no verdict at all.
+      .catch((e: unknown) => {
+        if (live) setLoaded(failed(e));
       });
     return () => {
       live = false;
     };
   }, [reloadKey]);
 
+  if (loaded.state === "failed") {
+    return (
+      <>
+        <p className="side-title side-title--later">Needs attention</p>
+        <p className="error">The checks could not run: {loaded.why}</p>
+      </>
+    );
+  }
+
+  const findings = valueOf(loaded);
   const mine = findings ? findingsFor(findings, path) : [];
   if (mine.length === 0) return null;
 

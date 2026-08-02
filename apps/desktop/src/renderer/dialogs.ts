@@ -1,3 +1,5 @@
+import { DEFAULT_PAGE_TYPE, PAGE_TYPES } from "./page-template.js";
+
 /**
  * The questions this window asks, and what an answer to one means (plan 1.1).
  *
@@ -47,6 +49,19 @@ export interface Question {
   emptyMeans: "refuse" | "accept";
   /** Draws the affirmative button as destructive. */
   danger?: boolean;
+  /**
+   * A second answer, chosen from a few named options (8.2).
+   *
+   * A box and a choice rather than two boxes, because the two questions are not
+   * alike: the slug is typed and the type is picked from a vocabulary the
+   * convention already names. Optional, so every question that does not have
+   * one is unchanged.
+   */
+  choose?: {
+    label: string;
+    options: readonly { value: string; label: string }[];
+    initial: string;
+  };
 }
 
 /** Creating a page — the control that did nothing at all. */
@@ -62,6 +77,10 @@ export function newPageQuestion(): Question {
     confirmLabel: "Create the page",
     cancelLabel: "Cancel",
     emptyMeans: "refuse",
+    // 8.2 — the type is half of the `id`, so a window that only made topics
+    // made every person and project wrong in the one field a later save
+    // validates.
+    choose: { label: "Type", options: PAGE_TYPES, initial: DEFAULT_PAGE_TYPE },
   };
 }
 
