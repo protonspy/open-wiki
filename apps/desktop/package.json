@@ -6,6 +6,7 @@
   "main": "build/main/index.js",
   "scripts": {
     "dev": "vite",
+    "dev:app": "node ../../scripts/dev-desktop.mjs",
     "build:renderer": "vite build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
