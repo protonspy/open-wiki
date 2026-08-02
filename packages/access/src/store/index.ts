@@ -35,6 +35,30 @@ const INDEX_HEADER =
   "# Index\n\nEvery page is reachable from here; a page that is not is a page nobody will find again.\n\n";
 const PAGES_SECTION = "## Pages";
 
+/**
+ * What a project's `wiki/` starts as (plan 1.3).
+ *
+ * **Empty and absent are not the same state**, and absent was the one that had
+ * four components each waiting for another to move first: the scaffolded wiki
+ * skill tells the agent to link a new page from `index.md`, `checkLinks`
+ * reports pages unreachable from `index.md`, `registerInIndex` invents the
+ * file on the first write, and the screen said *This wiki has no pages yet*
+ * without saying whose move it was. Seeding both means the instruction, the
+ * check and the screen are talking about a file that exists.
+ *
+ * Neither seed contains a wikilink. `checkRecords` reads every `[[…]]` in the
+ * changelog as a page that should exist, so an example in the prose would
+ * report itself as missing on the first `ow check` a project ever runs.
+ */
+export const INDEX_SEED = `${INDEX_HEADER}${PAGES_SECTION}\n`;
+
+export const CHANGELOG_SEED = `# Changelog
+
+What changed in this wiki, newest first: one entry per change, under the date it
+happened, naming the pages it touched as wikilinks. The names are what \`ow check\`
+reads, which is how a page written and never recorded is found.
+`;
+
 /** Where codewiki pages live, relative to `wiki/` (plan 7.5). */
 export const CODEWIKI_DIR = "codewiki";
 

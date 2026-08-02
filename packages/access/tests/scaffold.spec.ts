@@ -1,9 +1,18 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { scaffold, DirectoryOccupiedError } from "../src/scaffold.js";
 import { readSettings } from "../src/config/settings.js";
+import { checkProject } from "../src/check/checks.js";
 
 function tempDir() {
   return mkdtempSync(join(tmpdir(), "ow-scaffold-"));
@@ -54,3 +63,89 @@ describe("scaffold (2.1)", () => {
     expect(body).toContain("open-wiki-version:");
   });
 });
+
+/**
+ * The wiki's own pages (plan 1.3). The skills tell the agent to link a new page
+ * from `index.md` and record it in `changelog.md`; the checks read both. Before
+ * this, neither file existed until something happened to write one.
+ */
+describe("scaffold seeds the wiki's own pages (1.3)", () => {
+  let root: string;
+  beforeEach(() => (root = tempDir()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("writes index.md and changelog.md, and says it did", () => {
+    const result = scaffold(root);
+    expect(existsSync(join(root, "wiki", "index.md"))).toBe(true);
+    expect(existsSync(join(root, "wiki", "changelog.md"))).toBe(true);
+    expect(result.wiki.written).toEqual(["wiki/index.md", "wiki/changelog.md"].map(toPlatform));
+  });
+
+  it("leaves log.md absent, because an empty log is noise", () => {
+    scaffold(root);
+    expect(existsSync(join(root, "wiki", "log.md"))).toBe(false);
+  });
+
+  it("gives the index the section a page is registered into", () => {
+    scaffold(root);
+    expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).toContain("## Pages");
+  });
+
+  it("never writes over a wiki somebody has been keeping", () => {
+    // `ow init` is idempotent and the launcher goes through the same door, so
+    // a second scaffold must not replace a curated index with the seed.
+    scaffold(root);
+    writeFileSync(join(root, "wiki", "index.md"), "# Index\n\n- [[fenix]]\n", "utf8");
+    const second = scaffold(root);
+    expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).toContain("[[fenix]]");
+    expect(second.wiki.written).toEqual([]);
+  });
+
+  it("writes nothing when something else already bears the name", () => {
+    // The platform-independent half of the guard, and the half that runs
+    // everywhere: `lstat` answers about the name rather than about what the
+    // name points at, so anything there at all means this does not write. A
+    // directory is that case, plantable without the privilege a symlink needs.
+    scaffold(root);
+    rmSync(join(root, "wiki", "index.md"));
+    mkdirSync(join(root, "wiki", "index.md"));
+    expect(scaffold(root).wiki.written).toEqual([]);
+  });
+
+  it("refuses to follow a dangling symlink planted at one of the seed paths", (ctx) => {
+    // The case `existsSync` answers "no" to and a plain write then follows out
+    // of the project: it follows the link to a target that is not there, so the
+    // guard sees nothing and the write creates that target — outside
+    // `projectRoot`, which is the containment `adr:0013` states.
+    scaffold(root);
+    rmSync(join(root, "wiki", "index.md"));
+    const outside = join(dirname(root), "planted.md");
+    try {
+      symlinkSync(outside, join(root, "wiki", "index.md"));
+    } catch (err) {
+      // Privileged on most Windows accounts, and that is a different failure
+      // from this one. Reported as a skip, never as a pass.
+      ctx.skip(`symlink creation unavailable: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
+    try {
+      expect(scaffold(root).wiki.written).toEqual([]);
+      expect(existsSync(outside)).toBe(false);
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  it("leaves a brand-new project with nothing for `ow check` to report", () => {
+    // The seeds are prose, and prose in the changelog is read for wikilinks:
+    // an example link written into either file would report itself as a page
+    // that does not exist, on the first check a project ever runs.
+    scaffold(root);
+    expect(checkProject(root).findings).toEqual([]);
+  });
+});
+
+/** The result reports paths the way `join` builds them on this platform. */
+function toPlatform(path: string): string {
+  return join(...path.split("/"));
+}
