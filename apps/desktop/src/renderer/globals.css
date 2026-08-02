@@ -165,7 +165,6 @@ body {
   padding: var(--space-2) var(--space-3);
   background: var(--card);
   border-bottom: 1px solid var(--border);
-  font-size: var(--text-sm);
 }
 
 .chrome__project {
@@ -275,13 +274,15 @@ button[aria-current="true"],
 }
 
 /* An icon and nothing else: square, so a row of them is a row rather than a
-   ragged line of differently-wide buttons. */
+   ragged line of differently-wide buttons. 24px, not `--control`: the draft
+   draws it smaller than a labelled control on purpose, because a bare glyph
+   needs none of the padding a word does. */
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--control);
-  height: var(--control);
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius);
@@ -298,11 +299,6 @@ button[aria-current="true"],
 .icon-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.icon-btn--sm {
-  width: 22px;
-  height: 22px;
 }
 
 /*
@@ -663,7 +659,7 @@ button[aria-current="true"],
 
 .page code {
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: 0.92em;
   background: var(--background);
   padding: 1px var(--space-1);
   border-radius: var(--radius-sm);
@@ -681,7 +677,7 @@ button[aria-current="true"],
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: var(--space-1) var(--space-3);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
   background: var(--card);
   border: 1px solid var(--border);
@@ -741,12 +737,12 @@ a:hover,
   border: 1px solid rgb(229 72 77 / 40%);
   border-radius: var(--radius);
   padding: var(--space-3);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
 }
 
 .empty {
   color: var(--muted-foreground);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
 }
 
 .list {
@@ -822,7 +818,7 @@ a:hover,
 
 .editor__source {
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   line-height: var(--leading);
   color: var(--foreground);
   background: var(--input);
@@ -850,7 +846,7 @@ a:hover,
 .finding__head {
   display: flex;
   gap: var(--space-2);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
 }
 
@@ -860,7 +856,7 @@ a:hover,
 
 .finding__fix {
   color: var(--foreground);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
 }
 
 /* --- The operation history (8.11). */
@@ -918,7 +914,7 @@ a:hover,
 .launcher__new label {
   display: grid;
   gap: var(--space-1);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--foreground);
 }
 
@@ -931,7 +927,7 @@ a:hover,
 }
 
 .launcher__languages legend {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--foreground);
   padding: 0;
 }
@@ -953,7 +949,7 @@ a:hover,
   display: grid;
   gap: var(--space-3);
   color: var(--foreground);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
 }
 
 .doorway__lead {
@@ -969,7 +965,7 @@ a:hover,
 
 .doorway code {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: 0.92em;
   color: var(--foreground);
   background: var(--background);
   padding: 1px var(--space-1);
@@ -1024,7 +1020,7 @@ a:hover,
   display: grid;
   gap: var(--space-1);
   padding: var(--space-3) var(--space-4) 0;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
 }
 
@@ -1041,7 +1037,7 @@ a:hover,
 /* The path is there to be read off the screen and typed into a terminal. */
 .doorway__path {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
   background: var(--background);
   border: 1px solid var(--border);

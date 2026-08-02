@@ -14,6 +14,14 @@ import { pillClass } from "../src/renderer/ui/Pill.js";
  * that focus is still visible.
  */
 
+/** The one stylesheet, read from disk — it is what ships, not a fixture. */
+function stylesheet(): string {
+  return readFileSync(
+    fileURLToPath(new URL("../src/renderer/globals.css", import.meta.url)),
+    "utf8",
+  );
+}
+
 describe("buttonClass", () => {
   it("gives an ordinary button no variant class at all", () => {
     // The default is the default: a class named `btn--default` would be a
@@ -52,7 +60,12 @@ describe("iconButtonClass", () => {
     // Square, so a row of them is a row. A `.btn` with no text is a 10px-padded
     // rectangle around a 13px glyph, which is not the same shape.
     expect(iconButtonClass()).toBe("icon-btn");
-    expect(iconButtonClass("sm")).toBe("icon-btn icon-btn--sm");
+  });
+
+  it("has one size, because the draft draws one", () => {
+    // No `icon-btn--sm`. It was invented here, and a size the draft does not
+    // draw is a decision nobody made that every later group would inherit.
+    expect(iconButtonClass("chrome__wide")).toBe("icon-btn chrome__wide");
   });
 });
 
@@ -82,6 +95,36 @@ describe("cellClass", () => {
 });
 
 /**
+ * 2.1 — the palette migrated, rather than half-migrated.
+ *
+ * The failure this guards is the one CSS is silent about: `var(--ink-2)`
+ * survives a rename, resolves to nothing, and the property falls back to
+ * whatever it inherits. Nothing errors, nothing logs, and the rule quietly
+ * stops applying — which over a rewrite this size is exactly how a palette
+ * becomes two palettes.
+ */
+describe("every token a rule asks for exists", () => {
+  // Comments, not rules: this file names the old palette on purpose, to say
+  // what it replaced. Reading prose as CSS is how a test like this lies.
+  const rules = stylesheet().replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("defines every custom property the file references", () => {
+    const defined = new Set([...rules.matchAll(/^\s{2}(--[\w-]+):/gm)].map((m) => m[1]));
+    const used = new Set([...rules.matchAll(/var\((--[\w-]+)\)/g)].map((m) => m[1]));
+    expect([...used].filter((name) => !defined.has(name))).toEqual([]);
+  });
+
+  it("has no rule left referring to the palette 8.1 invented", () => {
+    // `var(…)` only. A BEM modifier is spelled the same way a custom property
+    // is, and `.btn--danger` is a class this file keeps on purpose.
+    const stale = [...rules.matchAll(/var\((--[\w-]+)\)/g)]
+      .map((m) => m[1] ?? "")
+      .filter((name) => /^--(surface|ink|line|accent|danger|warn|recording)\b/.test(name));
+    expect(stale).toEqual([]);
+  });
+});
+
+/**
  * 2.4 — focus is visible on every primitive.
  *
  * Asserted against the stylesheet rather than against a rendered component,
@@ -91,10 +134,7 @@ describe("cellClass", () => {
  * inside, which is why this is worth a test rather than a habit.
  */
 describe("the focus ring", () => {
-  const css = readFileSync(
-    fileURLToPath(new URL("../src/renderer/globals.css", import.meta.url)),
-    "utf8",
-  );
+  const css = stylesheet().replace(/\/\*[\s\S]*?\*\//g, "");
 
   it("is drawn for every focusable thing, from one rule", () => {
     const rule = css.match(/:focus-visible\s*\{([^}]*)\}/);

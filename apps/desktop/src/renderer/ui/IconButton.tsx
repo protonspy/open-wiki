@@ -1,9 +1,15 @@
 import clsx from "clsx";
 import { ICON_SM, type Icon } from "./icons.js";
 
-/** The classes an icon-only button wears. */
-export function iconButtonClass(size: "md" | "sm" = "md", extra?: string): string {
-  return clsx("icon-btn", size === "sm" && "icon-btn--sm", extra);
+/**
+ * The classes an icon-only button wears.
+ *
+ * **One size, because the draft draws one.** A second was invented here and
+ * taken back out: an icon set with two button sizes is an icon set that stops
+ * looking like one the moment two of them sit in the same bar.
+ */
+export function iconButtonClass(extra?: string): string {
+  return clsx("icon-btn", extra);
 }
 
 export interface IconButtonProps extends Omit<
@@ -20,13 +26,11 @@ export interface IconButtonProps extends Omit<
    * appears on hover are one string rather than two that drift.
    */
   label: string;
-  size?: "md" | "sm";
 }
 
 export function IconButton({
   icon: IconGlyph,
   label,
-  size,
   className,
   type = "button",
   ...rest
@@ -34,7 +38,7 @@ export function IconButton({
   return (
     <button
       type={type}
-      className={iconButtonClass(size, className)}
+      className={iconButtonClass(className)}
       aria-label={label}
       title={label}
       {...rest}
