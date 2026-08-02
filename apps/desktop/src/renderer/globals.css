@@ -1635,22 +1635,46 @@ a:hover,
   color: var(--foreground);
 }
 
-/* Where in the recording this is. 5.5's waveform is drawn behind it; until
-   then the bar is the shape of the answer without pretending to be the sound. */
+/* Where in the recording this is, over the shape of the sound (5.5). Without
+   a waveform it is a plain bar, which says where you are without pretending to
+   be the sound. */
 .playbar {
   position: relative;
-  height: 6px;
-  border-radius: 3px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: var(--radius);
   background: var(--muted);
+}
+
+/* An SVG rather than the draft's canvas, so it scales with the panel instead
+   of needing a resize observer and a device-pixel-ratio multiplier to say the
+   same thing. */
+.playbar__wave {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: var(--border-strong);
 }
 
 .playbar__head {
   position: absolute;
-  top: -3px;
+  top: 0;
+  bottom: 0;
   width: 2px;
-  height: 12px;
-  border-radius: 1px;
   background: var(--primary);
+  pointer-events: none;
+}
+
+/* The whole bar is the seek target, over the picture rather than beside it:
+   somebody looking at a waveform is already pointing at where they want to be. */
+.playbar__seek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
 
 /* --- The settings sheet (8.3, 8.12, then desktop-ui 6.1). One block per

@@ -66,6 +66,7 @@ import {
   type SourceLocation,
   type SourceRow,
 } from "./sources.js";
+import { waveformOf } from "./waveform.js";
 
 /**
  * The one list of things the renderer can ask for, and the only place the
@@ -177,6 +178,7 @@ export interface DesktopApi {
   retitle(id: string, title: string): void;
   findings(): Finding[];
   locate(id: string, fragment: string): SourceLocation;
+  waveform(id: string): Promise<number[] | null>;
   drop(paths: readonly string[]): Promise<DropOutcome[]>;
   /**
    * What is waiting in the doorway (plan 3.7), and taking it.
@@ -287,6 +289,7 @@ export function createApi(deps: Deps): DesktopApi {
     retitle: (id, title) => retitleSource(root(), id, title),
     findings: () => findings(root()),
     locate: (id, fragment) => locateCitation(root(), id, fragment),
+    waveform: (id) => waveformOf(root(), id),
     drop: (paths) => ingestDrop(root(), paths),
     inboxWaiting: () => listInbox(root()),
     // Through the window's watcher when there is one, so an explicit drain and
@@ -377,6 +380,8 @@ export async function dispatch(
       return api.findings();
     case CHANNELS.locate:
       return api.locate(String(args[0] ?? ""), String(args[1] ?? ""));
+    case CHANNELS.waveform:
+      return api.waveform(String(args[0] ?? ""));
     case CHANNELS.credential:
       return api.credential();
     case CHANNELS.saveCredential: {

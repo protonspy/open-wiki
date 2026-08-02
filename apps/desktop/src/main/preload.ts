@@ -49,6 +49,7 @@ const api = {
   retitle: (id: string, title: string) => ipcRenderer.invoke(CHANNELS.retitle, id, title),
   findings: () => ipcRenderer.invoke(CHANNELS.findings),
   locate: (id: string, fragment: string) => ipcRenderer.invoke(CHANNELS.locate, id, fragment),
+  waveform: (id: string) => ipcRenderer.invoke(CHANNELS.waveform, id),
   drop: (paths: readonly string[]) => ipcRenderer.invoke(CHANNELS.drop, paths),
   inboxWaiting: () => ipcRenderer.invoke(CHANNELS.inboxWaiting),
   inboxDrain: () => ipcRenderer.invoke(CHANNELS.inboxDrain),
