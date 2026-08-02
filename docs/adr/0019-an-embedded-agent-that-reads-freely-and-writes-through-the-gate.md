@@ -83,9 +83,17 @@ that is a place the agent may write freely.
 "an embedded agent speaking the same MCP tools — **not a second writer with direct disk
 access**". MCP is no longer the bridge, so the first half is now "the same tools the
 external agent gets"; the second half is untouched and is the load-bearing half of this
-record. An agent toolkit's default filesystem surface — `write_file`, `edit_file`,
-`execute` reaching the real disk — is exactly what it excludes, and that surface is the
-ergonomic default of every such toolkit rather than a corner of one.
+record. An agent toolkit's filesystem surface — `write_file`, `edit_file`, `execute` —
+is exactly what it excludes.
+
+That is a restriction the toolkits support rather than resist, and saying otherwise
+would be the easy overstatement here: `deepagents@1.12.1` defaults its filesystem to an
+in-memory backend, hides `execute` unless the backend can execute at all, and takes an
+allowlist whose own worked example is `["read_file", "ls", "glob", "grep"]`. **What is
+not the default is the guarding.** Its path permissions are permissive when no rule
+matches, and confinement to a root directory is opt-in. So the constraint costs a
+configuration, and holding it means proving the refusal rather than reading the option
+back.
 
 **The convention is carried in, never re-authored.** The agent's instructions are the
 generated `CLAUDE.md` — or the entry file whichever harness the project was scaffolded
@@ -116,10 +124,10 @@ and it is now the only thing standing between a cheap model and the wiki.
 user who has no harness. It is not positioned as equivalent to Claude Code or Codex, and
 where the two disagree the external agent is the one the product was designed around.
 
-Rejected: **a second writer with direct disk access**, which is the ergonomic default of
-every agent toolkit and would delete the guarantee the product sells. Rejected: **giving
-the agent only the derived index**, which is safe, cheap, and produces an agent that
-cannot tell whether a concept already has a name.
+Rejected: **a second writer with direct disk access**, which would delete the guarantee
+the product sells for an ergonomic saving of nothing. Rejected: **giving the agent only
+the derived index**, which is safe, cheap, and produces an agent that cannot tell whether
+a concept already has a name.
 
 ## Consequences
 
@@ -134,6 +142,15 @@ it is not mitigated by anything in it.
 The mitigation is elsewhere and belongs in the plan, not here: distillation proposes and
 the user approves, conformance work writes directly, and every write carries its origin
 so a bad run is one undo rather than an archaeology.
+
+**The line has to be proved, not configured.** The read/write split is enforceable with
+what exists — the toolkit checked while writing this restricts its filesystem tools to an
+allowlist, and a tool the application supplies is untouched by that restriction, so the
+gate stays the only way in. But two of the guards fail open: a permission model that
+allows when no rule matches, and path confinement that is opt-in per backend. A
+configuration that looks right and a configuration that refuses are different claims, and
+only the second one is testable. Every constraint this record makes needs a test that
+attempts the write and watches it fail, in the same spirit as the gate's own tests.
 
 **A second credential purpose.** `adr:0007-plaintext-credentials-in-the-config` was
 walked back to one secret and `adr:0013` made a point of it. The Groq credential now has
