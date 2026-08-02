@@ -70,6 +70,25 @@ describe("writeAgentPrefs / readAgentPrefs", () => {
     writeFileSync(file, JSON.stringify({ models: "not-a-list", selectedModel: 7 }), "utf8");
     expect(readAgentPrefs(root, appData)).toEqual({ models: [], selectedModel: DEFAULT_MODEL });
   });
+
+  it("returns undefined for a file that is not JSON at all, rather than throwing", () => {
+    // A truncated write or a hand edit never reaches `normalize` — `JSON.parse`
+    // throws first, and the throw would climb through `agentModels` into the
+    // renderer, where nothing catches it. An unreadable file is treated the same
+    // as an absent one: no prefs, and the caller falls back to the default.
+    const file = agentPrefsFile(root, appData);
+    writeAgentPrefs(root, { models: ["a"], selectedModel: "a" }, appData);
+    writeFileSync(file, '{"models": ["a"', "utf8");
+    expect(() => readAgentPrefs(root, appData)).not.toThrow();
+    expect(readAgentPrefs(root, appData)).toBeUndefined();
+  });
+
+  it("coerces valid JSON that is not an object at all", () => {
+    const file = agentPrefsFile(root, appData);
+    writeAgentPrefs(root, { models: ["a"], selectedModel: "a" }, appData);
+    writeFileSync(file, "null", "utf8");
+    expect(readAgentPrefs(root, appData)).toEqual({ models: [], selectedModel: DEFAULT_MODEL });
+  });
 });
 
 describe("resolveModel (R2.5)", () => {

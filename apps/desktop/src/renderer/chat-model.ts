@@ -167,16 +167,22 @@ export interface Proposal {
 
 /**
  * Read the proposal off an action request's args. The deepagents `write_file`
- * carries `{ path, content }`, `edit_file` carries `{ path, old_string,
- * new_string, replace_all? }`, `rename_page` carries `{ from, to }`,
+ * carries `{ file_path, content }`, `edit_file` carries `{ file_path,
+ * old_string, new_string, replace_all? }`, `rename_page` carries `{ from, to }`,
  * `delete_page` carries `{ path }`. The pane renders exactly these — no
  * inference, no fetching the page — so what the human approves is what the
  * model proposed.
+ *
+ * `file_path` first, then `path`: deepagents' filesystem tools name the target
+ * `file_path` and the older shape used `path`. Reading only `path` returned null
+ * for every real `edit_file`, which dropped the pane to its no-renderable-
+ * proposal fallback — approve or reject with the details and the preview both
+ * gone. The same order `previewOf` and the page guard read them in.
  */
 export function proposalOf(action: ChatActionRequest): Proposal | null {
   const args = action.args as Record<string, unknown>;
   const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
-  const path = str(args["path"]) ?? str(args["from"]);
+  const path = str(args["file_path"]) ?? str(args["path"]) ?? str(args["from"]);
   if (!path) return null;
   switch (action.name) {
     case "write_file":

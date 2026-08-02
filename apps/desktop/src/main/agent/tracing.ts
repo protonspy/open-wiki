@@ -30,7 +30,29 @@
  * the env vars deliberately set.
  */
 
-/** The variables that activate LangSmith/LangChain tracing. */
+/**
+ * The switches that turn tracing **on**. `@langchain/core`'s `isTracingEnabled`
+ * checks all four and enables tracing when *any* reads `"true"`, so setting one
+ * of them to `"false"` leaves the other three able to switch it back on. Each is
+ * forced to `"false"` rather than deleted, because an explicit `"false"` also
+ * survives anything that re-reads the environment later.
+ */
+const TRACING_SWITCHES = [
+  "LANGSMITH_TRACING_V2",
+  "LANGCHAIN_TRACING_V2",
+  "LANGSMITH_TRACING",
+  "LANGCHAIN_TRACING",
+] as const;
+
+/**
+ * The variables that select a tracing *transport* or carry the credential to
+ * reach it. `langsmith` reads `LANGSMITH_TRACING_MODE` first and falls back to
+ * the legacy `LANGSMITH_OTEL_ENABLED` / `OTEL_ENABLED` pair, either of which
+ * would route spans to an OpenTelemetry collector rather than to LangSmith —
+ * a different destination, the same export. `LANGSMITH_RUNS_ENDPOINTS` (plural)
+ * is the replica-endpoint list, and it carries its own api keys, so clearing
+ * `LANGSMITH_ENDPOINT` alone would not clear the replicas.
+ */
 const TRACING_VARS = [
   "LANGCHAIN_API_KEY",
   "LANGCHAIN_ENDPOINT",
@@ -39,14 +61,19 @@ const TRACING_VARS = [
   "LANGSMITH_API_KEY",
   "LANGSMITH_PROJECT",
   "LANGSMITH_ENDPOINT",
+  "LANGSMITH_RUNS_ENDPOINTS",
+  "LANGSMITH_TRACING_MODE",
+  "LANGSMITH_OTEL_ENABLED",
+  "OTEL_ENABLED",
 ] as const;
 
 /**
- * Set `LANGCHAIN_TRACING_V2=false` and clear every `LANGSMITH_*` / LangChain
- * credential var, so no tracing client initializes. Idempotent.
+ * Force every tracing switch to `"false"` and clear every transport and
+ * credential var, so no tracing client initializes and none has anywhere to
+ * send to. Idempotent.
  */
 export function disableTracing(): void {
-  process.env.LANGCHAIN_TRACING_V2 = "false";
+  for (const name of TRACING_SWITCHES) process.env[name] = "false";
   for (const name of TRACING_VARS) delete process.env[name];
 }
 

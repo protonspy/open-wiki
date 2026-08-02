@@ -6,13 +6,14 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { listOperations } from "@open-wiki/access";
 import { isSandboxBackend } from "deepagents";
-import { WikiGateBackend } from "../src/main/agent/wiki-gate-backend.js";
+import { MAX_READ_BYTES, WikiGateBackend } from "../src/main/agent/wiki-gate-backend.js";
 
 function tempProject(): string {
   const root = mkdtempSync(join(tmpdir(), "ow-wgb-"));
@@ -246,5 +247,79 @@ describe("WikiGateBackend.edit — exact replacement through the store (R4.1, R4
     const r = backend.edit(join(root, "wiki", "fenix.md"), "nope", "yes");
     expect(r.error).toBeDefined();
     expect(readFileSync(join(root, "wiki", "fenix.md"), "utf8")).toBe(before);
+  });
+
+  it("refuses an empty old_string and leaves the page byte-identical", () => {
+    // An empty `old_string` is a whole-page rewrite wearing an edit's clothes:
+    // `split("").join(s)` puts `s` between every character, and without
+    // `replace_all` it prepends. `previewReplace` returns null for it, so the
+    // human would be approving the most destructive edit there is with nothing
+    // shown. Both branches are refused, and both leave the page untouched.
+    writeFileSync(join(root, "wiki", "fenix.md"), pageFor("fenix", "alpha\n"));
+    const page = join(root, "wiki", "fenix.md");
+    const before = readFileSync(page, "utf8");
+    for (const all of [false, true]) {
+      const r = backend.edit(page, "", "INJECTED", all);
+      expect(r.error, `replace_all=${all} is refused`).toBeDefined();
+      expect(r.occurrences).toBeUndefined();
+      expect(readFileSync(page, "utf8")).toBe(before);
+    }
+  });
+});
+
+describe("WikiGateBackend — reads fail closed and stay bounded (R3.1)", () => {
+  let root: string;
+  let backend: WikiGateBackend;
+  beforeEach(() => {
+    root = tempProject();
+    backend = new WikiGateBackend(root);
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("readRaw answers a directory with an error instead of raising EISDIR", () => {
+    // `read` already guarded this and `readRaw` did not, so the model reached a
+    // raw exception out of the backend by naming a directory — a path it can
+    // find with `ls`. Every failure in this class is a `{ error }` result.
+    mkdirSync(join(root, "wiki", "sub"), { recursive: true });
+    const r = backend.readRaw(join(root, "wiki", "sub"));
+    expect(r.error).toBeDefined();
+    expect(r.data).toBeUndefined();
+  });
+
+  it("edit answers a directory with an error instead of raising EISDIR", () => {
+    // `existsSync` is true for a directory, so the read behind `edit` met one too.
+    mkdirSync(join(root, "wiki", "sub"), { recursive: true });
+    const r = backend.edit(join(root, "wiki", "sub"), "a", "b");
+    expect(r.error).toBeDefined();
+  });
+
+  it("refuses a file over the read limit rather than pulling it into main", () => {
+    // These reads run in the Electron main process, so an unbounded read of a
+    // recording under `raw/` is the application's memory. The limit is refused
+    // as an error, not silently truncated — a truncated read would make the
+    // model reason about a file it only partly saw.
+    const big = join(root, "raw", "huge.txt");
+    writeFileSync(big, "");
+    truncateSync(big, MAX_READ_BYTES + 1);
+    expect(backend.read(big).error).toBeDefined();
+    expect(backend.read(big).content).toBeUndefined();
+    expect(backend.readRaw(big).error).toBeDefined();
+    expect(backend.readRaw(big).data).toBeUndefined();
+  });
+
+  it("grep skips a file it cannot read instead of losing every match found", () => {
+    // One unreadable or oversized file in a scan must not discard the matches
+    // already collected: a project has a lock, a dangling link or a recording in
+    // it sooner or later, and losing the whole result to one turns a working
+    // tool into an intermittent failure.
+    writeFileSync(join(root, "wiki", "a.md"), "needle here\n");
+    const big = join(root, "raw", "huge.txt");
+    writeFileSync(big, "");
+    truncateSync(big, MAX_READ_BYTES + 1);
+    writeFileSync(join(root, "wiki", "b.md"), "needle again\n");
+
+    const r = backend.grep("needle");
+    expect(r.error).toBeUndefined();
+    expect(r.matches?.map((m) => m.text)).toEqual(["needle here", "needle again"]);
   });
 });

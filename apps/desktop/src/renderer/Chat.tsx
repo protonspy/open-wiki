@@ -138,7 +138,14 @@ export function Chat({ onOpenSettings, active }: ChatProps): React.JSX.Element {
         )}
         {state.error ? <p className="error">{state.error}</p> : null}
         {state.interrupt ? (
+          // Keyed by the interrupt, so a replacement proposal remounts the card.
+          // Without a key React reuses the instance and its local `editing`
+          // survives — the textarea would still hold text derived from the
+          // superseded proposal, and `Send edited` would post the new action's
+          // args with the old proposal's value. That is precisely the clobber
+          // the re-propose in R5.5 exists to prevent, reintroduced in the UI.
           <InterruptCard
+            key={`${state.interrupt.runId}:${state.interrupt.interruptId}`}
             interrupt={state.interrupt}
             onApprove={() => void resume([{ type: "approve" }])}
             onReject={() => void resume([{ type: "reject", message: "rejected by the user" }])}

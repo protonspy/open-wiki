@@ -41,6 +41,35 @@ describe("tracing (R2.6)", () => {
     expect(process.env.LANGCHAIN_API_KEY).toBeUndefined();
   });
 
+  // `@langchain/core`'s `isTracingEnabled` enables tracing when *any* of four
+  // variables reads "true", so switching one off leaves three that switch it
+  // back on. Each is asserted on its own: a loop that set them all at once
+  // would pass with three of the four still unhandled.
+  it.each([
+    "LANGSMITH_TRACING_V2",
+    "LANGCHAIN_TRACING_V2",
+    "LANGSMITH_TRACING",
+    "LANGCHAIN_TRACING",
+  ])("forces %s to false when a developer has it set globally", (name) => {
+    process.env[name] = "true";
+    disableTracing();
+    expect(process.env[name]).toBe("false");
+  });
+
+  // The switches above route to LangSmith. These route the same spans somewhere
+  // else — an OpenTelemetry collector, or a list of replica endpoints carrying
+  // their own api keys — so clearing the LangSmith endpoint alone leaks anyway.
+  it.each([
+    "LANGSMITH_TRACING_MODE",
+    "LANGSMITH_OTEL_ENABLED",
+    "OTEL_ENABLED",
+    "LANGSMITH_RUNS_ENDPOINTS",
+  ])("clears %s, so no alternative transport is left configured", (name) => {
+    process.env[name] = name === "LANGSMITH_TRACING_MODE" ? "otel" : "true";
+    disableTracing();
+    expect(process.env[name]).toBeUndefined();
+  });
+
   // The disabling only works if it runs before any langchain module is
   // evaluated, and ES modules evaluate imports in written order. So a module
   // that imports `langchain` / `@langchain/*` while reaching `./tracing.js`

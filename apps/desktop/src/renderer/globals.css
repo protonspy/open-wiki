@@ -1171,6 +1171,19 @@ a:hover,
 /* The chat pane — the embedded agent's window into the project
    (specs/embedded-agent). A scrolling transcript above a composer, with the
    approve/reject/edit card a paused write surfaces folded into the stream. */
+
+/* The pane is mounted for the window's life so the conversation and its thread
+   id survive a pane switch (R7.1); the wrapper is what hides it. `contents`
+   keeps it out of the layout entirely, so `.chat` is the child of `.main` it
+   was before the wrapper existed. */
+.pane-chat {
+  display: contents;
+}
+
+.pane-chat[hidden] {
+  display: none;
+}
+
 .chat {
   display: flex;
   flex-direction: column;

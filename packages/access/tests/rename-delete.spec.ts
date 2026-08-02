@@ -8,6 +8,23 @@ import { undo } from "../src/write/undo.js";
 import { readIndex } from "../src/store/index.js";
 import { readFrontmatter } from "../src/store/page.js";
 
+/**
+ * One switch that makes `undo` throw, so the rollback's own failure path is
+ * reachable. Wrapped rather than replaced: every other test here runs the real
+ * `undo`, and a stub would make the rollback assertions above vacuous.
+ */
+const undoFails = vi.hoisted(() => ({ now: false }));
+vi.mock("../src/write/undo.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/write/undo.js")>();
+  return {
+    ...actual,
+    undo: (projectRoot: string, id: string): void => {
+      if (undoFails.now) throw new Error("the snapshot is gone");
+      actual.undo(projectRoot, id);
+    },
+  };
+});
+
 /** A valid entity page, the way the store writes one. */
 const FENIX = `---
 id: topic:fenix
@@ -195,6 +212,20 @@ describe("renamePage (1.8) — supersession rename", () => {
     // disk, an antivirus scan) fails the step after both pages are written,
     // which is exactly the window the rollback exists for.
     writePage(root, "wiki/fenix.md", FENIX);
+    // The two record pages already hold something, so a rollback that leaves
+    // them appended-to is visible as a difference rather than as a created file.
+    writePage(
+      root,
+      "wiki/log.md",
+      "# Log\n\nEvery write to the wiki, with who made it. Newest last.\n\n",
+    );
+    writePage(
+      root,
+      "wiki/changelog.md",
+      "# Changelog\n\nWhat changed in the wiki, newest first.\n\n",
+    );
+    const logBefore = readFileSync(join(root, "wiki/log.md"), "utf8");
+    const changelogBefore = readFileSync(join(root, "wiki/changelog.md"), "utf8");
     mkdirSync(join(root, "wiki/index.md"), { recursive: true });
 
     const result = renamePage(root, "wiki/fenix.md", "wiki/fenix-2.md", "agent");
@@ -205,5 +236,50 @@ describe("renamePage (1.8) — supersession rename", () => {
     // the new page gone.
     expect(readFileSync(join(root, "wiki/fenix.md"), "utf8")).toBe(FENIX);
     expect(existsSync(join(root, "wiki/fenix-2.md"))).toBe(false);
+
+    // And so are the wiki's own records. A rename writes five files, not two:
+    // the operation snapshot covers the pages, and `log.md` / `changelog.md` had
+    // already been appended to by the time `index.md` failed. Left behind, they
+    // announce a rename that never happened — the changelog is what a reader
+    // trusts to say what the wiki did.
+    expect(readFileSync(join(root, "wiki/log.md"), "utf8")).toBe(logBefore);
+    expect(readFileSync(join(root, "wiki/changelog.md"), "utf8")).toBe(changelogBefore);
+  });
+
+  it("rolls the record pages back even when they did not exist before", () => {
+    // The first rename in a fresh project creates `log.md` and `changelog.md`.
+    // Restoring means removing them, not writing an empty one.
+    writePage(root, "wiki/fenix.md", FENIX);
+    mkdirSync(join(root, "wiki/index.md"), { recursive: true });
+    expect(existsSync(join(root, "wiki/log.md"))).toBe(false);
+
+    const result = renamePage(root, "wiki/fenix.md", "wiki/fenix-2.md", "agent");
+    expect(result.ok).toBe(false);
+    expect(existsSync(join(root, "wiki/log.md"))).toBe(false);
+    expect(existsSync(join(root, "wiki/changelog.md"))).toBe(false);
+    // The directory standing in for `index.md` is left exactly as it was found —
+    // the rollback removes a file the rename created, never a tree it did not.
+    expect(existsSync(join(root, "wiki/index.md"))).toBe(true);
+  });
+
+  it("reports a rollback that itself failed instead of claiming it succeeded", () => {
+    // "rolled back" is a promise about the state of the pages. If `undo` throws,
+    // that promise is false, and a caller told only "rolled back" would believe
+    // the wiki is intact — so the failure and the operation id both reach them.
+    writePage(root, "wiki/fenix.md", FENIX);
+    mkdirSync(join(root, "wiki/index.md"), { recursive: true });
+    undoFails.now = true;
+    try {
+      const result = renamePage(root, "wiki/fenix.md", "wiki/fenix-2.md", "agent");
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        const said = result.reasons.join("; ");
+        expect(said).toContain("rolled back");
+        expect(said).toContain("the rollback of the two pages failed");
+        expect(said).toContain("the snapshot is gone");
+      }
+    } finally {
+      undoFails.now = false;
+    }
   });
 });

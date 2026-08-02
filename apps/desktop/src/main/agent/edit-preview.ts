@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { assertWithin, resolveReal } from "@open-wiki/access";
+import { MAX_READ_BYTES } from "./wiki-gate-backend.js";
 import type { ChatEditPreview, ChatEditSite } from "./chat-events.js";
 
 /**
@@ -157,6 +158,12 @@ export function previewEdit(
   if (!existsSync(abs)) return null;
   let content: string;
   try {
+    // The size is checked before the read, not after: `MAX_RESULTING` caps only
+    // what crosses the bridge, so without this the whole file is already in the
+    // main process's memory by the time that cap applies. Same limit the backend
+    // reads under, so a page too large to preview is a page too large to edit.
+    const st = statSync(abs);
+    if (!st.isFile() || st.size > MAX_READ_BYTES) return null;
     content = readFileSync(abs, "utf8");
   } catch {
     return null;

@@ -26,9 +26,18 @@ import { assertWithin, OutsideProjectError } from "@open-wiki/access";
  *
  * The hash is carried in a closure `Map`, not in graph state: the agent is built
  * once per project window and the run loop is sequential for a thread, so a
- * per-file map survives the pause without a state-schema extension. The map is
- * keyed by the path the model named; it is consumed (deleted) on every tool
- * execution so a later, fresh proposal is never blocked by a stale expectation.
+ * per-file map survives the pause without a state-schema extension. It is
+ * consumed (deleted) on every tool execution so a later, fresh proposal is never
+ * blocked by a stale expectation.
+ *
+ * **Keyed by thread *and* path, because the map outlives one thread.** One agent
+ * instance is cached per window and every thread on it shares this closure. Two
+ * threads proposing a write to the same page would otherwise collide on one
+ * entry: the second proposal overwrites the first's hash, the first run consumes
+ * it and revalidates against a view it never saw, and the second then finds
+ * nothing and skips revalidation entirely — the guard off for exactly the run
+ * that needed it. The thread id comes off the `runtime` both hooks receive —
+ * see {@link threadOf} for which field, and why it reads two.
  */
 
 const GUARD_TOOLS = new Set(["write_file", "edit_file"]);
@@ -61,6 +70,42 @@ function hashAt(projectRoot: string, filePath: string): Hash {
   return createHash("sha256").update(readFileSync(abs)).digest("hex");
 }
 
+/** What a `Runtime` carries that this guard reads. Loose, so a test can pass a plain object. */
+interface RuntimeLike {
+  executionInfo?: { threadId?: string };
+  configurable?: { thread_id?: unknown };
+}
+
+/**
+ * The thread the current hook is running for.
+ *
+ * Two sources, in this order. `executionInfo.threadId` is the documented one and
+ * is what a later langgraph will populate; in `@langchain/langgraph@1.4.8` it is
+ * undefined inside a middleware hook, where the id is only on
+ * `configurable.thread_id` — the value `chat-control.ts` passes in. Reading both
+ * is what stops either version from silently degrading to one shared bucket,
+ * which is exactly the collision this key exists to close.
+ */
+function threadOf(runtime: RuntimeLike | undefined): string {
+  const fromExecution = runtime?.executionInfo?.threadId;
+  if (typeof fromExecution === "string" && fromExecution.length > 0) return fromExecution;
+  const fromConfig = runtime?.configurable?.thread_id;
+  return typeof fromConfig === "string" ? fromConfig : "";
+}
+
+/**
+ * The map key for one thread's expectation about one page. `NUL` separates the
+ * two because it cannot occur in either a thread id or a path, so no pair of
+ * (thread, path) can collide with another.
+ *
+ * A run with no checkpointer has no thread id; those runs share the `""` bucket,
+ * which is the behavior before this key existed and is correct for a
+ * single-threaded caller.
+ */
+function keyFor(runtime: RuntimeLike | undefined, filePath: string): string {
+  return `${threadOf(runtime)}\u0000${filePath}`;
+}
+
 function sameHash(a: Hash, b: Hash): boolean {
   if (a === null && b === null) return true;
   if (typeof a === "string" && typeof b === "string") return a === b;
@@ -72,12 +117,12 @@ function sameHash(a: Hash, b: Hash): boolean {
  * backend confines to, so the guard reads the page the backend is about to write.
  */
 export function pageGuardMiddleware({ projectRoot }: { projectRoot: string }) {
-  /** `file_path` → hash at proposal time. Consumed on the next tool execution. */
+  /** `<thread id>\0<file_path>` → hash at proposal time. Consumed on the next tool execution. */
   const expected = new Map<string, Hash>();
 
   return createMiddleware({
     name: "PageGuardMiddleware",
-    afterModel: async (state) => {
+    afterModel: async (state, runtime) => {
       // The last AI message carries the tool calls the model just proposed. The
       // HITL middleware interrupts on the same message, immediately after this
       // hook (afterModel runs last-first, and this guard is last in the stack).
@@ -90,7 +135,7 @@ export function pageGuardMiddleware({ projectRoot }: { projectRoot: string }) {
         if (!GUARD_TOOLS.has(tc.name)) continue;
         const fp = targetOf(tc.args);
         if (!fp) continue;
-        expected.set(fp, hashAt(projectRoot, fp));
+        expected.set(keyFor(runtime, fp), hashAt(projectRoot, fp));
       }
     },
     wrapToolCall: async (request, handler) => {
@@ -98,9 +143,10 @@ export function pageGuardMiddleware({ projectRoot }: { projectRoot: string }) {
       if (!GUARD_TOOLS.has(name)) return handler(request);
       const fp = targetOf(request.toolCall.args as Record<string, unknown> | undefined);
       if (!fp) return handler(request);
-      const prior = expected.get(fp);
+      const key = keyFor(request.runtime, fp);
+      const prior = expected.get(key);
       if (prior === undefined) return handler(request); // nothing captured (e.g. auto-approved) — no opinion
-      expected.delete(fp); // consume so a fresh proposal is never blocked by it
+      expected.delete(key); // consume so a fresh proposal is never blocked by it
       if (prior !== null && typeof prior === "object" && "unconfined" in prior) {
         return handler(request); // let the backend refuse on its own terms
       }

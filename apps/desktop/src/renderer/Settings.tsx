@@ -32,7 +32,13 @@ export function Settings(): React.JSX.Element {
   const load = useCallback(() => {
     void bridge().credential().then(setCredential);
     void bridge().language().then(setLanguageState);
-    void bridge().agentModels().then(setAgent);
+    // A rejected call leaves `agent` null, which hides the model section — the
+    // same as having no prefs yet. An unhandled rejection here would surface as
+    // a console error the user can do nothing about.
+    void bridge()
+      .agentModels()
+      .then(setAgent)
+      .catch(() => setAgent(null));
   }, []);
 
   useEffect(load, [load]);

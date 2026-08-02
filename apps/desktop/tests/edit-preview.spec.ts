@@ -12,6 +12,27 @@ import { WikiGateBackend } from "../src/main/agent/wiki-gate-backend.js";
  * `replace_all` that looks, in the proposal, exactly like a single-site edit.
  */
 
+/** A minimal valid entity page for `wiki/<slug>.md` the store's gate will accept. */
+function pageFor(slug: string, body: string): string {
+  const fm = [
+    `id: t:${slug}`,
+    "type: t",
+    `title: ${slug}`,
+    "status: active",
+    "aliases: []",
+    'updated: ""',
+    "sources: []",
+    'superseded-by: ""',
+  ].join("\n");
+  return `---\n${fm}\n---\n${body}`;
+}
+
+/** Everything after the frontmatter block — what the replacement is actually about. */
+function bodyOf(markdown: string): string {
+  const end = markdown.indexOf("\n---\n", 4);
+  return end === -1 ? markdown : markdown.slice(end + "\n---\n".length);
+}
+
 describe("previewReplace — every match site (R5.2)", () => {
   it("counts every occurrence and lists each site with its line", () => {
     const content = "alpha\nx here\nbeta\nand x again\n";
@@ -186,24 +207,27 @@ describe("the preview matches what the backend actually writes (R5.2)", () => {
 
   for (const c of cases) {
     it(`agrees on ${c.name}`, () => {
-      // The page body only — comparing the whole file would fold in the gate's
-      // frontmatter completion, which is the store's own bookkeeping and not
-      // part of the replacement the human is approving.
+      // The page is seeded through the gate's own shape, so `backend.edit`
+      // actually lands — a page the gate refuses would leave every assertion
+      // below comparing the preview against nothing.
       const page = join(root, "wiki", "p.md");
-      writeFileSync(page, c.body);
-      const preview = previewReplace(c.body, c.old, c.next, c.all);
+      const seeded = pageFor("p", c.body);
+      writeFileSync(page, seeded);
+
+      const preview = previewReplace(seeded, c.old, c.next, c.all);
       const backend = new WikiGateBackend(root);
       const result = backend.edit(page, c.old, c.next, c.all);
-      // The backend refuses this page (no frontmatter) at the gate, so read the
-      // replacement it computed off the count it reports and reproduce it the
-      // way the backend does — the assertion is that the preview matches that.
-      const expected = c.all
-        ? c.body.split(c.old).join(c.next)
-        : c.body.replace(c.old, () => c.next);
-      expect(preview!.resulting).toBe(expected);
-      if ("occurrences" in result && typeof result.occurrences === "number") {
-        expect(preview!.replaced).toBe(result.occurrences);
-      }
+      expect(result.error, `the gate accepts the seeded page`).toBeUndefined();
+
+      // Unconditional, both ways: the count the backend reports and the page it
+      // actually wrote, against what the preview promised the human. Comparing
+      // the preview to a re-implementation of the preview would leave a change
+      // to `WikiGateBackend.edit`'s semantics green.
+      expect(preview!.replaced).toBe(result.occurrences);
+      // The body only — the whole file folds in the gate's frontmatter
+      // completion (`updated`), which is the store's bookkeeping and not part of
+      // the replacement the human approved.
+      expect(bodyOf(readFileSync(page, "utf8"))).toBe(bodyOf(preview!.resulting!));
     });
   }
 });
@@ -234,5 +258,41 @@ describe("the interrupt card shows the preview (R5.2, 4.3)", () => {
     for (const cls of ["chat__sites", "chat__site-line", "chat__site-text", "chat__sites-lead"]) {
       expect(css, `${cls} is styled`).toContain(`.${cls}`);
     }
+  });
+
+  it("keys the card by the interrupt, so a replaced proposal resets the editor", () => {
+    // A second interrupt replaces the first — that is how a changed page comes
+    // back as a fresh proposal (R5.5). Without a key React reuses the card
+    // instance and its local `editing` survives, so `Send edited` would post the
+    // new action's args carrying the superseded proposal's text: the clobber the
+    // re-propose exists to prevent, reintroduced one layer up.
+    const chat = source("Chat.tsx");
+    expect(chat).toMatch(/<InterruptCard\s+key=\{/);
+    expect(chat).toContain("state.interrupt.interruptId");
+  });
+});
+
+/**
+ * R7.1 is one conversation per window, and the component holds it: the reducer
+ * with the transcript and the `threadId` generated once. Unmounting it discards
+ * both — and the new thread id addresses a thread the main process has never
+ * checkpointed, so the conversation is not recoverable either. Asserted over
+ * `App.tsx`'s source for the same reason the card is: no DOM in this package.
+ */
+describe("the chat pane survives a pane switch (R7.1)", () => {
+  const source = (name: string): string =>
+    readFileSync(join(import.meta.dirname, "..", "src", "renderer", name), "utf8");
+
+  it("renders Chat unconditionally and hides it, rather than unmounting it", () => {
+    const app = source("App.tsx");
+    // The other panes are mounted conditionally; this one must not be.
+    expect(app).not.toMatch(/location\.pane === "chat" \? \(\s*<Chat/);
+    expect(app).toMatch(/<div className="pane-chat" hidden=\{location\.pane !== "chat"\}>/);
+  });
+
+  it("hides the wrapper through a rule the stylesheet actually has", () => {
+    const css = source("globals.css");
+    expect(css).toContain(".pane-chat[hidden]");
+    expect(css).toMatch(/\.pane-chat\[hidden\]\s*\{\s*display:\s*none;/);
   });
 });

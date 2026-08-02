@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { stringify } from "yaml";
 import { assertWithin, OutsideProjectError, resolveReal } from "../paths.js";
@@ -102,6 +102,67 @@ function classify(
   // Also catch the config-write case the gate refused, for a clearer reason
   // than `gatedPageRel`'s null when the path is under `.claude/` etc.
   return { ok: false, reason: `${pagePath} is not a wiki entity page` };
+}
+
+/**
+ * The wiki's own record pages a rename writes besides the two pages themselves:
+ * `recordWrite` appends to `log.md` and `changelog.md`, and `registerInIndex`
+ * adds a bullet to `index.md`.
+ *
+ * They are not in the operation's snapshot on purpose. The snapshot is what
+ * `undo` replays, and undoing an old rename must not roll `changelog.md` back
+ * over every entry written since. So a rename backs them up separately, for its
+ * own failure path only — a rollback restores them, a later `undo` leaves them
+ * alone.
+ */
+const RECORD_PAGES = ["wiki/log.md", "wiki/changelog.md", "wiki/index.md"] as const;
+
+/** One record page as it read before the rename, or `null` when it was not a file. */
+interface RecordBackup {
+  rel: string;
+  before: string | null;
+}
+
+/**
+ * Read the record pages before the rename touches them. Best-effort by design:
+ * a record page that cannot be read is one this cannot restore, and refusing the
+ * rename over it would be worse than the leak it protects against.
+ */
+function backupRecords(projectRoot: string): RecordBackup[] {
+  return RECORD_PAGES.map((rel) => {
+    let before: string | null = null;
+    try {
+      const abs = assertWithin(projectRoot, resolve(projectRoot, rel));
+      const st = statSync(abs, { throwIfNoEntry: false });
+      if (st?.isFile()) before = readFileSync(abs, "utf8");
+    } catch {
+      /* not readable — nothing to restore, and nothing to lose */
+    }
+    return { rel, before };
+  });
+}
+
+/** Put the record pages back as {@link backupRecords} found them. */
+function restoreRecords(projectRoot: string, backups: RecordBackup[]): void {
+  for (const b of backups) {
+    try {
+      const abs = assertWithin(projectRoot, resolve(projectRoot, b.rel));
+      if (b.before === null) {
+        // It was not a file before. Remove it only if the rename created one —
+        // never recursively, so a directory standing where the page belongs is
+        // left exactly as it was found.
+        if (statSync(abs, { throwIfNoEntry: false })?.isFile()) rmSync(abs, { force: true });
+      } else {
+        writeFileSync(abs, b.before, "utf8");
+      }
+    } catch {
+      /* best effort; the caller already reports the failure that got us here */
+    }
+  }
+}
+
+function messageOf(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 export type DeleteResult = { ok: true; operationId: string } | { ok: false; reason: string };
@@ -228,9 +289,11 @@ export function renamePage(
   // one refused: the new page exists while the old one still reads `active`, so
   // one entity is live twice and nothing says which is current. A disk that
   // filled, a Windows file lock (an editor, an antivirus scan) or an EMFILE
-  // between the two is enough. The snapshot taken above is the whole rollback —
-  // `undo` restores what existed and removes what did not — so any throw here
-  // rewinds both pages before it leaves.
+  // between the two is enough. The snapshot taken above is the rollback for the
+  // two pages — `undo` restores what existed and removes what did not — and
+  // `records` is the rollback for everything else this writes, so any throw
+  // rewinds all five files before it leaves.
+  const records = backupRecords(projectRoot);
   try {
     atomicWrite(projectRoot, newPath, settledNew);
     atomicWrite(projectRoot, oldPath, oldSuperseded);
@@ -246,13 +309,19 @@ export function renamePage(
   } catch (e) {
     // The operation-log entry stays: it is the record that this was attempted
     // and rewound, and `undo` is idempotent for a caller who runs it again.
-    undo(projectRoot, operation.id);
-    return {
-      ok: false,
-      reasons: [
-        `the rename could not be completed and was rolled back: ${e instanceof Error ? e.message : String(e)}`,
-      ],
-    };
+    const reasons = [`the rename could not be completed and was rolled back: ${messageOf(e)}`];
+    restoreRecords(projectRoot, records);
+    try {
+      undo(projectRoot, operation.id);
+    } catch (undoError) {
+      // A rollback that itself failed is the one thing the caller must not be
+      // told is "rolled back" and nothing more — the pages are in an unknown
+      // state and the operation id is how a person gets at them.
+      reasons.push(
+        `the rollback of the two pages failed as well (operation ${operation.id}): ${messageOf(undoError)}`,
+      );
+    }
+    return { ok: false, reasons };
   }
   return { ok: true, operationId: operation.id };
 }

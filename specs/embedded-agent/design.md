@@ -17,7 +17,12 @@ Three new things, and each is load-bearing:
    tool uses the access primitive below, not `backend.delete`). (The bare `BackendProtocol`
    export is the deprecated v1 alias; `WikiGateBackend` implements v2.) Reads
    (`ls`/`read`/`readRaw`/`glob`/`grep`) operate on the real project directory, every path
-   confined with `assertWithin(projectRoot)` from `@open-wiki/access`. Writes (`write`/`edit`)
+   confined with `assertWithin(projectRoot)` from `@open-wiki/access`, and every read taken
+   through one guarded helper: stat, refuse a directory or a non-regular file, refuse a file
+   over the read limit, and never throw (R3.3). One helper rather than a check per call site,
+   because these run in the desktop's **main** process — an unbounded read is the
+   application's memory, and an exception raised out of the backend is a failure the tool
+   surface has no way to report. Writes (`write`/`edit`)
    accept only paths that resolve inside `<projectRoot>/wiki/` and route them through the
    store: `gateWrite` to validate, then `writePage(projectRoot, pagePath, content, "agent")` to
    write atomically, log the operation with origin `agent`, and leave it undoable. `edit` is a
@@ -87,9 +92,14 @@ Three new things, and each is load-bearing:
    already write the on-disk files the agent reads, and the harness-portability plan writes the
    same convention at each harness's paths.
 
-   No tracing or telemetry is enabled for the agent's runs. The agent path sets
-   `LANGCHAIN_TRACING_V2=false` (and unsets `LANGSMITH_*`) before the agent's dependencies are
-   imported — at the start of main, ahead of any `langchain` / `@langchain/*` import — and
+   No tracing or telemetry is enabled for the agent's runs. The agent path forces every
+   switch `@langchain/core` reads — `LANGSMITH_TRACING_V2`, `LANGCHAIN_TRACING_V2`,
+   `LANGSMITH_TRACING`, `LANGCHAIN_TRACING` — to `"false"`, because `isTracingEnabled` turns
+   tracing on when _any one of them_ reads `"true"`, and clears the transports that would carry
+   the same spans elsewhere: `LANGSMITH_TRACING_MODE`, the legacy `LANGSMITH_OTEL_ENABLED` /
+   `OTEL_ENABLED` pair, and `LANGSMITH_RUNS_ENDPOINTS` (the replica list, which carries its own
+   api keys, so clearing `LANGSMITH_ENDPOINT` alone would not clear it). All of it before the
+   agent's dependencies are imported — at the start of main, ahead of any `langchain` / `@langchain/*` import — and
    reads no `LANGCHAIN_*` / `LANGSMITH_*` environment variable; project content the agent reads
    is sent only to Groq. LangChain/LangGraph can auto-initialize LangSmith from those env vars
    at import time, before the agent path runs — disabling tracing before the import is what
@@ -181,7 +191,12 @@ origin)` primitives are added, each a single atomic operation: snapshot the affe
   passes those `NON_ENTITY_PAGES` with no content validation — R4.6 closes that for the
   agent). `deletePage` refuses the same set.
 - **Conversation state** — a `MemorySaver` holding the LangGraph thread per `thread_id`.
-  In memory only for v1; not on disk; not in the project directory.
+  In memory only for v1; not on disk; not in the project directory. The renderer half of that
+  state — the transcript, and the `thread_id` generated once per window — lives in the `Chat`
+  component, so the pane is **mounted for the window's life and hidden when you are elsewhere**
+  rather than unmounted on a pane switch. Unmounting resets both, and the fresh id then
+  addresses a thread the main process has never checkpointed, which puts the conversation
+  beyond recovery rather than merely off screen (R7.1).
 - **Agent model selection** — the model the agent runs and the list Groq's `/models` returned
   for the saved key, persisted in the application data directory keyed by project (a sibling
   file to the secrets file — the model list is not a secret, so it is not folded into
@@ -210,7 +225,10 @@ content? }`, rendered as a diff in the pane, plus a content hash of the page at 
   the model re-proposes from, which interrupts again as a fresh proposal (R5.5).
   The hash is carried in a closure map on the middleware, not in graph state — the
   agent is built once per window and the run loop is sequential for a thread, so a
-  per-file map survives the pause without a state-schema extension.
+  map keyed by thread and path survives the pause without a state-schema extension.
+  Keyed by path alone it would not: one agent serves every thread in the window, so
+  two threads proposing a write to the same page swap hashes, and the guard ends up
+  off for both. The thread id is read from the runtime both hooks receive.
 
 ## Alternatives considered
 
@@ -268,7 +286,13 @@ gate-backed backend is reversible (it is our code, not a framework commitment).
   while the old one still read `active` — one entity live twice, with nothing saying which is
   current, and an operation-log entry describing a state that never existed. The two writes
   and the records that follow them are wrapped: any throw rewinds both pages from the
-  snapshot taken for the operation and reports the failure (R4.7).
+  snapshot taken for the operation, restores `wiki/log.md`, `wiki/changelog.md` and
+  `wiki/index.md` from a backup taken for this failure path only, and reports the failure
+  (R4.7). The record pages are deliberately _not_ in the operation's snapshot: that snapshot
+  is what `undo` replays, and undoing an old rename must not roll the changelog back over
+  every entry written since. A rollback that itself throws is named in the reasons rather
+  than swallowed — "rolled back" is a claim about the wiki's state, and a caller told only
+  that would believe it.
 - **The `/models` list includes models that cannot tool-call.** Groq's endpoint returns every
   model the key can access, not only chat models that tool-call, and it does not advertise
   tool support, so the list cannot be filtered mechanically. The user's explicit choice is

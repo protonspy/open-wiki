@@ -53,8 +53,22 @@ export function readAgentPrefs(
 ): AgentPrefs | undefined {
   const file = agentPrefsFile(projectRoot, appDataDir);
   if (!existsSync(file)) return undefined;
-  const raw = JSON.parse(readFileSync(file, "utf8")) as Partial<AgentPrefs>;
-  return normalize(raw);
+  // A truncated write or a hand edit leaves a file that is not JSON at all, and
+  // `normalize` never sees it — `JSON.parse` throws first. The throw would climb
+  // through `agentModels` in the settings module and out into the renderer as an
+  // unhandled rejection, so it is answered here the same way an absent file is:
+  // no prefs, and the caller falls back to the default model.
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return undefined;
+  }
+  // Valid JSON that is not an object (`null`, a number, a list) reaches
+  // `normalize` as something with no fields to read; coerce it to the empty
+  // shape rather than dereferencing it.
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return normalize({});
+  return normalize(raw as Partial<AgentPrefs>);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { existsSync, globSync, readFileSync, readdirSync, statSync } from "node:fs";
+import type { Stats } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import {
   assertWithin,
@@ -115,17 +116,11 @@ export class WikiGateBackend implements BackendProtocolV2 {
     const c = this.confine(filePath);
     if ("error" in c) return { error: c.error };
     if (!existsSync(c.abs)) return { error: `no such file: ${filePath}` };
-    let st: ReturnType<typeof statSync>;
-    try {
-      st = statSync(c.abs);
-    } catch (e) {
-      return { error: (e as Error).message };
-    }
-    if (st.isDirectory()) return { error: `is a directory: ${filePath}` };
-    const buf = readFileSync(c.abs);
-    if (isBinary(buf))
-      return { content: new Uint8Array(buf), mimeType: mimeTypeFromPath(filePath) };
-    const lines = buf.toString("utf8").split("\n");
+    const r = readGuarded(c.abs, filePath);
+    if ("error" in r) return { error: r.error };
+    if (isBinary(r.buf))
+      return { content: new Uint8Array(r.buf), mimeType: mimeTypeFromPath(filePath) };
+    const lines = r.buf.toString("utf8").split("\n");
     return { content: lines.slice(offset, offset + limit).join("\n"), mimeType: "text/plain" };
   }
 
@@ -133,13 +128,9 @@ export class WikiGateBackend implements BackendProtocolV2 {
     const c = this.confine(filePath);
     if ("error" in c) return { error: c.error };
     if (!existsSync(c.abs)) return { error: `no such file: ${filePath}` };
-    let st: ReturnType<typeof statSync>;
-    try {
-      st = statSync(c.abs);
-    } catch (e) {
-      return { error: (e as Error).message };
-    }
-    const buf = readFileSync(c.abs);
+    const r = readGuarded(c.abs, filePath);
+    if ("error" in r) return { error: r.error };
+    const { buf, stat: st } = r;
     const mimeType = mimeTypeFromPath(filePath);
     const created_at = (st.birthtime.getTime() ? st.birthtime : st.mtime).toISOString();
     const modified_at = st.mtime.toISOString();
@@ -164,7 +155,7 @@ export class WikiGateBackend implements BackendProtocolV2 {
       for (const rel of matches) {
         const full = resolve(base, rel);
         if (!isWithin(this.projectRoot, full)) continue; // R3.2: no escape, no junction
-        let st: ReturnType<typeof statSync>;
+        let st: Stats;
         try {
           st = statSync(full);
         } catch {
@@ -198,20 +189,36 @@ export class WikiGateBackend implements BackendProtocolV2 {
       for (const rel of files) {
         const full = resolve(base, rel);
         if (!isWithin(this.projectRoot, full)) continue; // R3.2
-        let st: ReturnType<typeof statSync>;
+        let st: Stats;
         try {
           st = statSync(full);
         } catch {
           continue;
         }
         if (st.isDirectory()) continue;
-        const buf = readFileSync(full);
-        if (isBinary(buf)) continue;
-        const lines = buf.toString("utf8").split("\n");
+        // One unreadable or oversized file must not discard every match already
+        // collected — a scan of the project will meet a locked file, a dangling
+        // link, or a recording sooner or later, and losing the whole result to
+        // one of them turns a working tool into an intermittent failure.
+        const r = readGuarded(full, full);
+        if ("error" in r) continue;
+        if (isBinary(r.buf)) continue;
+        const lines = r.buf.toString("utf8").split("\n");
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
           if (line === undefined) continue;
           if (line.includes(pattern)) {
+            if (matches.length >= MAX_GREP_MATCHES) {
+              // Said out loud rather than truncated in silence: a capped list
+              // that reads like a complete one is how "no other occurrences"
+              // becomes a false answer.
+              matches.push({
+                path: base,
+                line: 0,
+                text: `… capped at ${MAX_GREP_MATCHES} matches; narrow the pattern or pass a glob`,
+              });
+              return { matches };
+            }
             matches.push({ path: full, line: i + 1, text: line });
           }
         }
@@ -252,7 +259,17 @@ export class WikiGateBackend implements BackendProtocolV2 {
       };
     }
     if (!existsSync(c.abs)) return { error: `no such page: ${filePath}` };
-    const current = readFileSync(c.abs, "utf8");
+    // An empty `old_string` is not an edit, it is a rewrite: `split("").join(s)`
+    // inserts `s` between every character, and the non-global branch prepends it
+    // — either way the whole page changes. `previewReplace` returns null for it,
+    // so the human would be approving a destructive call with no preview shown.
+    // Refuse it here, where the write is, rather than relying on the preview.
+    if (oldString.length === 0) {
+      return { error: `old_string is empty — an empty old_string would rewrite ${filePath}` };
+    }
+    const r = readGuarded(c.abs, filePath);
+    if ("error" in r) return { error: r.error };
+    const current = r.buf.toString("utf8");
     let next: string;
     let occurrences: number;
     if (replaceAll) {
@@ -276,6 +293,48 @@ export class WikiGateBackend implements BackendProtocolV2 {
     const settled = decision.action === "accept" ? decision.content : next;
     writePage(this.projectRoot, rel, settled, "agent");
     return { path: c.abs, occurrences, filesUpdate: null, metadata: { origin: "agent" } };
+  }
+}
+
+/**
+ * The largest file any read path here will pull into memory — R3.1's reads run
+ * in the Electron **main** process, so an unbounded `readFileSync` on a
+ * multi-gigabyte recording under `raw/` is the whole application's memory, not a
+ * worker's. 8 MiB is far above any page or source this project writes and far
+ * below what hurts.
+ */
+export const MAX_READ_BYTES = 8 * 1024 * 1024;
+
+/** The most matches one `grep` call returns before it says it stopped. */
+const MAX_GREP_MATCHES = 1000;
+
+/**
+ * The one read every path in this backend goes through: stat, refuse what is
+ * not a readable regular file, refuse what is too large, and never throw.
+ *
+ * Each site guarded differently is how `read` came to answer a directory with
+ * `{ error }` while `readRaw` let `EISDIR` escape the backend entirely — the
+ * model reaches both with the same path. One helper is what keeps the four
+ * callers answering alike.
+ */
+function readGuarded(abs: string, label: string): { buf: Buffer; stat: Stats } | { error: string } {
+  let stat: Stats;
+  try {
+    stat = statSync(abs);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  if (stat.isDirectory()) return { error: `is a directory: ${label}` };
+  if (!stat.isFile()) return { error: `not a regular file: ${label}` };
+  if (stat.size > MAX_READ_BYTES) {
+    return {
+      error: `too large to read: ${label} is ${stat.size} bytes, over the ${MAX_READ_BYTES}-byte limit`,
+    };
+  }
+  try {
+    return { buf: readFileSync(abs), stat };
+  } catch (e) {
+    return { error: (e as Error).message };
   }
 }
 

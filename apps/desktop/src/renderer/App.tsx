@@ -416,12 +416,19 @@ export function App(): React.JSX.Element {
           {location.pane === "checks" ? (
             <Findings reloadKey={reloadKey} onCount={setFindings} />
           ) : null}
-          {location.pane === "chat" ? (
+          {/* The chat pane stays mounted and is hidden when you are elsewhere.
+              Unmounting it would reset the reducer holding the transcript and
+              the `threadId` generated once per window (R7.1) — you would come
+              back from the wiki pane to an empty conversation addressing a
+              thread the main process has never heard of, with the checkpointed
+              one unreachable. The wrapper is `display: contents`, so what the
+              pane lays out against is unchanged. */}
+          <div className="pane-chat" hidden={location.pane !== "chat"}>
             <Chat
               active={location.pane === "chat"}
               onOpenSettings={() => show({ kind: "settings" })}
             />
-          ) : null}
+          </div>
         </main>
       </div>
 

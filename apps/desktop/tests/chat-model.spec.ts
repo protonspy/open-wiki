@@ -167,6 +167,29 @@ describe("proposalOf (R5.2)", () => {
   it("returns null for a tool with no path", () => {
     expect(proposalOf({ name: "read_file", args: {} })).toBeNull();
   });
+
+  // deepagents' filesystem tools name the target `file_path`; `path` is the
+  // older shape. Reading only `path` returned null for every real proposal,
+  // which dropped the card to its nothing-renderable fallback: approve or
+  // reject, with the fields and the preview both gone. This is the arg name
+  // the interrupt actually carries, so it is the one that has to work.
+  it("reads file_path, the name the tools actually use", () => {
+    expect(
+      proposalOf({
+        name: "edit_file",
+        args: { file_path: "wiki/a.md", old_string: "x", new_string: "y" },
+      }),
+    ).toEqual({
+      tool: "edit_file",
+      path: "wiki/a.md",
+      oldString: "x",
+      newString: "y",
+      replaceAll: false,
+    });
+    expect(
+      proposalOf({ name: "write_file", args: { file_path: "wiki/new.md", content: "body" } }),
+    ).toEqual({ tool: "write_file", path: "wiki/new.md", newString: "body" });
+  });
 });
 
 function token(text: string): ChatEvent {

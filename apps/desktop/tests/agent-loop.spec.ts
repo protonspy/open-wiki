@@ -250,6 +250,73 @@ describe("resuming against a page changed since the interrupt (R5.5, 6.14)", () 
   });
 });
 
+describe("the guard is per thread, not per agent (R5.5)", () => {
+  it("one thread's expectation cannot be consumed by another's", async () => {
+    // One agent is cached per project window and every thread runs on it, so the
+    // guard's map outlives any single conversation. Keyed by path alone, two
+    // threads proposing a write to the same page collide: the second overwrites
+    // the first's hash, the first then revalidates against a view it never saw
+    // and its stale write lands, and the second finds nothing left and skips
+    // revalidation entirely — the guard off for both.
+    const page = join(root, "wiki", "shared.md");
+    writeFileSync(page, validPage("shared", "one\n"));
+
+    const model = new ScriptedChatModel([
+      // Thread A proposes, against the page as it reads now ("one").
+      {
+        toolCalls: [
+          {
+            name: "write_file",
+            args: { path: "wiki/shared.md", content: validPage("shared", "from A\n") },
+          },
+        ],
+      },
+      // Thread B proposes, after an outside writer has changed the page.
+      {
+        toolCalls: [
+          {
+            name: "write_file",
+            args: { path: "wiki/shared.md", content: validPage("shared", "from B\n") },
+          },
+        ],
+      },
+      // Whatever the model is asked next, it stops rather than re-proposing.
+      { content: "Stopping." },
+    ]);
+    const embedded = createEmbeddedAgent({
+      projectRoot: root,
+      apiKey: "not-a-real-key",
+      modelName: "unused",
+      model,
+    });
+    const a = { configurable: { thread_id: "thread-a" } };
+    const b = { configurable: { thread_id: "thread-b" } };
+
+    // 1. Thread A proposes and pauses. Its expectation is the page as "one".
+    await embedded.agent.invoke({ messages: [new HumanMessage("rewrite it")] }, a);
+    expect(interruptOf(await stateOf(embedded, a))).toBeDefined();
+
+    // 2. An outside writer changes the page. Thread A's proposal is now stale.
+    writeFileSync(page, validPage("shared", "two\n"));
+
+    // 3. Thread B proposes against the page as it now reads, and pauses.
+    await embedded.agent.invoke({ messages: [new HumanMessage("rewrite it too")] }, b);
+    expect(interruptOf(await stateOf(embedded, b))).toBeDefined();
+
+    // 4. Thread A is approved. Its own expectation says the page changed, so the
+    //    write is refused — B's proposal must not have answered for it.
+    await embedded.agent.invoke(resumeCommand([{ type: "approve" }]), a);
+    expect(readFileSync(page, "utf8")).toContain("two");
+    expect(readFileSync(page, "utf8")).not.toContain("from A");
+
+    // 5. Thread B is approved. Its expectation is intact — A consuming its own
+    //    did not consume B's — and the page is unchanged since B proposed, so
+    //    B's write lands.
+    await embedded.agent.invoke(resumeCommand([{ type: "approve" }]), b);
+    expect(readFileSync(page, "utf8")).toContain("from B");
+  });
+});
+
 describe("eviction creates no file on disk (R4.3, 6.11)", () => {
   it("a run leaves no /large_tool_results/ or /conversation_history/ behind", async () => {
     // The filesystem middleware is built with toolTokenLimitBeforeEvict: null,

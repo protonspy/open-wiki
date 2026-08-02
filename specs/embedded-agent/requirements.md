@@ -69,6 +69,10 @@ lands.
   the project root.
 - **R3.2** If a read path resolves outside the project, then the embedded agent shall return
   an error and deny the request.
+- **R3.3** If a read fails, then the embedded agent shall return an error and read nothing.
+  A read fails when the path is a directory, is not a regular file, or is over the read
+  limit. These reads run in the desktop's main process, so an unbounded read is the
+  application's memory, and a raised exception is a failure the tool surface cannot report.
 
 ## R4 · Writing — only through the gate
 
@@ -83,9 +87,11 @@ lands.
   operation, undoable — using a gated delete primitive in `@open-wiki/access`. The desktop's
   existing `deletePage` writes with `node:fs` and a hardcoded origin, so it shall not be
   reused.
-- **R4.7** If a `rename_page` fails partway, then the embedded agent shall roll back both
-  pages to the content they had before it started and report the failure — a rename
-  half-applied leaves one entity live twice, with nothing saying which is current.
+- **R4.7** If a `rename_page` fails partway, then the embedded agent shall roll back every
+  file it wrote — both pages and the wiki's own records — to the content they had before it
+  started, and report the failure, naming the rollback separately if that fails too. A
+  rename half-applied leaves one entity live twice with nothing saying which is current, and
+  a changelog left announcing a rename that never happened is the record a reader trusts.
 - **R4.3** If a write path resolves outside wiki, then the embedded agent shall return an
   error and write nothing.
 - **R4.4** The embedded agent shall not expose the `execute` (shell) or `task` (subagent)
@@ -95,6 +101,9 @@ lands.
 - **R4.6** The `rename_page` tool shall refuse to clobber an existing page, and the
   `rename_page` and `delete_page` tools shall refuse to operate on the wiki's index,
   changelog, and log pages.
+- **R4.8** If an `edit_file` names an empty `old_string`, then the embedded agent shall return
+  an error and write nothing. An empty match is a whole-page rewrite, and it is the one edit
+  the preview R5.2 requires cannot render.
 
 ## R5 · Human-in-the-loop approval
 

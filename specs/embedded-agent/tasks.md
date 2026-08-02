@@ -12,6 +12,9 @@
 - [x] 1.8 (Unit) Add gated, atomic `deletePage(projectRoot, pagePath, origin)` and `renamePage(projectRoot, oldPath, newPath, origin)` primitives to `@open-wiki/access`, each a single operation (snapshot affected pages, gate + write, one log entry, rollback on failure); deletion is gated removal (snapshot + unlink, one operation, undoable — the codebase convention, not supersession); rename marks the old page superseded by the new one; the desktop's existing `deletePage` calls `node:fs` with a hardcoded origin and shall not be reused — R4.2, R4.5
 - [x] 1.9 (Unit) Implement `WikiGateBackend.readRaw` (confined with `assertWithin`, returning `FileData` as a `ReadRawResult`) — the required `BackendProtocolV2` read method — R3.1, R3.2
 - [x] 1.10 (Unit) Roll `renamePage` back when any step after the first write fails, restoring both pages from the operation's snapshot and reporting the failure, so a rename is never half-applied — R4.7
+- [x] 1.11 (Unit) Extend that rollback to every file the rename writes — `wiki/log.md`, `wiki/changelog.md`, `wiki/index.md` — backed up separately from the operation's snapshot, so a later `undo` of an old rename does not roll the changelog back over everything written since; and report a rollback that itself throws rather than claiming the wiki is intact — R4.7
+- [x] 1.12 (Unit) Route every `WikiGateBackend` read through one guarded helper — stat, refuse a directory or a non-regular file, refuse a file over the read limit, and never throw — so `readRaw` and `edit` stop raising `EISDIR` out of the backend, one unreadable file no longer discards a whole `grep`, and no read pulls an arbitrary amount into the main process — R3.1, R3.3
+- [x] 1.13 (TDD) Refuse an `edit_file` whose `old_string` is empty: `split("").join(s)` inserts between every character and the non-global branch prepends, so both branches rewrite the page — and `previewReplace` renders nothing for it, so the human would approve the most destructive edit there is with no preview shown — R4.8, R5.2
 
 ## 2 · The agent runtime
 
@@ -26,6 +29,9 @@
 
 - [x] 2.9 (Unit) Import `tracing.js` as the first line of **every** module that pulls in `langchain` / `@langchain/*` — `agent.ts`, `chat-control.ts`, `page-guard.ts`, and the `index.ts` entry — since ES modules evaluate imports in written order and one file holding the guard does not save a sibling that imports langchain on its own account; assert the invariant over the source so a new importer fails the suite — R2.6
 - [x] 2.10 (Unit) Rebuild the agent when the resolved credential or model changes, so a rotated key stops being used without a restart — R2.2, R2.5
+- [x] 2.11 (Unit) Force every tracing switch `@langchain/core` reads — `LANGSMITH_TRACING_V2`, `LANGCHAIN_TRACING_V2`, `LANGSMITH_TRACING`, `LANGCHAIN_TRACING` — to `"false"`, since any one of them reading `"true"` turns tracing on; and clear the alternative transports `langsmith` reads (`LANGSMITH_TRACING_MODE`, `LANGSMITH_OTEL_ENABLED`, `OTEL_ENABLED`) plus the replica-endpoint list `LANGSMITH_RUNS_ENDPOINTS` — R2.6
+- [x] 2.12 (Unit) Key the page guard's expectation map by thread id and path, not path alone: one agent is cached per window and every thread shares the closure, so two threads writing one page swap hashes and leave the guard off for both — R5.5, R7.1
+- [x] 2.13 (Unit) Answer an unparseable agent-prefs file the way an absent one is answered, so a truncated write does not throw out of `readAgentPrefs` and into the renderer as an unhandled rejection — R2.5, R2.7
 
 ## 3 · IPC channels
 
@@ -41,6 +47,8 @@
 - [x] 4.5 (Unit) Surface a run error in place and preserve the conversation that produced it — R1.4
 - [x] 4.6 (Unit) Compute an `edit_file`'s effect in the main process when the interrupt is pushed — every match site with its line, how many of the page's occurrences will be replaced, and the full resulting page — and render it on the interrupt card; the HITL interrupt fires on the model's raw args, so nothing earlier in the stack has counted the matches, and a short `old_string` with `replace_all` would otherwise render exactly like a single-site edit — R5.2
 - [x] 4.7 (Unit) Give the preview the write path's reach and no more: refuse to preview a path outside `wiki/` (the backend would refuse the edit anyway, so reading and shipping the file buys nothing), cap the context shown per site, and drop the resulting page when it is too large to carry — keeping the sites, since abandoning the preview on a big page would reopen the hole it closes — R5.2, R4.3
+- [x] 4.8 (Unit) Keep the chat pane mounted across pane switches, hidden rather than unmounted: the component holds the transcript and the one-per-window `threadId`, and remounting resets both — leaving a new thread id addressing a thread the main process never checkpointed — R7.1, R1.2
+- [x] 4.9 (Unit) Read `file_path` in `proposalOf` (the name the deepagents tools actually use) and key the interrupt card by the interrupt, so a proposal replaced under R5.5 resets the inline editor instead of carrying the superseded proposal's text into the new action's args — R5.2, R5.4, R5.5
 
 ## 5 · Credential, model, settings
 
@@ -68,6 +76,10 @@
 
 - [x] 6.15 (TDD) Test that a `rename_page` whose later steps fail leaves both pages exactly as they were and reports the rollback — R4.7, R6.1
 - [x] 6.16 (TDD) Test that the backend refuses a write to `/large_tool_results/` and `/conversation_history/` directly — 6.11's run cannot trigger an eviction (the limit is `null`), so it proves only half of its own claim — R4.3, R6.1
+- [x] 6.17 (TDD) Test each tracing activation variable on its own — one loop setting all four at once would pass with three of them still unhandled — R2.6, R6.1
+- [x] 6.18 (TDD) Test that two threads on one agent cannot consume each other's page-guard expectation: thread A proposes, the page changes outside, thread B proposes, and approving A is still refused while approving B still lands — R5.5, R6.1
+- [x] 6.19 (TDD) Test the preview against the backend over a page the gate actually accepts, comparing `occurrences` and the written body unconditionally — seeded against a page the gate refused, the cross-check never ran and the suite compared the preview to a re-implementation of itself — R5.2, R6.1
+- [x] 6.20 (TDD) Test that `readRaw` and `edit` answer a directory with an error, that a file over the read limit is refused, and that one unreadable file does not discard a `grep`'s collected matches — R3.3, R6.1
 
 ## 7 · Docs
 
