@@ -295,11 +295,6 @@ body {
   flex: 1;
 }
 
-.nav {
-  display: flex;
-  gap: var(--space-1);
-}
-
 /* ===========================================================================
    The primitives (2.3), as the draft's Components plate draws them.
 

@@ -217,7 +217,7 @@ describe("Shell", () => {
 
   it("records a pane and a selection as places you have been — R1.2, R1.3", () => {
     const shell = new Shell();
-    shell.select("fenix");
+    shell.visit({ pane: "wiki", selection: "fenix" });
     shell.goTo("sources");
     expect(shell.location).toEqual({ pane: "sources" });
     expect(shell.back()).toEqual({ pane: "wiki", selection: "fenix" });
@@ -226,7 +226,7 @@ describe("Shell", () => {
   it("comes back to a pane at what it was last showing — R1.7", () => {
     // The rail is how you leave a page for a moment, not how you close it.
     const shell = new Shell();
-    shell.select("fenix");
+    shell.visit({ pane: "wiki", selection: "fenix" });
     shell.goTo("sources");
     expect(shell.goTo("wiki")).toEqual({ pane: "wiki", selection: "fenix" });
   });
@@ -235,7 +235,7 @@ describe("Shell", () => {
     // Otherwise Back and the rail disagree about what "the wiki" means the
     // moment you go to its list of pages.
     const shell = new Shell();
-    shell.select("fenix");
+    shell.visit({ pane: "wiki", selection: "fenix" });
     shell.visit({ pane: "wiki" });
     shell.goTo("sources");
     expect(shell.goTo("wiki")).toEqual({ pane: "wiki", selection: "fenix" });
@@ -243,8 +243,8 @@ describe("Shell", () => {
 
   it("does not record the location you are already at — R1.6", () => {
     const shell = new Shell();
-    shell.select("fenix");
-    shell.select("fenix");
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.visit({ pane: "wiki", selection: "fenix" });
     shell.back();
     expect(shell.location).toEqual({ pane: "wiki" });
     expect(shell.canGoBack).toBe(false);
@@ -252,10 +252,10 @@ describe("Shell", () => {
 
   it("discards the future when you go somewhere new after going back — R1.5", () => {
     const shell = new Shell();
-    shell.select("a");
-    shell.select("b");
+    shell.visit({ pane: "wiki", selection: "a" });
+    shell.visit({ pane: "wiki", selection: "b" });
     shell.back();
-    shell.select("c");
+    shell.visit({ pane: "wiki", selection: "c" });
     expect(shell.canGoForward).toBe(false);
     // `b` is gone: `c` was chosen from `a`, so `a` is what `c` came from.
     expect(shell.back()).toEqual({ pane: "wiki", selection: "a" });
@@ -266,7 +266,7 @@ describe("Shell", () => {
     // Back after closing it lands on the pane *before* the one you opened it
     // from, the sheet having eaten the press that should have taken you there.
     const shell = new Shell();
-    shell.select("fenix");
+    shell.visit({ pane: "wiki", selection: "fenix" });
     shell.goTo("sources");
     shell.show({ kind: "settings" });
     shell.dismiss();
@@ -285,7 +285,7 @@ describe("Shell", () => {
     // The modal makes the pane behind it unclickable, but the keyboard
     // shortcuts of 8.1 are not behind that inert layer.
     const shell = new Shell();
-    shell.select("fenix");
+    shell.visit({ pane: "wiki", selection: "fenix" });
     shell.show({ kind: "provenance", source: "weekly", fragment: "14:32" });
     shell.goTo("sources");
     shell.back();

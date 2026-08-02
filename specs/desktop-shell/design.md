@@ -34,13 +34,23 @@ skipped. It also makes the failure mode concrete: with the settings sheet in the
 history, Back after closing it lands on the pane _before_ the one you opened it
 from, because the sheet consumed the press that should have taken you there.
 
-`ow.overlay` is a single value rather than a set (R2.5). Every overlay is a
-modal `<dialog>` from group 2, which makes the rest of the document inert — so
-two at once is not a layout question, it is a state that cannot be reached and
-must not be representable. R2.4 falls out of the same fact for free: while a
-modal is open nothing behind it is clickable, and the shell asserts it rather
-than relying on it, because the keyboard shortcuts of 8.1 are not behind the
-inert layer.
+The overlay is a single value rather than a set (R2.5). Two at once is not a
+layout question but a state nothing can arrive at, and a set would make it
+representable.
+
+**Two of the three are modal, and the third deliberately is not.** The settings
+sheet and the history drawer are `<dialog>`s opened with `showModal`, so the
+document behind them is inert. The provenance viewer is not: the draft puts it
+_beside_ the page rather than over it, and the reason is what it is for — you
+open a citation to check a claim you are in the middle of reading, and a panel
+that makes the paragraph behind it unreadable has answered a question by taking
+away the thing that raised it (R2.6).
+
+That is why R2.4 is **asserted in `Shell` rather than inherited from the
+modal**. For two of the three it would indeed fall out for free; for the third
+it would not, and a rule that holds for two cases out of three by accident is
+the kind that is discovered to be false by whatever is built on it next. The
+keyboard shortcuts of 8.1 are not behind the inert layer either.
 
 ### Selection is remembered per pane, not per visit
 

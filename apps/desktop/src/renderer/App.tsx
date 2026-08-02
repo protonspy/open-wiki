@@ -325,6 +325,10 @@ export function App(): React.JSX.Element {
         recording={recording}
         onRecord={(action) => void record(action)}
         onSettings={() => show({ kind: "settings" })}
+        onBack={() => arrive(shell.current.back())}
+        onForward={() => arrive(shell.current.forward())}
+        canGoBack={shell.current.canGoBack}
+        canGoForward={shell.current.canGoForward}
       />
 
       <div className="app-body">

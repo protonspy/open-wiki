@@ -40,6 +40,8 @@ has to survive the repaint.
 
 - **R2.1** The shell shall open the settings sheet, the history drawer and the
   provenance viewer as overlays over the current location.
+- **R2.6** While the provenance viewer is open, the shell shall leave the page
+  behind it readable and its links followable.
 - **R2.2** The shell shall not record an overlay as a location.
 - **R2.3** When an overlay is dismissed, the shell shall show the location it
   was opened over.
@@ -56,6 +58,7 @@ has to survive the repaint.
   pausing or resuming it, and stopping it.
 - **R3.4** While no recording is running, the titlebar shall offer starting one.
 - **R3.5** The titlebar shall offer opening the settings.
+- **R3.6** The titlebar shall offer going back and going forward, and shall show when there is nowhere to go.
 
 ## R4 · The rail
 

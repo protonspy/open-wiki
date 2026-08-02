@@ -10,6 +10,7 @@ import { FRAGMENT_ATTR, PAGE_ATTR, SOURCE_ATTR } from "./markdown.js";
  * browser does, or Back stops meaning "where I came from".
  *
  * **A location is a pane and a selection within it; an overlay is neither.**
+ *
  * This used to be one flat `view` that also carried `settings` and `history`,
  * which made opening the settings a place you had gone — so Back after closing
  * them landed on the pane *before* the one you opened them from, the settings
@@ -29,9 +30,16 @@ export interface Location {
 /**
  * What sits *over* a location: consulted or adjusted, never travelled to.
  *
- * Each is a modal `<dialog>` (group 2), so the document behind it is inert and
- * two at once is not a layout question but a state that cannot be reached.
- * `Shell` holds one value rather than a set for that reason.
+ * `Shell` holds one of these rather than a set, because two at once is a state
+ * nothing can arrive at and a set would make it representable.
+ *
+ * **Two are modal `<dialog>`s; the provenance viewer is deliberately not.** You
+ * open a citation to check a claim you are in the middle of reading, and a
+ * panel that makes the paragraph behind it unreadable has answered a question
+ * by taking away the thing that raised it. So the rule that nothing navigates
+ * while an overlay is open is asserted below rather than inherited from the
+ * modal — it would hold for two of the three by accident, which is the kind of
+ * rule something later is built on and discovers to be false.
  */
 export type Overlay =
   | { kind: "settings" }
@@ -143,12 +151,7 @@ export class Shell {
     return this.navigate({ pane, selection: this.lastSeen[pane] });
   }
 
-  /** Select something inside the pane you are in (R1.3). */
-  select(selection: string): Location {
-    return this.navigate({ pane: this.location.pane, selection });
-  }
-
-  /** Somewhere new outright — a wikilink to a page, say. */
+  /** Somewhere new outright — a wikilink to a page, say (R1.3). */
   visit(location: Location): Location {
     return this.navigate(location);
   }

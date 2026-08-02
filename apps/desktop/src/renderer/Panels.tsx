@@ -110,16 +110,26 @@ export function Findings({
   report.current = onCount;
 
   useEffect(() => {
+    // Guarded, like `PageSources` above and for a sharper reason: two
+    // `reloadKey` bumps can overlap, and a slow answer for the older one
+    // arriving last would put a stale count in the status bar as well as stale
+    // findings on screen.
+    let live = true;
     void bridge()
       .findings()
       .then((found) => {
+        if (!live) return;
         setFindings(found);
         report.current?.(found.length);
       })
       .catch(() => {
+        if (!live) return;
         setFindings([]);
         report.current?.(0);
       });
+    return () => {
+      live = false;
+    };
   }, [reloadKey]);
 
   if (!findings) return <p className="empty">Checking…</p>;
