@@ -54,6 +54,8 @@ export const CHANNELS = {
   knownProjects: "launcher:projects",
   createProject: "launcher:create",
   forgetProject: "launcher:forget",
+  openProject: "launcher:open",
+  saveCredentialFor: "launcher:credential",
   transcribe: "sources:transcribe",
 
   // The embedded agent (specs/embedded-agent): the renderer drives a run and

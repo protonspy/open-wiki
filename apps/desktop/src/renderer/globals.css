@@ -2185,3 +2185,49 @@ a:hover,
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
 }
+
+/* --- The first run (desktop-ui 6.3). One step on screen at a time, because
+   four questions at once is a form and this is a conversation. */
+.first-run {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 62ch;
+  margin: 0 auto;
+  padding: var(--space-8) 0;
+}
+
+.first-run__where {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.first-run h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+
+.first-run__detail {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.first-run__path {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--primary);
+}
+
+.first-run__buttons {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}

@@ -41,6 +41,8 @@ import {
   parseCredentialInput,
   currentLanguage,
   forgetProject,
+  projectPath,
+  saveCredentialForProject,
   knownProjects,
   saveCredential,
   setDeleteWav,
@@ -111,6 +113,14 @@ export interface Deps {
   inbox?: InboxControl;
   /** The window's embedded agent (specs/embedded-agent), built where the push lives. */
   chat?: ChatControl;
+  /**
+   * Opening a window on another project (6.3), when the platform can.
+   *
+   * Injected because `BrowserWindow` lives in `index.ts` and this module is
+   * what the tests reach — and absent in a test, which is also the honest
+   * answer for a build where nothing can open a window.
+   */
+  openWindow?: (projectRoot: string) => void;
   /** Injected so a test does not depend on today's date. */
   now?: () => Date;
 }
@@ -204,6 +214,8 @@ export interface DesktopApi {
   knownProjects(): KnownProject[];
   createProject(name: string, directory: string, language: Language): KnownProject;
   forgetProject(name: string): void;
+  openProject(name: string): void;
+  saveCredentialFor(name: string, input: unknown): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
 
   /** The embedded agent — drive a run (R1.2, R5.2–R5.5, R7.2). */
@@ -315,6 +327,19 @@ export function createApi(deps: Deps): DesktopApi {
     knownProjects: () => knownProjects(),
     createProject: (name, directory, language) => createProject(name, directory, language),
     forgetProject: (name) => forgetProject(name),
+    openProject: (name) => {
+      // The registry resolves the name; a window is opened on what it says.
+      // `resolve` refuses an unknown name and a directory that moved, so a
+      // stale entry cannot open a window on nothing.
+      const path = projectPath(name);
+      if (!deps.openWindow) throw new Error("this build cannot open a window");
+      deps.openWindow(path);
+    },
+    saveCredentialFor: async (name, input) => {
+      const parsed = parseCredentialInput(input);
+      if (!parsed) return { ok: false, reason: "that is not a provider this application knows" };
+      return saveCredentialForProject(name, parsed);
+    },
     transcribe: (id, restart) => runTranscription(root(), id, { restart }),
 
     chatSend: (input) => chatControl(deps).send(input),
@@ -416,6 +441,10 @@ export async function dispatch(
       );
     case CHANNELS.forgetProject:
       return api.forgetProject(String(args[0] ?? ""));
+    case CHANNELS.openProject:
+      return api.openProject(String(args[0] ?? ""));
+    case CHANNELS.saveCredentialFor:
+      return api.saveCredentialFor(String(args[0] ?? ""), args[1]);
     case CHANNELS.transcribe:
       return api.transcribe(String(args[0] ?? ""), args[1] === true);
 

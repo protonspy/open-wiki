@@ -412,6 +412,35 @@ export function createProject(
   return { name, path: directory, present: existsSync(directory) };
 }
 
+/**
+ * Where a known project is, by name (desktop-ui 6.3).
+ *
+ * **The renderer names a project, never a path** — 2.2's rule and 8.2's. The
+ * registry resolves a name to a directory, refuses an unknown name rather than
+ * guessing, and degrades to a refusal for a directory that moved. So the first
+ * run can configure and then open the project it just made, from a window that
+ * has no project of its own, without a path crossing the bridge either way.
+ */
+export function projectPath(name: string, appDataDir?: string): string {
+  return new ProjectRegistry(appDataDir ?? defaultAppDataDir()).resolve(name);
+}
+
+/**
+ * Store a credential for a project this window does not have open (6.3).
+ *
+ * The first run creates a project and then asks how meetings are transcribed,
+ * and the credential belongs to *that* project — the launcher's window has none
+ * of its own. Same check, same store; only what it is keyed by is resolved
+ * differently.
+ */
+export async function saveCredentialForProject(
+  name: string,
+  input: SaveCredentialInput,
+  deps: CredentialDeps = {},
+): Promise<CredentialCheck> {
+  return saveCredential(projectPath(name, deps.appDataDir), input, deps);
+}
+
 export function forgetProject(name: string, appDataDir?: string): void {
   // Only the entry. The directory is the user's, and a launcher that deleted
   // a wiki because somebody tidied a list would be unforgivable.

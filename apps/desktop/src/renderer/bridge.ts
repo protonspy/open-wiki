@@ -83,6 +83,10 @@ export interface OwBridge {
   knownProjects(): Promise<KnownProject[]>;
   createProject(name: string, directory: string, language: Language): Promise<KnownProject>;
   forgetProject(name: string): Promise<void>;
+  /** 6.3 — open a window on a known project, by name. */
+  openProject(name: string): Promise<void>;
+  /** 6.3 — the first run configures the project it just made. */
+  saveCredentialFor(name: string, input: SaveCredentialInput): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
 
   /** The embedded agent — drive a run (specs/embedded-agent, R1.2, R5.2–R5.5). */

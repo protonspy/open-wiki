@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Language } from "@open-wiki/access";
 import type { KnownProject } from "../main/settings.js";
 import { bridge } from "./bridge.js";
+import { FirstRun } from "./FirstRun.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
 
 /**
@@ -36,6 +37,22 @@ export function Launcher(): React.JSX.Element {
     [load],
   );
 
+  const open = useCallback(async (name: string) => {
+    try {
+      await bridge().openProject(name);
+    } catch (e) {
+      // `resolve` refuses an unknown name and a directory that moved (2.2), and
+      // the refusal says which — better than a window opening on nothing.
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  // 6.3 — the genuine first run: nothing known, so nothing to list. The four
+  // steps stand in for an empty list and a button.
+  if (projects !== null && projects.length === 0 && !creating) {
+    return <FirstRun onDone={load} />;
+  }
+
   return (
     <div className="launcher">
       <h2>Projects on this machine</h2>
@@ -50,6 +67,11 @@ export function Launcher(): React.JSX.Element {
                 <span className="badge badge--failed">not where it was</span>
               ) : null}
               <span className="chrome__spacer" />
+              {/* A list of projects with no way to open one was a list that
+                  could only forget them. */}
+              <button onClick={() => void open(project.name)} disabled={!project.present}>
+                Open
+              </button>
               <button onClick={() => void forget(project.name)}>Forget</button>
             </li>
           ))}
