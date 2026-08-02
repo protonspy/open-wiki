@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pageTemplate } from "../src/renderer/page-template.js";
 import {
   ANSWERED,
   answerOf,
@@ -153,5 +154,54 @@ describe("the questions", () => {
     // or the button lies about what pressing it does.
     expect(occasionQuestion().cancelLabel).toMatch(/[Rr]ecord/);
     expect(occasionQuestion().emptyMeans).toBe("accept");
+  });
+});
+
+/**
+ * The page type, chosen rather than assumed (plan desktop-ui 8.2).
+ *
+ * The type is half of the `id` (`type:slug`, 5.1), so it is what `ow graph`
+ * walks by — and every page this window made was born `topic`, a person and a
+ * project alike.
+ */
+describe("pageTemplate (8.2)", () => {
+  it("writes the chosen type into both the type and the id", () => {
+    const page = pageTemplate("ana", "person", "2026-08-02");
+    expect(page).toContain("id: person:ana");
+    expect(page).toContain("type: person");
+  });
+
+  it("still satisfies the schema the gate checks", () => {
+    // The whole reason a template exists: the first save must not be a fight.
+    const page = pageTemplate("fenix", "project", "2026-08-02");
+    for (const field of ["id:", "type:", "title:", "status:", "aliases:", "updated:", "sources:"]) {
+      expect(page).toContain(field);
+    }
+    expect(page.startsWith("---\n")).toBe(true);
+  });
+
+  it("falls back to a topic when nothing was chosen", () => {
+    // A blank `type` is refused by 5.1 as "not a lowercase token", so an empty
+    // choice must not reach the gate as one.
+    expect(pageTemplate("thing", "", "2026-08-02")).toContain("type: topic");
+  });
+
+  it("takes the date it is given rather than reading a clock", () => {
+    expect(pageTemplate("thing", "topic", "2026-01-09")).toContain("updated: 2026-01-09");
+  });
+});
+
+describe("newPageQuestion, with a type to choose (8.2)", () => {
+  it("offers the types the convention names, defaulting to topic", () => {
+    const question = newPageQuestion();
+    expect(question.choose?.options.map((o) => o.value)).toEqual(["topic", "project", "person"]);
+    expect(question.choose?.initial).toBe("topic");
+  });
+
+  it("does not offer codewiki, which is a skill's job and not a box's", () => {
+    // A codewiki page is narrated code under `wiki/codewiki/`, written by the
+    // codewiki skill — offering it here would make a page in the wrong place
+    // with the right frontmatter.
+    expect(newPageQuestion().choose?.options.map((o) => o.value)).not.toContain("codewiki");
   });
 });

@@ -2,6 +2,7 @@ import type { Finding } from "@open-wiki/access";
 import { CircleAlert, RotateCw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bridge } from "./bridge.js";
+import { failed, LOADING, ready, valueOf, type Loaded } from "./loaded.js";
 import { groupFindings, whereOf } from "./families.js";
 import { PaneBar } from "./PaneBar.js";
 import { Button } from "./ui/Button.js";
@@ -41,7 +42,7 @@ export function ChecksPane({
   actionFor,
   notice,
 }: ChecksPaneProps): React.JSX.Element {
-  const [findings, setFindings] = useState<Finding[] | null>(null);
+  const [loaded, setLoaded] = useState<Loaded<Finding[]>>(LOADING);
   // Read through a ref so the effect below depends on its inputs alone. A
   // caller passing a fresh closure each render would otherwise re-run the whole
   // check on every render.
@@ -55,18 +56,21 @@ export function ChecksPane({
     // older one arriving last would put a stale count in the status bar as well
     // as stale findings on screen.
     let live = true;
-    setFindings(null);
+    setLoaded(LOADING);
     void bridge()
       .findings()
       .then((found) => {
         if (!live) return;
-        setFindings(found);
+        setLoaded(ready(found));
         report.current?.(found.length);
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         if (!live) return;
-        setFindings([]);
-        report.current?.(0);
+        // **Not an empty list** (8.3). A `findings()` that threw used to become
+        // `[]`, which rendered *Nothing to fix.* — a wiki nobody checked,
+        // reported as a wiki with nothing wrong. The status bar is left alone
+        // for the same reason: a count of zero is a claim.
+        setLoaded(failed(e));
       });
     return () => {
       live = false;
@@ -74,6 +78,7 @@ export function ChecksPane({
   }, [reloadKey, again]);
 
   const rerun = useCallback(() => setAgain((n) => n + 1), []);
+  const findings = valueOf(loaded);
   const groups = findings ? groupFindings(findings) : [];
 
   return (
@@ -84,17 +89,20 @@ export function ChecksPane({
         countTone={findings && findings.length > 0 ? "error" : "ok"}
         detail={<span className="pane-bar__note">re-runs on every write</span>}
       >
-        <Button icon={RotateCw} onClick={rerun} disabled={findings === null}>
+        <Button icon={RotateCw} onClick={rerun} disabled={loaded.state === "loading"}>
           Run again
         </Button>
       </PaneBar>
 
       <div className="checks-body">
         {notice}
-        {findings === null ? <p className="empty">Checking&hellip;</p> : null}
-        {findings !== null && findings.length === 0 ? (
-          <p className="empty">Nothing to fix.</p>
+        {loaded.state === "loading" ? <p className="empty">Checking&hellip;</p> : null}
+        {loaded.state === "failed" ? (
+          <p className="error">
+            The checks could not run: {loaded.why}. Nothing here is a verdict on the wiki.
+          </p>
         ) : null}
+        {findings && findings.length === 0 ? <p className="empty">Nothing to fix.</p> : null}
 
         {groups.map(({ family, findings: inFamily }) => (
           <div key={family.key} className="check-group">
@@ -111,7 +119,7 @@ export function ChecksPane({
           </div>
         ))}
 
-        {findings !== null && findings.length > 0 ? (
+        {findings && findings.length > 0 ? (
           <p className="checks-body__note">
             Every check here is also what <code>ow check</code> runs, so an agent can run it on its
             own work before it says it is finished — the same groups, the same wording.

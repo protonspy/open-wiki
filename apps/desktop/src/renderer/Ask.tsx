@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { answerOf, buttonsFor, canAnswer, type Question } from "./dialogs.js";
 import { Button } from "./ui/Button.js";
 import { Dialog } from "./ui/Dialog.js";
+import { Segmented } from "./ui/Segmented.js";
 
 /**
  * Asking a question, in the renderer, because the platform will not (plan 1.1).
@@ -14,9 +15,23 @@ import { Dialog } from "./ui/Dialog.js";
  * is not decoration; `buttonsFor` says why.
  */
 
+/** Both halves of an answer: what was typed, and what was picked (8.2). */
+export interface Answer {
+  text: string;
+  /** The chosen option, or the question's default when it offered none. */
+  chosen: string;
+}
+
 export interface Dialogs {
   /** A question with a box. Resolves with the trimmed answer, or null. */
   ask(question: Question): Promise<string | null>;
+  /**
+   * The same, when the question also offers a choice (8.2).
+   *
+   * A second method rather than a wider return from `ask`, so the four call
+   * sites that only want the text keep saying what they mean.
+   */
+  askFully(question: Question): Promise<Answer | null>;
   /** A question with a yes. Resolves false when it was not answered. */
   confirm(question: Question): Promise<boolean>;
   /** Render this where the component tree can reach it — it is a modal, so where does not matter. */
@@ -26,7 +41,7 @@ export interface Dialogs {
 interface Pending {
   id: number;
   question: Question;
-  settle: (answer: string | null) => void;
+  settle: (answer: Answer | null) => void;
 }
 
 /**
@@ -48,9 +63,9 @@ export function useDialogs(): Dialogs {
   open.current = pending;
   useEffect(() => () => open.current?.settle(null), []);
 
-  const ask = useCallback(
+  const askFully = useCallback(
     (question: Question) =>
-      new Promise<string | null>((resolve) => {
+      new Promise<Answer | null>((resolve) => {
         next.current += 1;
         const id = next.current;
         setPending((current) => {
@@ -65,9 +80,14 @@ export function useDialogs(): Dialogs {
     [],
   );
 
+  const ask = useCallback(
+    (question: Question) => askFully(question).then((answer) => answer?.text ?? null),
+    [askFully],
+  );
+
   const confirm = useCallback(
-    (question: Question) => ask(question).then((answer) => answer !== null),
-    [ask],
+    (question: Question) => askFully(question).then((answer) => answer !== null),
+    [askFully],
   );
 
   const element = pending ? (
@@ -83,7 +103,7 @@ export function useDialogs(): Dialogs {
     />
   ) : null;
 
-  return { ask, confirm, element };
+  return { ask, askFully, confirm, element };
 }
 
 function Ask({
@@ -91,9 +111,10 @@ function Ask({
   onAnswer,
 }: {
   question: Question;
-  onAnswer: (answer: string | null) => void;
+  onAnswer: (answer: Answer | null) => void;
 }): React.JSX.Element {
   const [typed, setTyped] = useState(question.initial ?? "");
+  const [chosen, setChosen] = useState(question.choose?.initial ?? "");
 
   return (
     <Dialog
@@ -102,7 +123,10 @@ function Ask({
       describedBy="ask-detail"
       // The one exit. Escape leaves `returnValue` empty, the answering button
       // leaves its own, and `answerOf` reads the difference.
-      onClose={(returnValue) => onAnswer(answerOf(returnValue, typed))}
+      onClose={(returnValue) => {
+        const text = answerOf(returnValue, typed);
+        onAnswer(text === null ? null : { text, chosen });
+      }}
     >
       {(close) => (
         <form method="dialog" className="ask__form">
@@ -123,6 +147,21 @@ function Ask({
                 onChange={(event) => setTyped(event.target.value)}
               />
             </label>
+          ) : null}
+          {/* 8.2 — the second half of the answer, where the question has one.
+              A segmented control rather than a dropdown: three named options
+              that are worth reading at a glance, which is the same argument
+              the settings sheet makes for the language. */}
+          {question.choose ? (
+            <div className="ask__field">
+              <span>{question.choose.label}</span>
+              <Segmented
+                label={question.choose.label}
+                options={question.choose.options}
+                value={chosen}
+                onChange={setChosen}
+              />
+            </div>
           ) : null}
           <div className="ask__buttons">
             {buttonsFor(question).map((button) => (

@@ -1,6 +1,7 @@
 import { FileText } from "lucide-react";
 import { Fragment } from "react";
 import type { IndexedPage } from "../main/api.js";
+import { listMove } from "./keyboard.js";
 import { ICON_SM } from "./ui/icons.js";
 
 /**
@@ -84,28 +85,72 @@ export interface TreeProps {
 }
 
 export function Tree({ pages, current, onOpen }: TreeProps): React.JSX.Element {
+  const bands = groupPages(pages);
+  // Flat, in the order the bands draw them: the arrows move down the tree as it
+  // is read, across a band boundary and on, because that is what "the next
+  // page" means to somebody looking at it.
+  const inOrder = bands.flatMap((band) => band.pages);
+  const currentIndex = Math.max(
+    0,
+    inOrder.findIndex((page) => page.slug === current),
+  );
+
+  /**
+   * One tab stop for the whole tree, and the arrows move within it (8.1).
+   *
+   * Two hundred pages would otherwise be two hundred stops between the rail and
+   * the reader — the shape that makes somebody reach for the mouse again. Focus
+   * is moved rather than only marked, because a roving tabindex that does not
+   * follow the focus leaves the ring behind on the item you left.
+   */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
+    const to = listMove(event, currentIndex, inOrder.length);
+    if (to === null) return;
+    event.preventDefault();
+    const page = inOrder[to];
+    if (!page) return;
+    // Opening *is* moving here: the tree's selection and the reader's page are
+    // one fact, and a tree with its own cursor would be a second one to keep in
+    // step.
+    onOpen(page.slug);
+    const next = event.currentTarget.querySelector<HTMLElement>(
+      `[data-ow-tree-index="${String(to)}"]`,
+    );
+    next?.focus();
+  };
+
+  let index = -1;
   return (
-    <nav className="tree" aria-label="Pages">
-      {groupPages(pages).map((band) => (
+    <nav className="tree" aria-label="Pages" onKeyDown={onKeyDown}>
+      {bands.map((band) => (
         // The unnamed band still needs a key, and `""` cannot collide with a
         // folder name because a path segment is never empty.
         <Fragment key={band.group ?? ""}>
           {band.group ? <div className="tree-group">{band.group}</div> : null}
-          {band.pages.map((page) => (
-            <button
-              key={keyOfPage(page)}
-              type="button"
-              className="tree-item"
-              aria-current={page.slug === current}
-              // Where it actually sits, for the reader who wonders — which is
-              // also how two pages sharing a slug (R1.6) tell themselves apart.
-              title={page.path}
-              onClick={() => onOpen(page.slug)}
-            >
-              <FileText size={ICON_SM} aria-hidden />
-              <span className="tree-item__name">{page.title}</span>
-            </button>
-          ))}
+          {band.pages.map((page) => {
+            index += 1;
+            const at = index;
+            return (
+              <button
+                key={keyOfPage(page)}
+                type="button"
+                className="tree-item"
+                aria-current={page.slug === current}
+                data-ow-tree-index={at}
+                // The roving stop: the open page is the one Tab reaches, and
+                // with nothing open it is the first — never none, or Tab would
+                // skip the tree entirely.
+                tabIndex={at === currentIndex ? 0 : -1}
+                // Where it actually sits, for the reader who wonders — which is
+                // also how two pages sharing a slug (R1.6) tell themselves apart.
+                title={page.path}
+                onClick={() => onOpen(page.slug)}
+              >
+                <FileText size={ICON_SM} aria-hidden />
+                <span className="tree-item__name">{page.title}</span>
+              </button>
+            );
+          })}
         </Fragment>
       ))}
     </nav>

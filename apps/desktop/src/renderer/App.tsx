@@ -16,6 +16,7 @@ import {
   occasionQuestion,
   renameQuestion,
 } from "./dialogs.js";
+import { pageTemplate } from "./page-template.js";
 import { Editor } from "./Editor.js";
 import { Shell, type LinkTarget, type Location, type Overlay, type Pane } from "./navigation.js";
 import {
@@ -28,6 +29,7 @@ import {
   type Notice,
 } from "./notices.js";
 import { fixesFor, type Fix } from "./fixes.js";
+import { closesOverlay, isFieldTag, paneShortcut } from "./keyboard.js";
 import { Reader, readerState } from "./Reader.js";
 import { Side } from "./Side.js";
 import { ChecksPane } from "./ChecksPane.js";
@@ -95,7 +97,7 @@ export function App(): React.JSX.Element {
   const recording = useRecording();
   // 1.1 — every question this shell asks. `window.prompt` answers nothing in
   // Electron, so the four controls that used it did nothing at all.
-  const { ask, confirm, element: dialog } = useDialogs();
+  const { ask, askFully, confirm, element: dialog } = useDialogs();
 
   /** How many findings the checks last reported; null until they have run. */
   const [findings, setFindings] = useState<number | null>(null);
@@ -250,6 +252,31 @@ export function App(): React.JSX.Element {
     [visit, show],
   );
 
+  /**
+   * The keyboard (8.1): reach a pane, and close what Escape does not reach.
+   *
+   * On the window rather than on a component, because a shortcut that works
+   * only while the rail has focus is a shortcut nobody finds. Every decision it
+   * makes is in `keyboard.ts`; what is here is the listener.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      const inField = isFieldTag((event.target as HTMLElement | null)?.tagName);
+      const pane = paneShortcut(event);
+      if (pane && !inField) {
+        event.preventDefault();
+        goTo(pane);
+        return;
+      }
+      if (closesOverlay(event, shell.current.overlay?.kind ?? null, inField)) {
+        event.preventDefault();
+        dismiss();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [goTo, dismiss]);
+
   /** Which slugs a fix button may offer to open (5.3). */
   const knownSlugs = useMemo(() => new Set(index.slugs), [index.slugs]);
 
@@ -386,7 +413,7 @@ export function App(): React.JSX.Element {
               selection={location.selection}
               notices={notices}
               onOpen={(slug) => visit({ pane: "wiki", selection: slug })}
-              onCreate={() => void createPage(index, ask, visit, say)}
+              onCreate={() => void createPage(index, askFully, visit, say)}
               onEdit={() => setEditing(true)}
               onRename={() => {
                 if (page) void renameFlow(page.slug, ask, visit, say);
@@ -559,18 +586,26 @@ function Dropped({
  */
 async function createPage(
   index: WikiIndex,
-  ask: Dialogs["ask"],
+  askFully: Dialogs["askFully"],
   visit: (location: Location) => void,
   say: (notice: Notice) => void,
 ): Promise<void> {
-  const slug = await ask(newPageQuestion());
+  // 8.2 — the slug *and* the type. The type is half of the `id`, so a window
+  // that only made topics made every person and every project wrong in the one
+  // field a later save validates.
+  const answer = await askFully(newPageQuestion());
+  const slug = answer?.text;
   if (!slug) return;
   if (index.slugs.includes(slug)) {
     say(failure("wiki", `a page named "${slug}" already exists — open it, or pick another name`));
     return;
   }
   try {
-    const result = await bridge().create({ slug, markdown: template(slug) });
+    const today = new Date().toISOString().slice(0, 10);
+    const result = await bridge().create({
+      slug,
+      markdown: pageTemplate(slug, answer.chosen, today),
+    });
     if (!result.saved) {
       say(
         failure("wiki", result.reason === "stale" ? "that page moved" : result.problems.join("; ")),
@@ -581,25 +616,6 @@ async function createPage(
   } catch (e) {
     say(failure("wiki", e));
   }
-}
-
-/** A new page that already satisfies the schema, so the first save is not a fight. */
-function template(slug: string): string {
-  const today = new Date().toISOString().slice(0, 10);
-  return [
-    "---",
-    `id: topic:${slug}`,
-    "type: topic",
-    `title: ${slug}`,
-    "status: active",
-    "aliases: []",
-    `updated: ${today}`,
-    "sources: []",
-    'superseded-by: ""',
-    "---",
-    "",
-    "",
-  ].join("\n");
 }
 
 async function renameFlow(

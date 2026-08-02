@@ -208,9 +208,9 @@ body of work of its own, and it blocks this pane rather than living inside it.
 Things the draft does not draw and the application needs. Each is small; together
 they are the difference between a port and an application.
 
-- [ ] 8.1 (Unit) Keyboard: pane switching, focus the search, Escape closes an overlay, and a visible focus path through the tree. A dense window read beside a harness is a window somebody keeps their hands off the mouse for
-- [ ] 8.2 (Unit) The page type is chosen when a page is created, instead of `template()` hardcoding `type: topic` for every page the UI makes
-- [ ] 8.3 (Unit) Loading and empty states per pane, distinguishable from failure. Every pane today renders nothing while it waits, which reads as "there is nothing here"
+- [x] 8.1 (Unit) Keyboard: pane switching, focus the search, Escape closes an overlay, and a visible focus path through the tree. A dense window read beside a harness is a window somebody keeps their hands off the mouse for
+- [x] 8.2 (Unit) The page type is chosen when a page is created, instead of `template()` hardcoding `type: topic` for every page the UI makes
+- [x] 8.3 (Unit) Loading and empty states per pane, distinguishable from failure. Every pane today renders nothing while it waits, which reads as "there is nothing here"
 - 8.4 → **`specs/desktop-shell/`** (R3.2, R3.3). The recording indicator earning the draft's persistence — elapsed time, and the pause/stop controls in the titlebar — is the titlebar's own requirement, and a titlebar built without them would have had to be built twice. Moved rather than duplicated: two records of one fact disagree
 - 8.5 → **`specs/desktop-shell/`** (R5). The status bar is the shell's third row, and the same argument applies: it cannot be assembled empty and filled in later
 
