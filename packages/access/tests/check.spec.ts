@@ -53,12 +53,18 @@ function changelog(root: string, slugs: string[]): void {
   );
 }
 
-function source(root: string, id: string, text = "# Source\n"): void {
+function source(root: string, id: string, text = "# Source\n", processed?: string): void {
   const dir = join(root, "raw", id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, "manifest.json"),
-    JSON.stringify({ id, title: id, kind: "file", original: id }),
+    JSON.stringify({
+      id,
+      title: id,
+      kind: "file",
+      original: id,
+      ...(processed !== undefined ? { processed } : {}),
+    }),
     "utf8",
   );
   writeFileSync(join(dir, "text.md"), text, "utf8");
@@ -226,6 +232,44 @@ describe("the integrity checks (group 7)", () => {
       changelog(root, ["fenix"]);
 
       expect(codes(checkProject(root).findings)).not.toContain("source.uncited");
+    });
+
+    it("stops reporting a source somebody read and discarded (R4.2)", () => {
+      // The case the whole declaration exists for: the agent read it and found
+      // nothing worth writing, which leaves no trace on the filesystem — so
+      // before this it was a finding that could never be cleared, on every run,
+      // forever.
+      source(root, "read-and-discarded.md", "# Source\n", "2026-08-02");
+      index(root, []);
+      changelog(root, []);
+
+      expect(codes(checkProject(root).findings)).not.toContain("source.uncited");
+    });
+
+    it("still reports one that is neither cited nor declared, and names the verb (R4.1)", () => {
+      source(root, "unread.md");
+      index(root, []);
+      changelog(root, []);
+
+      const findings = checkProject(root).findings.filter((f) => f.code === "source.uncited");
+      expect(findings).toHaveLength(1);
+      // Both ways out, because the reader who discarded it deliberately needs
+      // to be told they may record that, not told again to distil it (9.13).
+      expect(findings[0]!.fix).toMatch(/distil/i);
+      expect(findings[0]!.fix).toMatch(/mark it processed/i);
+    });
+
+    it("reports a source whose manifest will not parse, rather than hiding it", () => {
+      // `false` is the safe answer to "was this declared": reporting a source
+      // somebody may already have read costs a glance, where believing a
+      // declaration that is not there hides one nobody has opened.
+      source(root, "broken.md");
+      writeFileSync(join(root, "raw", "broken.md", "manifest.json"), "{ not json", "utf8");
+      index(root, []);
+      changelog(root, []);
+
+      const findings = checkProject(root).findings.filter((f) => f.code === "source.uncited");
+      expect(findings.map((f) => f.source)).toEqual(["broken.md"]);
     });
 
     it("never reports the inbox as an uncited source", () => {

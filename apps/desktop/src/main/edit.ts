@@ -10,17 +10,16 @@ import {
   listPages,
   NON_ENTITY_PAGES,
   pagesEqual,
-  readManifest,
   recordWrite,
   registerInIndex,
   snapshot,
   undo,
+  updateManifest,
   writePage,
   type GateDecision,
   type Operation,
   type PageRef,
 } from "@open-wiki/access";
-import { writeAtomic } from "@open-wiki/audio";
 import { NoSuchPageError } from "./api.js";
 
 /**
@@ -497,16 +496,15 @@ export function undoOperation(projectRoot: string, id: string): void {
  *
  * `adr:0011-sources-are-named-by-what-they-are` freezes the id and says the
  * freeze "is only bearable if the readable name stays editable". This is that.
+ *
+ * The write itself moved into `@open-wiki/access` (`specs/source-status`, R2.1).
+ * It used to live here, which meant the CLI could not correct a title at all —
+ * and the status verb that reads the same file would have become a second
+ * manifest mutator in a second process, which is what 9.1's one-implementation
+ * rule exists to prevent.
  */
 export function retitleSource(projectRoot: string, id: string, title: string): void {
-  const manifest = readManifest(projectRoot, id);
-  const rawDir = join(projectRoot, "raw");
-  const file = assertWithin(rawDir, join(rawDir, id, "manifest.json"));
-  // The package's own hardened writer rather than a third copy of temp-plus-
-  // rename: a fixed `${file}.tmp` is a name an attacker can plant at, and two
-  // concurrent retitles of one source would share it — the loser's cleanup
-  // deleting the winner's in-flight file.
-  writeAtomic(file, `${JSON.stringify({ ...manifest, title }, null, 2)}\n`);
+  updateManifest(projectRoot, id, { title });
 }
 
 /**

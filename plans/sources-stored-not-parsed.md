@@ -247,9 +247,28 @@ check reports once "read and discarded" is expressible. The persistence question
 settled above — one field, in the manifest — but the state model around it is not, and
 it is read by the sources pane, the checks, the CLI and MCP.
 
+**Settled.** The field is `processed`, holding the date it was declared, and absent
+means unprocessed — so there is no state where the declaration and its date can
+disagree, and every manifest written before this is a valid manifest of an
+unprocessed source. It is not called `status` because 8.5 needs that name for
+supersession, reusing the shape 5.2 gave a page. Nothing else moved out of derived
+state. `source.uncited` now takes two facts rather than one, which is what stops a
+deliberately-discarded source being a permanent finding.
+
+*A file is never replaced*, so nothing silently goes back to unprocessed: `raw/`'s
+bytes are frozen and a correction is a new source that supersedes the old (8.5). The
+one way readable content arrives at a source somebody already finished with is
+`text.md` landing afterwards — a recording's transcript — and that withdraws the
+declaration. It withdraws at **both** doors: `writeSourceText`, and the transcription
+pipeline, which writes through `@open-wiki/audio` and so has to withdraw from the
+caller that imports both packages. A code review caught the second one missing, which
+was the exact case the rule was written for.
+
 ## 4 — The CLI, and one manifest mutator
 
-- [ ] 4.1 (Unit) Move `retitleSource` from the desktop main process into `@open-wiki/access`, so there is one thing that mutates a manifest — 9.1's rule, and the reason the next task is not a second implementation
+- [x] 4.1 (Unit) Move `retitleSource` from the desktop main process into `@open-wiki/access`, so there is one thing that mutates a manifest — 9.1's rule, and the reason the next task is not a second implementation
+  - **Done by `specs/source-status/`**, which needed the mutator to write the declared status and could not build one beside `retitleSource` without creating the second writer this task exists to prevent. It is `updateManifest` in `packages/access/src/sources/update.ts`; `retitleSource` is a call into it.
+  - It **keeps the fields it does not model**. `parseManifest` narrows a manifest to the five keys this module knows, so merging a change onto *that* deleted everything else the file held — silently, on a write that returned success, and now on every `text.md` write. A manifest arrives with a `git clone`, and 8.1 is about to put a description in the same file. A security review caught it.
 - [ ] 4.2 (TDD) `ow source mark <id>` writes the declared status. Test-first for the same reason as 2.2: it is a write, it is the record the agent's own loop depends on, and a status written to the wrong source is a source silently dropped from the queue
 - [ ] 4.3 (Unit) `ow source list`, printing JSON, with the unprocessed ones answerable on their own — this is what the agent's loop reads
 - [ ] 4.4 (Unit) The refusals here are readable enough for the agent to fix and retry, in the same words the desktop and the hook use — 9.13, whose whole point is that a refusal an agent cannot parse becomes an attempt it repeats verbatim

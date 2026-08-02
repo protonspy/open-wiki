@@ -4,7 +4,7 @@ import { listPages, readIndex, isIndexed, CODEWIKI_DIR, type PageRef } from "../
 import { readFrontmatter, validatePage } from "../store/page.js";
 import { linkableSlugs, resolveWikilinks } from "../store/wikilinks.js";
 import { extractProvenanceLinks, resolveProvenance } from "../store/provenance.js";
-import { listSources } from "../sources/manifest.js";
+import { listSources, readManifest } from "../sources/manifest.js";
 import { assertWithin } from "../paths.js";
 import type { Finding } from "./findings.js";
 import { safe, sortFindings } from "./findings.js";
@@ -199,20 +199,48 @@ export function checkRecords(
     });
   }
 
-  // A source in raw/ that no page rests on. This is the case that disappears
-  // from view on its own: nothing links to it, so nobody trips over it.
+  // A source nobody has finished with. This is the case that disappears from
+  // view on its own: nothing links to it, so nobody trips over it.
+  //
+  // It takes **two** facts, not one (`specs/source-status`, R4.1). "No page
+  // cites this" on its own reported every source somebody read and deliberately
+  // discarded — which leaves no trace on the filesystem at all — as a permanent
+  // finding, and a check that cries wolf is a check people stop reading. So a
+  // declared source is out, whether or not anything cites it.
   for (const id of listSources(projectRoot)) {
     if (citedSources.has(id)) continue;
+    if (declaredProcessed(projectRoot, id)) continue;
     findings.push({
       code: "source.uncited",
       severity: "warning",
       source: id,
-      message: `raw/${id} is a source no page cites`,
-      fix: "Distil it into a page, or accept that it is not yet used — it stays in raw/ either way; sources are never deleted to tidy a report.",
+      message: `raw/${id} is a source no page cites and nobody has marked read`,
+      // Both ways out, because the reader who discarded this deliberately needs
+      // to be told they may record that — not told again to distil it. The verb
+      // that records it is plan task 4.2 and is not built yet, so this says the
+      // judgement rather than naming a command nobody can run.
+      fix: "Distil it into a page, or — if it was read and there was nothing in it worth writing — mark it processed, which records that judgement so it stops being reported. It stays in raw/ either way; sources are never deleted to tidy a report.",
     });
   }
 
   return findings;
+}
+
+/**
+ * Whether somebody declared they had finished reading this source.
+ *
+ * A manifest that will not parse answers `false` rather than taking the report
+ * down: `listSources` only checks that the file exists, and one bad directory
+ * must not cost the other nineteen their findings. `false` is also the safe
+ * answer — it reports a source that may already have been read, which costs a
+ * glance, where `true` would hide one nobody has opened.
+ */
+function declaredProcessed(projectRoot: string, id: string): boolean {
+  try {
+    return readManifest(projectRoot, id).processed !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 /** 7.3 — provenance links that resolve to no source, or to no instant in one. */
