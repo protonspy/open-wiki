@@ -118,7 +118,7 @@ this project recorded and then had to route around twice.
 ## 1 — Read the harnesses before designing for them
 
 - [ ] 1.1 (Unit) Establish, from each harness's own source, what it loads and from where: entry file, skills or equivalent, MCP configuration, and what — if anything — can inspect or refuse a write before it lands. Record it as findings with citations, because everything below is built on it and `adr:0013` is explicit that a claim about a harness that was reasoned rather than read does not belong in this repository
-- [ ] 1.2 (Unit) An ADR: the convention ships to every harness, the gate degrades per harness, and a project may carry more than one. It narrows `adr:0015` — which said the convention ships as skills, in the singular — rather than superseding it, and it is hard to reverse because it decides what is committed into every project this product touches
+- [ ] 1.2 (Unit) An ADR: the convention ships to every harness, the gate degrades per harness, and a project may carry more than one. It narrows `adr:0015` — which said the convention ships as skills, in the singular — rather than superseding it, and it is hard to reverse because it decides what is committed into every project this product touches. It is the *mechanics*; the stance it applies is already recorded in `adr:0020-decisions-are-made-for-every-harness`, which deliberately left these questions to this task
 
 ## 2 — One template set, three renderings
 
