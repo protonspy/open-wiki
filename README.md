@@ -9,14 +9,28 @@ none of it is read by an agent without somebody pasting it into a prompt by
 hand.
 
 open-wiki does three things and refuses the rest. It **takes in sources** — a
-file or a recording — and reduces them to text with provenance anchors. It
-**stores the wiki** as validated markdown. And it **lives inside the project
-directory**, which is where the harness is already working, so reading it needs
-no protocol at all.
+file of any kind, or a meeting it records — and keeps the original. It **stores
+the wiki** as validated markdown. And it **lives inside the project directory**,
+which is where the harness is already working, so reading it needs no protocol
+at all.
 
-**The application calls no LLM.** Reading the source text, applying the
-convention and writing the pages is the agent's job. The application does not
-write content; it validates what comes in and records everything that changes.
+**The application does not write your pages.** An agent does: yours, in the
+harness you already talk to, or the one built into the Chat pane. Either way the
+write goes through the same gate — the schema, the wikilinks, the provenance —
+and is refused with a reason when it does not hold up. What the application
+itself does is scaffold, validate, record every change and show you the result.
+
+**It does not read your sources either.** The bytes are preserved exactly as
+they arrived and the agent opens them — a PDF as a document, an image as an
+image — which keeps the layout, the tables and the figures that a text extractor
+drops (`adr:0021-sources-are-stored-not-parsed`). Markdown and plain text are
+copied into `text.md` on the way in, because copying text that is already text
+is not extraction.
+
+**Your keys, on your machine.** There is no backend and no account
+(`adr:0001-no-backend-byok`). One Groq key does two jobs — transcribing
+recordings and running the embedded agent — or you point transcription at a
+local whisper.cpp and give it no key at all.
 
 Windows 10/11. Apache-2.0.
 
@@ -59,6 +73,16 @@ the thing that actually tells you the bytes are the ones that were built.
 does. `ow init` scaffolds `raw/`, `wiki/`, `.state/`, the convention as skills,
 and a short `CLAUDE.md`. Then you talk to your agent in that same directory.
 
+The window has four panes: the **wiki** you are reading, the **sources** it
+rests on, the **checks** that say what is wrong with it, and **chat** — the
+embedded agent, for when there is no harness open. It reads the project freely
+and pauses for your approval on every write
+(`adr:0019-an-embedded-agent-that-reads-freely-and-writes-through-the-gate`).
+
+Everything the window does, the CLI does too: `ow check`, `ow graph`,
+`ow search`, `ow write`. That is deliberate — an agent with a terminal needs no
+window, and CI needs no agent.
+
 ## Recording a meeting
 
 This application records audio, from your microphone **and** from what your
@@ -88,8 +112,14 @@ audio and `.state/` are out by default, and committing them is opting in. That
 default is not tidiness: `.state/` holds every page as it was before each write,
 which is where a redaction survives the redaction.
 
-A meeting transcript is a verbatim record of what people said, including the
+A recording's timeline is a verbatim record of what people said, including the
 part they would not have written down. Read a source before you commit it.
+
+**Any file can be a source now**, and `raw/` holds the bytes rather than a
+summary of them. A dropped video is a video in your repository. The application
+says so at the moment of the drop rather than letting you find out in
+`git status`, but the decision is yours and there is a ceiling rather than a
+policy.
 
 **The transcription credential is never in the project directory.** It lives in
 the application's own data directory, keyed by project path, unconditionally —
@@ -97,13 +127,22 @@ because `git init` a week later turns a conditional rule into a leak.
 
 ## What it does not do
 
-Extraction or page-writing by the application; chat inside the application; a
-hosted service, accounts or telemetry; a block editor; real-time collaboration;
-embeddings or a vector store; versioning (your git is welcome to it); macOS and
-Linux; real-time transcription or a bot that joins the meeting.
+Extraction, summarisation or page-writing **by the application** — those are the
+agent's, and the gate is what the application contributes; a hosted service,
+accounts or telemetry; a block editor; real-time collaboration; embeddings or a
+vector store; versioning (your git is welcome to it); macOS and Linux; real-time
+transcription, ML diarisation, or a bot that joins the meeting.
+
+Two of these were once broader and are worth naming, because a README that
+quietly drops a promise is worse than one that never made it. **Chat inside the
+application** was out of scope and is now in it, for the user who downloaded the
+installer and has no harness — `adr:0019` says what changed and what it cost.
+And the application once **called no LLM at all**; transcription and the
+embedded agent both call one now, with your key, from your machine.
 
 The reasoning for each is in [`docs/adr/`](docs/adr/), and the shape of the
-whole thing is in [`plans/open-wiki.md`](plans/open-wiki.md).
+whole thing is in [`plans/open-wiki.md`](plans/open-wiki.md) — which is the
+record of the MVP as it was decided, not a description of today.
 
 ## Building it
 

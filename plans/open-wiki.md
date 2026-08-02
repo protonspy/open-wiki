@@ -27,6 +27,15 @@ how **another** project is consulted, read-only, by a project that has no wiki o
 methodology and writing the pages is the agent's job. The application does not write
 content; it validates what comes in and records everything that changes.
 
+> **Two of this plan's decisions have since been narrowed, and this file is the record
+> of the MVP as it was decided rather than a description of today.** The application
+> calls an LLM in two places now — transcription, and the embedded agent of
+> `adr:0019-an-embedded-agent-that-reads-freely-and-writes-through-the-gate`, which
+> also put chat inside the window. And it no longer reduces a source to text:
+> `adr:0022`'s companion, `adr:0021-sources-are-stored-not-parsed`, keeps the original
+> and leaves the reading to the agent. The clause that survives both is the one that
+> mattered: **the application does not write content, it validates and records.**
+
 ## Out of scope
 
 - Extraction, summarisation or page writing by the application. That is the agent's.
