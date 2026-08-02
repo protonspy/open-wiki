@@ -2,7 +2,7 @@
 
 ## What changes
 
-Serves R1.1–R1.6, R2.1–R2.7, R3.1–R3.5, R4.1–R4.3.
+Serves R1.1–R1.6, R2.1–R2.7, R3.1–R3.5, R4.1–R4.4.
 
 The wiki pane replaces the single `<ul>` page list and the `PageBar` /
 `Frontmatter` rendering in `App.tsx` with the three-column grid the draft draws —
@@ -55,19 +55,25 @@ them, not the label, and `renderer.spec` asserts them, so it stays green.
 
 **Edit, rename and delete** (R2.6) stay reachable: the existing 8.7–8.9 flows
 move into the pane-bar as ghost icon buttons shown when a page is open. The
-draft's reader has no such row, but the editor plate the draft *does* draw is
+draft's reader has no such row, but the editor plate the draft _does_ draw is
 unreachable without one, so the pane-bar carries them — the draft wins on the
 reader surface, and the entry to it is the smallest chrome that does the job.
 
 ### The side panel (R3)
 
 Two sections, both fed by data the backend already serves. **Where this page
-came from** reuses `sourcesOfPage` (6.5) — already rendered inline above the body
-in `Panels.tsx` — as source cards; choosing one opens the existing provenance
-overlay at the citation's fragment, and a missing source is shown broken, as it
-is today. **Needs attention** is the findings the checks already return, filtered
-to `finding.page === slug`, each with the `fix` it already carries (7.6). A
-section with nothing to show is omitted, not rendered empty (R3.5).
+came from** reuses `sourcesOfPage` (6.5) — rendered inline above the body in
+`Panels.tsx` until now — as source cards; choosing one opens the existing
+provenance overlay at the citation's fragment, and a missing source is shown
+broken, as it is today. It moves out of `Panels.tsx` rather than being copied:
+the side column is now the only place the question is answered, and two
+renderings of one question drift.
+
+**Needs attention** is the findings the checks already return, each with the
+`fix` it already carries (7.6), **filtered by the page's path** — a finding's
+`page` is `wiki/topics/retention.md`, never the slug, so matching on the slug
+would find nothing at all, on every page, and silently. A section with nothing to
+show is omitted, not rendered empty (R3.5).
 
 ### Search is deferred
 
@@ -79,12 +85,20 @@ surface and adds one when the agent lands, so the pane is not blocked on a
 larger dependency and does not grow a lexical search the product has decided
 against.
 
-### Empty and absent states (R5)
+### Empty and absent states (R4)
 
 No selection → the reader says so; loading → the reader says so; an empty wiki
 shows the existing `EmptyWiki` (1.4) in the reader area. These are the pane's
 own structural states; the cross-pane discipline of distinguishing them from
 failure is 8.3's job, not this spec's.
+
+One state is decided rather than rendered, in `readerState`, and it is there
+because the window opens with an empty index and fills it a moment later: **a
+wiki nobody has read yet is not an empty wiki** (R4.4). Collapsed into one
+state, every launch of a real project would open on _this wiki is empty, and
+this window is not what fills it_ — the same "nothing rendered means nothing is
+here" failure this group exists to end, arrived at from the other side. So the
+count is `number | null`, and only a successful index read makes it a number.
 
 ## Alternatives considered
 
@@ -102,3 +116,10 @@ when there is no title.
 - **The pane-bar carrying edit/rename/delete** is a placement the draft does not
   draw. Kept to ghost icon buttons so it does not invent chrome the draft
   refused to draw on the reader itself.
+- **The side panel makes the checks run while a page is open.** "Needs
+  attention" reads the same `findings()` the checks pane does, so a project walk
+  now happens whenever a page is open and the folder changed, rather than only
+  when that pane is. It is coalesced with every other redraw (120 ms) and
+  bounded by the project's size; if it stops being cheap, the answer is one
+  fetch shared by both readers, not a panel that stops saying what is wrong with
+  the page in front of the reader.

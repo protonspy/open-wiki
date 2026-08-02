@@ -65,6 +65,8 @@ scope.)
   nothing.
 - **R4.3** When the wiki has no pages, the wiki pane shall say that the agent
   writes the pages, not the window.
+- **R4.4** While the wiki's index has not been read yet, the wiki pane shall say
+  so rather than say the wiki is empty.
 
 ## Out of scope
 

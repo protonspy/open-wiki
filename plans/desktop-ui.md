@@ -135,12 +135,17 @@ stop meaning "where I came from", which 8.5 already paid attention to once.
 → **`specs/wiki-pane/`**
 
 The tree, the paper reader, the side panel, and search. A spec because two questions
-are open. The tree groups by folder — Projects, People, Topics — while
+were open. The tree groups by folder — Projects, People, Topics — while
 `adr:0016-a-page-is-its-slug-wherever-it-sits` says a folder is organisation and
 nothing more, so the grouping is presentation and must not become a second
-addressing scheme. And search has an owner already: `ow search` (9.12) is lexical
+addressing scheme. And search had an owner already: `ow search` (9.12) is lexical
 over the files, so the pane either reaches it or grows a second implementation that
 disagrees with the CLI.
+
+**Both are settled in the spec, and search went the third way**: it is out of
+scope there, waiting on the embedded agent (`specs/embedded-agent/`) or on a
+harness over MCP (`adr:0018`), rather than the pane growing a lexical search the
+product has since decided against. The pane ships without one.
 
 The reader itself is mostly settled: `markdown.ts` already renders wikilinks and
 citations as tokens with `data-ow-page`, which is what the amber chips and the

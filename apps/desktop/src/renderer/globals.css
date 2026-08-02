@@ -753,22 +753,339 @@ button[aria-current="true"],
   padding: var(--space-6);
 }
 
-.page {
-  max-width: 78ch;
+/*
+ * A pane that draws its own frame (spec `wiki-pane`).
+ *
+ * `<main>` stops padding and stops scrolling, and the pane inside it fills the
+ * space edge to edge with each of its columns scrolling on its own. A tree that
+ * scrolled with the page beside it would be a tree you lose your place in the
+ * moment you read anything long — which is the whole reason the draft draws
+ * three columns rather than one.
+ */
+.main--bleed {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  /* Without this a grid child taller than the viewport stretches its parent
+     instead of scrolling inside it, and the status bar leaves the window. */
+  min-height: 0;
 }
 
+/*
+ * What the shell has to say, above whichever pane is open.
+ *
+ * `:empty` is what keeps it out of the way: every child here renders null when
+ * it has nothing, so with nothing to report the wrapper has no child nodes at
+ * all and the rules below never apply.
+ */
+.main__notices {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.main__notices:not(:empty) {
+  margin-bottom: var(--space-4);
+}
+
+.main--bleed .main__notices:not(:empty) {
+  padding: var(--space-3) var(--space-3) 0;
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   The wiki pane — bar, tree, reader, side (spec `wiki-pane`)
+   ------------------------------------------------------------------------ */
+
+.wiki-pane {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 250px;
+  grid-template-rows: 38px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* No page open, so nothing for a side column to be about. */
+.wiki-pane--no-side {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.pane-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  grid-column: 1 / -1;
+  height: 38px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.pane-title {
+  font-weight: 600;
+  font-size: var(--text-base);
+}
+
+.pane-bar__spacer {
+  flex: 1;
+}
+
+/* Where the open page sits, in the bar rather than on the paper. Truncated
+   from the left, because the end of a path is the part that identifies it. */
+.pane-bar__path {
+  overflow: hidden;
+  max-width: 40ch;
+  direction: rtl;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* The one icon button that destroys something says so on hover, and only on
+   hover: a permanently red button in a bar of grey ones is an alarm nobody
+   reads after the first day. */
+.icon-btn--danger:hover:not(:disabled) {
+  color: var(--destructive-foreground);
+  border-color: rgb(229 72 77 / 40%);
+}
+
+.tree {
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-1);
+  border-right: 1px solid var(--border);
+  background: var(--card);
+}
+
+.tree-group {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-item:hover {
+  background: var(--muted);
+}
+
+.tree-item[aria-current="true"] {
+  background: rgb(217 154 78 / 12%);
+  color: var(--primary);
+}
+
+/* A long title truncates rather than wrapping the row to two lines: the tree
+   is a list of rows, and one row that is taller than the rest reads as a
+   heading for the ones under it. */
+.tree-item__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The one warm surface in the window: the content is paper, the application is
+   the instrument holding it. */
+.reader {
+  overflow-y: auto;
+  padding: var(--space-6) 34px 60px;
+  background: var(--paper);
+  color: var(--paper-foreground);
+}
+
+.side {
+  overflow-y: auto;
+  padding: 14px var(--space-3);
+  border-left: 1px solid var(--border);
+  background: var(--card);
+}
+
+.side-title {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* A second section under a first one. Not `+`: what precedes it is a card or a
+   finding, never the other title. */
+.side-title--later {
+  margin-top: 22px;
+}
+
+.src-card {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.src-card:hover {
+  border-color: rgb(217 154 78 / 40%);
+}
+
+/* A citation whose source is not there is shown, not hidden — and it does not
+   pretend to be clickable, because there is nothing to open. */
+.src-card--broken {
+  border-color: rgb(229 72 77 / 35%);
+  background: var(--destructive-dim);
+  cursor: default;
+}
+
+.src-card .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: var(--text-sm);
+}
+
+/* Amber, because a source is provenance — the one thing this palette spends
+   its accent on. The broken one is not: there is nothing there to trace. */
+.src-card:not(.src-card--broken) .name svg {
+  color: var(--primary);
+  flex: 0 0 auto;
+}
+
+.src-card--broken .name svg {
+  color: var(--destructive-foreground);
+  flex: 0 0 auto;
+}
+
+.src-card .meta {
+  display: block;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+}
+
+.side .finding {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 8px 9px;
+  border: 1px solid rgb(229 72 77 / 35%);
+  border-radius: var(--radius);
+  background: var(--destructive-dim);
+  font-size: var(--text-sm);
+}
+
+.side .finding svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--destructive-foreground);
+}
+
+.side .finding .fix {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* The page itself, on paper. Measure is set per block rather than on the
+   article, so a table or a code block may run wider than the prose it explains
+   without the prose losing its 66ch line. */
 .page h1 {
   font-family: var(--font-display);
   font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.015em;
   line-height: var(--leading-tight);
   margin: 0 0 var(--space-4);
+  text-wrap: balance;
 }
 
 .page h2 {
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: -0.005em;
   line-height: var(--leading-tight);
+  margin: 26px 0 var(--space-2);
+}
+
+.page h3 {
+  font-size: var(--text-base);
+  font-weight: 600;
   margin: var(--space-6) 0 var(--space-2);
+}
+
+.page p,
+.page ul,
+.page ol,
+.page blockquote {
+  max-width: 66ch;
+  margin: 0 0 var(--space-3);
+}
+
+.page li {
+  margin-bottom: 5px;
+}
+
+.page blockquote {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--paper-border);
+  color: #b3a894;
+}
+
+/* The frontmatter, as the chips over the page (R2.2). */
+.reader-frontmatter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 14px;
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--paper-border);
+}
+
+.fm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--paper-border);
+  border-radius: var(--radius-sm);
+  background: rgb(236 231 222 / 5%);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: #b3a894;
+}
+
+.fm-chip b {
+  color: var(--paper-foreground);
+  font-weight: 500;
 }
 
 /* Relative, not a step off the scale, and deliberately unlike its neighbours
@@ -778,40 +1095,22 @@ button[aria-current="true"],
 .page code {
   font-family: var(--font-mono);
   font-size: 0.92em;
-  background: var(--background);
+  background: rgb(236 231 222 / 6%);
   padding: 1px var(--space-1);
   border-radius: var(--radius-sm);
 }
 
 .page pre {
-  background: var(--background);
-  border: 1px solid var(--border);
+  background: rgb(236 231 222 / 4%);
+  border: 1px solid var(--paper-border);
   border-radius: var(--radius);
   padding: var(--space-3);
   overflow-x: auto;
 }
 
-.frontmatter {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--space-1) var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--muted-foreground);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-.frontmatter dt {
-  color: var(--muted-foreground);
-}
-
-.frontmatter dd {
-  margin: 0;
-  color: var(--foreground);
-  font-family: var(--font-mono);
+.page pre code {
+  background: none;
+  padding: 0;
 }
 
 a,
@@ -827,25 +1126,91 @@ a:hover,
 }
 
 /*
+ * On paper, a wikilink is ink with a line under it — not amber.
+ *
+ * **Amber means provenance, everywhere, always.** It is the draft's one
+ * reserved colour, and a page whose every internal link is amber spends it on
+ * the most ordinary thing in the wiki; the citation chip then has nothing left
+ * to be.
+ */
+.reader .wikilink {
+  color: var(--paper-foreground);
+  text-decoration: none;
+  border-bottom: 1px solid rgb(236 231 222 / 28%);
+}
+
+.reader .wikilink:hover {
+  text-decoration: none;
+  border-bottom-color: var(--paper-foreground);
+}
+
+/*
  * A broken wikilink looks broken where the reader would have clicked it. A
  * link to nowhere that looks like a link is worse than obviously missing
  * text — and it is the same thing 7.1 reports.
  */
-.wikilink--broken {
+.wikilink--broken,
+/* Specificity, not taste: `.reader .wikilink` above would otherwise win over
+   this and paint a link to nowhere as ordinary ink on the one surface where
+   the reader is actually reading. */
+.reader .wikilink--broken {
   color: var(--destructive-foreground);
   text-decoration: underline dotted;
+  border-bottom: 0;
   cursor: help;
 }
 
+/*
+ * A citation, as the chip the draft draws (R2.7): amber, monospaced, reading as
+ * its own fragment — `14:32`, `p.12` — with an icon saying which kind of source
+ * it opens.
+ *
+ * **The icon is a CSS mask, not a component.** `markdown.ts` produces an HTML
+ * string from markdown-it tokens and cannot render React, so the kind arrives
+ * as the class the rule already stamped (`provenance--rec` / `provenance--src`)
+ * and the glyph hangs off it. Both are the draft's own symbols, taken from its
+ * sprite.
+ */
 .provenance {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: baseline;
+  margin-left: 3px;
+  padding: 0 4px;
+  border: 1px solid rgb(217 154 78 / 25%);
+  border-radius: var(--radius-sm);
+  background: rgb(217 154 78 / 10%);
+  color: var(--primary);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--muted-foreground);
-  border-bottom: 1px dotted var(--border-strong);
+  text-decoration: none;
 }
 
 .provenance:hover {
-  color: var(--primary);
+  background: rgb(217 154 78 / 20%);
+  text-decoration: none;
+}
+
+.provenance::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  background: currentcolor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+/* A recording: the level bars the draft draws for audio. */
+.provenance--rec::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M2 10v3'/%3E%3Cpath d='M6 6v11'/%3E%3Cpath d='M10 3v18'/%3E%3Cpath d='M14 8v7'/%3E%3Cpath d='M18 5v13'/%3E%3Cpath d='M22 10v3'/%3E%3C/svg%3E");
+}
+
+/* A document: a page with lines on it. */
+.provenance--src::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3Cpath d='M10 9H8'/%3E%3C/svg%3E");
 }
 
 /* Errors say what happened and what to do, and never look like content. */
@@ -1071,6 +1436,17 @@ a:hover,
   gap: var(--space-3);
   color: var(--foreground);
   font-size: var(--text-base);
+}
+
+/* The doorway now stands on the reader's paper, and inherits it: the sentence
+   that explains why the wiki is empty is the page, on the day there is none. */
+.reader .doorway {
+  color: var(--paper-foreground);
+}
+
+.reader .doorway code {
+  color: var(--paper-foreground);
+  background: rgb(236 231 222 / 6%);
 }
 
 .doorway__lead {
