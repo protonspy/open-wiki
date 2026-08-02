@@ -7,7 +7,7 @@ ci: wait
 
 Enabled by `adr:0019-an-embedded-agent-that-reads-freely-and-writes-through-the-gate`,
 which narrowed `adr:0013` to allow the application to run an embedded agent. This spec
-is the first thing that record's "Consequences" call for.
+is the first thing that record's "Consequences" section calls for.
 
 ## Purpose
 
@@ -43,17 +43,18 @@ lands.
   the file the project was scaffolded for its harness to read — and the scaffolded skills,
   carried in unchanged; no hand-written system prompt shall be added beside them. A project
   scaffolded for more than one harness carries more than one entry file, and they are
-  renderings of one convention, so the embedded agent shall read one and shall not
-  duplicate the convention in its prompt.
+  renderings of one convention, so the embedded agent shall resolve one deterministically —
+  from the scaffold metadata or the active harness, rejecting ambiguity before construction —
+  and shall not duplicate the convention in its prompt.
 - **R2.4** While the project has no Groq credential, the desktop application shall disable
   the embedded agent and state in the settings screen that a Groq key is required for the
   agent and serves transcription and the agent both.
 - **R2.5** The settings screen shall offer a curated model selection for the agent, not the
   raw provider model list, with one default chosen for tool-calling reliability.
 - **R2.6** The embedded agent shall send project content only to Groq; it shall not read
-  tracing or telemetry environment variables, shall set tracing disabled before the agent is
-  constructed (so library-level auto-initialization does not fire), and shall not transmit
-  prompts, tool calls, or tool results to any third party.
+  tracing or telemetry environment variables, shall set tracing disabled before the agent's
+  dependencies are imported (so library-level auto-initialization does not fire), and shall
+  not transmit prompts, tool calls, or tool results to any third party.
 
 ## R3 · Reading — unrestricted within the project
 
@@ -96,6 +97,9 @@ lands.
   shall be told the write was rejected and not to retry it unless asked.
 - **R5.4** When the user edits the arguments of a paused write, the tool shall execute with
   the edited arguments, and the gate shall validate them as if the agent had proposed them.
+- **R5.5** When the user resumes a paused write, the embedded agent shall revalidate that the
+  target page is unchanged since the interrupt and, if it has changed, shall return a fresh
+  proposal rather than apply a stale edit.
 
 ## R6 · The line is proved, not configured
 
@@ -107,6 +111,10 @@ lands.
 
 - **R7.1** The embedded agent shall keep conversation state in memory, keyed by a thread id,
   one per conversation, and shall resume a paused run from the same thread.
+- **R7.2** The chat channels shall carry a thread id and a run id, one conversation per
+  project window, and a resume shall reference the interrupt id it answers; the push events
+  shall be discriminated by kind — token, tool, interrupt, done, or error — each with the
+  fields its kind requires.
 
 ## Out of scope
 

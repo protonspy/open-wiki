@@ -9,29 +9,30 @@
 - [ ] 1.5 (TDD) Implement `WikiGateBackend.edit` as exact `old_string`→`new_string` replace (`replace_all` supported) over a wiki page, routing through the store; assert it never rewrites the whole page and that a non-wiki path fails — R4.1, R4.3, R6.1
 - [ ] 1.6 (Unit) Omit `execute` from `WikiGateBackend` so it is not a sandbox backend and the DeepAgents middleware hides the `execute` tool — R4.4
 - [ ] 1.7 (Unit) Extend the `Origin` union in `@open-wiki/access` with the string variant `"agent"`, alongside `"editor" | "cli" | "hook" | "observer"`, so the operation log distinguishes an agent write — R4.5
-- [ ] 1.8 (Unit) Add a gated `deletePage(projectRoot, pagePath, origin)` primitive to `@open-wiki/access` that routes through `gateWrite` + `appendOperation` and accepts an origin; the desktop's existing `deletePage` calls `node:fs` with a hardcoded origin and shall not be reused — R4.2, R4.5
+- [ ] 1.8 (Unit) Add gated, atomic `deletePage(projectRoot, pagePath, origin)` and `renamePage(projectRoot, oldPath, newPath, origin)` primitives to `@open-wiki/access`, each a single operation (snapshot affected pages, gate + write, one log entry, rollback on failure); deletion is supersession; the desktop's existing `deletePage` calls `node:fs` with a hardcoded origin and shall not be reused — R4.2, R4.5
+- [ ] 1.9 (Unit) Implement `WikiGateBackend.readRaw` (confined with `assertWithin`, returning `FileData` as a `ReadRawResult`) — the required `BackendProtocolV2` read method — R3.1, R3.2
 
 ## 2 · The agent runtime
 
 - [ ] 2.1 (Unit) Build the agent in `apps/desktop/src/main/agent/agent.ts` with `createDeepAgent`: `model = new ChatGroq(...)` from the Groq credential and the curated default model, `backend = WikiGateBackend`, `checkpointer = new MemorySaver()` keyed by `thread_id`, `systemPrompt` = the resolved harness entry file, `skills = [".claude/skills/"]`, and `tools = [renamePageTool, deletePageTool]` as tool objects; the filesystem tools auto-attach from the harness profile and re-point at the backend — R2.1, R2.2, R2.3, R2.5, R4.4, R7.1
-- [ ] 2.2 (Unit) Resolve the project's harness entry file (the file the project was scaffolded for its harness to read; today `CLAUDE.md`, plural once `plans/harness-portability.md` lands) as `systemPrompt`, and the scaffolded skills as `skills`, both read from disk in main and carried in unchanged; assert no hand-written prompt is appended beside them — R2.3
-- [ ] 2.3 (Unit) Implement `rename_page` and `delete_page` tools over the gated store with origin `"agent"`: `rename_page` writes the new page through `gateWrite` + `writePage`, marks the old superseded via `supersedePage`, refuses to clobber an existing target, and refuses the wiki index, changelog, and log; `delete_page` routes through the new `deletePage` primitive and refuses the same set — R4.2, R4.5, R4.6
-- [ ] 2.4 (Unit) Register a Groq harness profile via `registerHarnessProfile(createHarnessProfile({ generalPurposeSubagent: { enabled: false } }))` so the general-purpose subagent — and with it the `task` tool — is never constructed; assert `subagents: []` alone does not remove `task` — R4.4
+- [ ] 2.2 (Unit) Resolve the project's harness entry file (today `CLAUDE.md`, plural once `plans/harness-portability.md` lands) deterministically — from scaffold metadata or the active harness, rejecting ambiguity — and read it with `assertWithin` + a real-path check; use it as `systemPrompt` and the scaffolded skills as `skills`, both carried in unchanged; assert no hand-written prompt is appended beside them — R2.3
+- [ ] 2.3 (Unit) Implement `rename_page` and `delete_page` tools over the new atomic `renamePage`/`deletePage` primitives with origin `"agent"`; `rename_page` refuses to clobber an existing target and refuses the wiki index, changelog, and log; `delete_page` refuses the same set — R4.2, R4.5, R4.6
+- [ ] 2.4 (Unit) Register a Groq harness profile via `registerHarnessProfile("groq", createHarnessProfile({ generalPurposeSubagent: { enabled: false } }))` — the first arg is the provider key `createDeepAgent` resolves for the model — so the general-purpose subagent (and the `task` tool) is never constructed; assert `subagents: []` alone does not remove `task` — R4.4
 - [ ] 2.5 (Unit) Set `interruptOn` for `write_file`, `edit_file`, `rename_page`, `delete_page`, and emit a `chat:event` interrupt carrying the proposed change — R5.1
-- [ ] 2.6 (Unit) Stream `agent.streamEvents({ version: "v3" })` and forward token and tool-call events to the renderer; resume a paused run with `Command({ resume: { decisions } })` on the same `thread_id` — R1.2, R5.3, R5.4, R7.1
+- [ ] 2.6 (Unit) Stream `agent.streamEvents(input, { version: "v3" })` and forward token and tool-call events to the renderer; resume a paused run with `Command({ resume: { decisions } })` on the same `thread_id`, referencing the `interrupt_id` — R1.2, R5.3, R5.4, R5.5, R7.1, R7.2
 - [ ] 2.7 (Unit) Run all agent invocations in the desktop main process; assert the renderer cannot reach the model or the credential directly — R2.1
-- [ ] 2.8 (Unit) Disable tracing/telemetry for the agent's runs — set `LANGCHAIN_TRACING_V2=false` and read no `LANGCHAIN_*` / `LANGSMITH_*` environment variable before the agent is constructed, so library-level auto-initialization does not fire and project content is sent only to Groq — R2.6
+- [ ] 2.8 (Unit) Disable tracing/telemetry for the agent's runs — set `LANGCHAIN_TRACING_V2=false` and unset `LANGSMITH_*` before the agent's dependencies are imported (at the start of main), and read no `LANGCHAIN_*` / `LANGSMITH_*` env var, so library-level auto-initialization does not fire and project content is sent only to Groq — R2.6
 
 ## 3 · IPC channels
 
-- [ ] 3.1 (Unit) Add `chat:send`, `chat:resume`, `chat:cancel` request channels and the `chat:event` push channel in `channels.ts`; expose in `preload.ts`, type in `bridge.ts` `OwBridge`, and route in `dispatch` — R1.2, R5.2, R5.3, R5.4
+- [ ] 3.1 (Unit) Add `chat:send({text, thread_id})`, `chat:resume({decisions, interrupt_id, run_id})`, `chat:cancel({run_id})` and the `chat:event({kind, thread_id, run_id, ...})` push channel (discriminated by `kind`: token/tool/interrupt/done/error) in `channels.ts`; expose in `preload.ts`, type in `bridge.ts` `OwBridge`, and route in `dispatch` — R1.2, R5.2, R5.3, R5.4, R5.5, R7.2
 - [ ] 3.2 (Unit) Bind the push channel through the buffered `send()` pattern so events before `did-finish-load` queue rather than drop — R1.2
 
 ## 4 · The chat pane
 
 - [ ] 4.1 (Unit) Widen `Pane` in `navigation.ts`, add the chat entry to `PANES` in `Rail.tsx`, and render `<Chat/>` in the `App.tsx` pane switch — R1.1
 - [ ] 4.2 (Unit) Build `Chat.tsx` with `bridge()` + `useEffect` + live-guard, sending over `chat:send` and rendering streamed tokens and tool calls from `chat:event` — R1.2, R1.4
-- [ ] 4.3 (Unit) Render the interrupt payload (slug, old/new content or the full resulting page for `replace_all`, or the rename/delete target) with approve, reject, and edit controls, dispatching `chat:resume` — R5.1, R5.2, R5.3, R5.4
+- [ ] 4.3 (Unit) Render the interrupt payload (slug, old/new content or the full resulting page for `replace_all`, or the rename/delete target) with approve, reject, and edit controls, dispatching `chat:resume` with the `interrupt_id`; show a fresh proposal when the backend reports the page changed since the interrupt — R5.1, R5.2, R5.3, R5.4, R5.5
 - [ ] 4.4 (Unit) Show the empty state naming the Groq key requirement and linking to settings while no credential is configured, and disable the composer; this replaces the "there is no model behind this window" copy — R1.3, R1.5
 - [ ] 4.5 (Unit) Surface a run error in place and preserve the conversation that produced it — R1.4
 
@@ -55,6 +56,8 @@
 - [ ] 6.10 (TDD) Test that `rename_page` refuses to clobber an existing target, and that `rename_page` and `delete_page` refuse the wiki index, changelog, and log — R4.6, R6.1
 - [ ] 6.11 (TDD) Test that a tool result large enough to trigger the middleware's eviction creates no file on disk (under `/large_tool_results/` or `/conversation_history/`) — the gate rejects the eviction path — R4.3, R6.1
 - [ ] 6.12 (TDD) Test that constructing the agent with `LANGCHAIN_*` / `LANGSMITH_*` env vars set constructs no tracing client and sends nothing to a third party — R2.6, R6.1
+- [ ] 6.13 (TDD) Test that `readRaw` of a path outside the project returns an error and reads nothing — R3.2, R6.1
+- [ ] 6.14 (TDD) Test that resuming a paused write against a page changed since the interrupt does not apply the stale edit and re-interrupts with a fresh proposal — R5.5, R6.1
 
 ## 7 · Docs
 

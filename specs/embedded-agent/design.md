@@ -10,17 +10,22 @@ validated store. `adr:0019` decided that this may exist; this design is how.
 Three new things, and each is load-bearing:
 
 1. **A `BackendProtocolV2` implementation that is the guardrail by scope** —
-   `apps/desktop/src/main/agent/wiki-gate-backend.ts`. It implements `BackendProtocolV2` —
-   the current interface `StateBackend` and `FilesystemBackend` implement (`ls`, `read`,
-   `write`, `edit`, `glob`, `grep`). (The bare `BackendProtocol` export is the deprecated v1
-   alias; `WikiGateBackend` implements v2.) Reads (`ls`/`read`/`glob`/`grep`) operate on the
-   real project directory, every path confined with `assertWithin(projectRoot)` from
-   `@open-wiki/access`. Writes (`write`/`edit`) accept only paths that resolve inside
-   `<projectRoot>/wiki/` and route them through the store: `gateWrite` to validate, then
-   `writePage(projectRoot, pagePath, content, "agent")` to write atomically, log the operation
-   with origin `agent`, and leave it undoable. A write to any other path returns an error and
-   writes nothing. `execute` is not implemented, so `WikiGateBackend` is not a sandbox backend
-   (`isSandboxBackend` is false) and the DeepAgents middleware filters the `execute` tool.
+   `apps/desktop/src/main/agent/wiki-gate-backend.ts`. It implements `BackendProtocolV2`:
+   `ls`, `read`, `readRaw`, `write`, `glob`, and `grep` (required) and `edit` (inherited from
+   the v1 protocol); `delete` is optional and is not implemented (the custom `delete_page`
+   tool uses the access primitive below, not `backend.delete`). (The bare `BackendProtocol`
+   export is the deprecated v1 alias; `WikiGateBackend` implements v2.) Reads
+   (`ls`/`read`/`readRaw`/`glob`/`grep`) operate on the real project directory, every path
+   confined with `assertWithin(projectRoot)` from `@open-wiki/access`. Writes (`write`/`edit`)
+   accept only paths that resolve inside `<projectRoot>/wiki/` and route them through the
+   store: `gateWrite` to validate, then `writePage(projectRoot, pagePath, content, "agent")` to
+   write atomically, log the operation with origin `agent`, and leave it undoable. `edit` is a
+   logical replacement, not a partial write: the backend reads the page, applies the
+   exact-string replacement (`replace_all` supported), and writes the full resulting page
+   atomically through `writePage` — the gate validates the whole new page, not the diff. A
+   write to any other path returns an error and writes nothing. `execute` is not implemented,
+   so `WikiGateBackend` is not a sandbox backend (`isSandboxBackend` is false) and the
+   DeepAgents middleware filters the `execute` tool.
 
    The built-in `write_file`/`edit_file` tools are **kept and re-pointed** at this backend,
    not removed. ADR 0019 excludes "an agent toolkit's filesystem surface — `write_file`,
@@ -50,7 +55,9 @@ Three new things, and each is load-bearing:
    `systemPrompt` = the project's harness entry file, resolved at runtime and carried in
    unchanged (today `CLAUDE.md`; `plans/harness-portability.md` will write an entry file per
    harness — Codex, opencode, Claude — and a project may carry several, as renderings of one
-   convention, so the resolver reads one and does not duplicate); `skills = [".claude/skills/"]`
+   convention, so the resolver reads one — chosen deterministically from the scaffold metadata
+   or the active harness, rejecting ambiguity before the agent is constructed — and does not
+   duplicate); `skills = [".claude/skills/"]`
    (the shared skills location `adr:0015` chose, loaded by the middleware's `read_file` from
    the same backend); `checkpointer = new MemorySaver()` keyed by a `thread_id` per
    conversation; `interruptOn` set for `write_file`, `edit_file`, `rename_page`, `delete_page`;
@@ -60,8 +67,11 @@ Three new things, and each is load-bearing:
    The `task` (subagent) tool is removed at construction, not merely unused: `createDeepAgent`
    auto-adds a general-purpose subagent — which provides `task` — unless the harness profile
    disables it, and `subagents: []` alone does **not** suffice. So a Groq harness profile is
-   registered once, at module load, via the exported `registerHarnessProfile(createHarnessProfile({
-   generalPurposeSubagent: { enabled: false } }))`, keyed to Groq. With the general-purpose
+   registered once, at module load, via the exported `registerHarnessProfile("groq",
+   createHarnessProfile({ generalPurposeSubagent: { enabled: false } }))` — the first argument
+   is the provider key `createDeepAgent` resolves for the model (`getModelProvider(ChatGroq)`,
+   expected to be `"groq"`; the implementer confirms), so an unknown model that would otherwise
+   fall back to `EMPTY_HARNESS_PROFILE` instead gets this profile. With the general-purpose
    subagent disabled, the `task` tool is never built. `execute` is never built because
    `WikiGateBackend` is not a sandbox backend. The filesystem tools (`ls`, `read_file`,
    `write_file`, `edit_file`, `glob`, `grep`) are auto-attached by `createDeepAgent` from the
@@ -71,13 +81,14 @@ Three new things, and each is load-bearing:
    agent reads, and the harness-portability plan writes the same convention at each harness's
    paths.
 
-   No tracing or telemetry is enabled for the agent's runs. Before the agent is constructed,
-   the agent path sets `LANGCHAIN_TRACING_V2=false` and reads no `LANGCHAIN_*` / `LANGSMITH_*`
-   environment variable; project content the agent reads is sent only to Groq. LangChain/
-   LangGraph can auto-initialize LangSmith from those env vars at import time, before the
-   agent path runs — disabling tracing before construction is what closes that, not merely
-   refusing to read the vars in our own code. (A developer who sets them globally would
-   otherwise export the project directory to a third party.)
+   No tracing or telemetry is enabled for the agent's runs. The agent path sets
+   `LANGCHAIN_TRACING_V2=false` (and unsets `LANGSMITH_*`) before the agent's dependencies are
+   imported — at the start of main, ahead of any `langchain` / `@langchain/*` import — and
+   reads no `LANGCHAIN_*` / `LANGSMITH_*` environment variable; project content the agent reads
+   is sent only to Groq. LangChain/LangGraph can auto-initialize LangSmith from those env vars
+   at import time, before the agent path runs — disabling tracing before the import is what
+   closes that, not merely refusing to read the vars in our own code. (A developer who sets
+   them globally would otherwise export the project directory to a third party.)
 
 3. **The IPC surface and the chat pane** — new channels in
    `apps/desktop/src/main/channels.ts`: `chat:send`, `chat:resume`, `chat:cancel`, and a
@@ -96,7 +107,7 @@ two-purpose notice and the curated model list. `stack.md` gains `deepagents`,
 `@langchain/groq`, `@langchain/langgraph`, `langchain`, and `@langchain/core`.
 
 Serves R1.1, R1.2, R1.3, R1.4, R1.5, R2.1, R2.2, R2.3, R2.4, R2.5, R2.6, R3.1, R3.2, R4.1,
-R4.2, R4.3, R4.4, R4.5, R4.6, R5.1, R5.2, R5.3, R5.4, R6.1, R7.1.
+R4.2, R4.3, R4.4, R4.5, R4.6, R5.1, R5.2, R5.3, R5.4, R5.5, R6.1, R7.1, R7.2.
 
 ## Boundaries and contracts
 
@@ -112,11 +123,19 @@ R4.2, R4.3, R4.4, R4.5, R4.6, R5.1, R5.2, R5.3, R5.4, R6.1, R7.1.
   the project root with the same `assertWithin` `packages/mcp` uses; a path that escapes
   (including a symlink or junction inside the project that points outside — the realistic
   escape on Windows, the only supported platform) throws `OutsideProjectError`, which the
-  backend returns as a tool error.
-- **IPC contract.** `chat:send({ text })`, `chat:resume({ decisions })`,
-  `chat:cancel()`, and push `chat:event({ kind, ... })` where `kind` is `token` | `tool` |
-  `interrupt` | `done` | `error`. Typed in `bridge.ts` `OwBridge`; the preload parity check
-  (`preload.ts:104`) and `dispatch`'s unknown-channel throw (`ipc.ts`) enforce completeness.
+  backend returns as a tool error. The harness entry file (the agent's system prompt) is
+  resolved and read in main with the same `assertWithin` + real-path check, not a bare
+  `node:fs` read; the scaffolded skills are loaded by the middleware's `read_file` through the
+  backend, so they are confined too.
+- **IPC contract.** `chat:send({ text, thread_id })`, `chat:resume({ decisions, interrupt_id,
+  run_id })`, `chat:cancel({ run_id })`, and push `chat:event({ kind, thread_id, run_id, ... })`
+  where `kind` is `token` | `tool` | `interrupt` | `done` | `error`, each carrying the fields
+  its kind requires (an `interrupt` carries the tool, file path, old/new content or the full
+  resulting page for `replace_all`, or the rename/delete target, plus an `interrupt_id` and a
+  content hash of the page at interrupt time; a `tool` event carries the call and its result).
+  One `MemorySaver` — and one agent instance — is scoped to the project window, keyed by
+  `thread_id`. Typed in `bridge.ts` `OwBridge`; the preload parity check (`preload.ts:104`) and
+  `dispatch`'s unknown-channel throw (`ipc.ts`) enforce completeness.
 
 ## Data
 
@@ -124,23 +143,29 @@ R4.2, R4.3, R4.4, R4.5, R4.6, R5.1, R5.2, R5.3, R5.4, R6.1, R7.1.
   | "observer"`) is extended with `"agent"`, a string variant alongside the existing ones,
   so the operation log distinguishes an agent write. The log and undo machinery
   (`appendOperation`, `undo`) are unchanged.
-- **A gated delete primitive.** `@open-wiki/access` exports no `deletePage`; the desktop's
-  `deletePage` (`apps/desktop/src/main/edit.ts`) calls `node:fs.rmSync` directly and hardcodes
-  `origin: "editor"`, bypassing the gate. A new `deletePage(projectRoot, pagePath, origin)`
-  is added to `@open-wiki/access` that routes through `gateWrite` + `appendOperation` (mark the
-  page superseded, or remove it, logged with the given origin, undoable). `rename_page` writes
-  the new page through `gateWrite` + `writePage`, marks the old page superseded via
-  `supersedePage`, refuses to clobber an existing target, and refuses to operate on the wiki's
-  index, changelog, and log (`gateWrite` already passes those `NON_ENTITY_PAGES` with no content
-  validation — R4.6 closes that for the agent). `delete_page` refuses the same set.
+- **Gated, atomic rename and delete primitives.** `@open-wiki/access` exports no
+  `deletePage` or `renamePage`; the desktop's `deletePage` (`apps/desktop/src/main/edit.ts`)
+  calls `node:fs.rmSync` directly and hardcodes `origin: "editor"`, bypassing the gate. New
+  `deletePage(projectRoot, pagePath, origin)` and `renamePage(projectRoot, oldPath, newPath,
+  origin)` primitives are added, each a single atomic operation: snapshot the affected pages,
+  gate + write, record one operation with the given origin, and roll back on failure — no
+  half-applied rename. Deletion is supersession (the page is marked superseded, not unlinked,
+  so it stays visible in history and is one undo). `renamePage` writes the new page through
+  `gateWrite` + `writePage` and marks the old superseded in the same operation, refuses to
+  clobber an existing target, and refuses the wiki's index, changelog, and log (`gateWrite`
+  passes those `NON_ENTITY_PAGES` with no content validation — R4.6 closes that for the
+  agent). `deletePage` refuses the same set.
 - **Conversation state** — a `MemorySaver` holding the LangGraph thread per `thread_id`.
   In memory only for v1; not on disk; not in the project directory.
 - **Interrupt payload** — the proposed write: `{ tool, file_path, old_string?, new_string?,
-  content? }`, rendered as a diff in the pane. For `edit_file` with `replace_all`, the payload
-  carries every match site (or the full resulting page), so the human sees the complete effect
-  of the tool call, not only the two strings — a short `old_string` that matches in several
-  places must not be smuggled past review. Resume carries `decisions: [{ type: "approve" |
-  "reject" | "edit", ... }]`.
+  content? }`, rendered as a diff in the pane, plus a content hash of the page at interrupt
+  time. For `edit_file` with `replace_all`, the payload carries every match site (or the full
+  resulting page), so the human sees the complete effect of the tool call, not only the two
+  strings — a short `old_string` that matches in several places must not be smuggled past
+  review. Resume carries `decisions: [{ type: "approve" | "reject" | "edit", ... }]` and the
+  `interrupt_id` it answers. On resume the backend revalidates the page against the stored
+  hash; if another writer changed it in the window between interrupt and resume, the stale
+  edit is not applied — the run re-interrupts with a fresh proposal (R5.5).
 
 ## Alternatives considered
 
@@ -181,9 +206,12 @@ gate-backed backend is reversible (it is our code, not a framework commitment).
   the accepted cost of carrying the convention in unchanged; human-in-the-loop is the only
   mitigation. The agent is the lesser door, not a harness.
 - **The wiki's index, changelog, and log are `NON_ENTITY_PAGES`.** `gateWrite` passes them
-  with no content validation — they are "themselves." An agent `write_file` to `wiki/index.md`
-  is therefore gated only by human approval, not by the gate's form checks. R4.6 keeps the
-  agent from deleting or renaming them; overwriting them by edit remains a human call.
+  with no content validation — they are "themselves." R4.6 protects them against
+  `rename_page`/`delete_page` (structural removal or replacement) but not against
+  `write_file`/`edit_file`: an agent content edit to `wiki/index.md` is gated only by human
+  approval, not by the gate's form checks. This is intentional — maintaining the index and the
+  changelog is part of wiki maintenance, so the agent may edit them with approval, but may not
+  rename or delete them.
 - **Tracing exfiltration.** LangChain/LangGraph ship LangSmith tracing that activates on
   `LANGCHAIN_*` / `LANGSMITH_*` env vars and would send prompts, tool calls, and tool results
   (project content) to a third party. The agent path reads none of those env vars and sets no
