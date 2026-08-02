@@ -58,6 +58,38 @@ disagree in two places", and `adr:0013` makes the same demand a rule. Nothing in
 plan asserts what Codex or opencode can intercept, because nobody has read it yet —
 task 1.1 is that reading, and it comes before anything is designed on top of it.
 
+## The third divergence: no silent default
+
+`scc init` falls back to Claude Code when nobody is at the terminal — "an agent or a CI
+job drives `init` exactly as before". That is right for `scc` and wrong here, for a
+reason that is specific rather than a matter of taste.
+
+**In `scc`, guessing wrong is discovered by the person who guessed, immediately.** They
+are the only user of that workspace; the wrong picker choice shows up in their next
+command.
+
+**Here, the person who suffers is somebody else, later.** The convention is committed
+(`adr:0013`), so a project scaffolded for the wrong harness looks perfect to whoever ran
+`ow init` and gives nothing to the colleague who clones it next week. The feedback loop
+that makes a silent default safe is broken, and the failure it produces — files on disk
+that the harness never reads — is the exact failure this entire plan exists to end. A
+default that reproduces the bug one level up is not a convenience.
+
+So the contract is three-way and the third case refuses:
+
+| invocation | what happens |
+| --- | --- |
+| a harness named | scaffold it, ask nothing |
+| none named, terminal attached | the picker |
+| none named, no terminal | refuse, and name the flags |
+
+A refusal costs one second and one flag. A wrong scaffold costs somebody a week and
+looks like the product not working.
+
+**This is a breaking change to `ow init`, and calling it one is the point.** Scripts and
+`npx open-wiki init` have to name a harness. That is cheap now and expensive after the
+first project is scaffolded wrong.
+
 ## What this is not allowed to become
 
 **Three copies of the convention.** `adr:0015-the-convention-ships-as-skills` gave it
@@ -92,9 +124,11 @@ this project recorded and then had to route around twice.
 
 - [ ] 2.1 (Unit) A harness profile: entry filename, convention directory, MCP configuration path, and what the gate degrades to. Data, not branches — the same move that let `scc` delete its per-harness template tree instead of growing two more
 - [ ] 2.2 (TDD) Render the convention through the profile, and prove no rendered file for one harness names another's directory. Test-first because that is the failure that ships quietly: a skill that tells a Codex user to look in `.claude/` is wrong in a way nothing errors on
-- [ ] 2.3 (Unit) `ow init --claude --codex --opencode`, defaulting to Claude Code, accepting more than one, and asking when a person is at the terminal and named none. An unattended caller keeps today's behaviour exactly
-- [ ] 2.4 (Unit) The launcher and first run offer the same choice, through the one scaffolder of 2.1 — a project is the same project whichever door it came through, which is the rule that made that scaffolder single in the first place
-- [ ] 2.5 (Unit) The generated entry file carries the same content under whichever name, including the content language of 8.12 — and is regenerated per harness when that setting changes, since it is generated and the skills are not
+- [ ] 2.3 (Unit) `ow init` with a harness named — `--claude`, `--codex`, `--opencode`, and more than one accepted — scaffolds it and asks nothing
+- [ ] 2.4 (Unit) `ow init` with none named and a terminal attached opens a picker: the three harnesses, multi-select, nothing preselected. Multi-select is why this is a screen rather than a numbered prompt, and whatever it costs in dependencies is a `docs/stack.md` line like any other
+- [ ] 2.5 (Unit) `ow init` with none named and **no** terminal refuses, and names the flags. It does not guess — see below
+- [ ] 2.6 (Unit) The launcher and first run offer the same choice as a form, not a picker — the desktop has no terminal, and 8.12 already learned that lesson when a chain of `prompt()` calls answered nothing in a packaged build. Same scaffolder underneath, because a project is the same project whichever door it came through
+- [ ] 2.7 (Unit) The generated entry file carries the same content under whichever name, including the content language of 8.12 — and is regenerated per harness when that setting changes, since it is generated and the skills are not
 
 ## 3 — The gate, per harness
 
