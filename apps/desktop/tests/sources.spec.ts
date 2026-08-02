@@ -19,6 +19,8 @@ import {
   sourceRows,
   sourcesOfPage,
 } from "../src/main/sources.js";
+import { chunkCells, toneOfStage } from "../src/renderer/Sources.js";
+import { startFragment } from "../src/shared/sources.js";
 
 let root: string;
 
@@ -449,5 +451,76 @@ describe("the widened IPC surface (6.x, 7.6, 8.6 to 8.11)", () => {
   it("refuses a channel that is not on the list", async () => {
     const api = createApi({ projectRoot: root });
     await expect(dispatch(api, "wiki:rm-rf", [])).rejects.toThrow(/unknown channel/);
+  });
+});
+
+/**
+ * The sources pane as a table (plan desktop-ui 5.1).
+ *
+ * The two decisions the rows carry: which pill a stage wears, and what the
+ * progress bar is allowed to claim.
+ */
+describe("toneOfStage (5.1)", () => {
+  it("gives being cited its own tone, and a source that just arrived none", () => {
+    // `received` is not a problem — a source that landed a minute ago has not
+    // failed at anything, and a coloured pill would say it had.
+    expect(toneOfStage("cited")).toBe("cited");
+    expect(toneOfStage("received")).toBe("neutral");
+  });
+
+  it("tells the three working states apart", () => {
+    expect(toneOfStage("text-ready")).toBe("ok");
+    expect(toneOfStage("transcribing")).toBe("working");
+    expect(toneOfStage("failed")).toBe("error");
+  });
+});
+
+describe("chunkCells (5.1, plan 6.3)", () => {
+  it("draws one cell per chunk, filled up to what is done", () => {
+    expect(chunkCells({ done: 2, total: 5 }, false)).toEqual([
+      "done",
+      "done",
+      "pending",
+      "pending",
+      "pending",
+    ]);
+  });
+
+  it("pulses the next cell only while a run is actually in flight", () => {
+    // A stopped transcription four chunks in is not a transcription doing
+    // anything, and an animation saying otherwise is the difference between
+    // "come back later" and "press the button".
+    expect(chunkCells({ done: 1, total: 3 }, true)).toEqual(["done", "doing", "pending"]);
+    expect(chunkCells({ done: 1, total: 3 }, false)).toEqual(["done", "pending", "pending"]);
+  });
+
+  it("never marks a cell as the one that failed", () => {
+    // The row carries a count, not a map. Which chunk failed is in the journal
+    // and not in `SourceRow` — painting a cell red would invent it, and 4.9
+    // records an error and carries on, so the failed one is not simply the
+    // next one after the done ones.
+    expect(chunkCells({ done: 3, total: 7 }, false)).not.toContain("failed");
+  });
+
+  it("has nothing to draw for a source with no transcription in it", () => {
+    expect(chunkCells(undefined, false)).toEqual([]);
+    expect(chunkCells({ done: 0, total: 0 }, true)).toEqual([]);
+  });
+
+  it("survives a count that outruns the total rather than drawing a longer bar", () => {
+    expect(chunkCells({ done: 9, total: 3 }, false)).toEqual(["done", "done", "done"]);
+  });
+});
+
+describe("startFragment (5.1, plan 6.5)", () => {
+  it("opens a recording at its first passage and a document at its first page", () => {
+    // The anchors 4.13 and `pdf.ts` actually write. A fragment of the wrong
+    // shape resolves to nothing while reading perfectly reasonably.
+    expect(startFragment("recording")).toBe("0:00");
+    expect(startFragment("file")).toBe("p1");
+  });
+
+  it("falls back to a page for a source nobody could describe", () => {
+    expect(startFragment(null)).toBe("p1");
   });
 });

@@ -23,6 +23,7 @@ export const CHANNELS = {
   create: "wiki:create",
   rename: "wiki:rename",
   remove: "wiki:delete",
+  addToIndex: "wiki:add-to-index",
   history: "history:list",
   undo: "history:undo",
 

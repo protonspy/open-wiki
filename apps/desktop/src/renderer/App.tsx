@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SourceKind } from "@open-wiki/access";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type { DropOutcome } from "../main/ingest.js";
 // From `shared/`, never from `main/watcher.js`. That module starts a chokidar
 // watch, and importing it here pulled chokidar and `node:stream` into this
 // browser bundle — which vite externalises and rollup then fails on.
 import { isOpenPage } from "../shared/changes.js";
+import { startFragment } from "../shared/sources.js";
 import { useDialogs, type Dialogs } from "./Ask.js";
 import { bridge, hasBridge, NoBridgeError } from "./bridge.js";
 import {
@@ -25,9 +27,12 @@ import {
   replaceAt,
   type Notice,
 } from "./notices.js";
+import { fixesFor, type Fix } from "./fixes.js";
 import { Reader, readerState } from "./Reader.js";
 import { Side } from "./Side.js";
-import { Findings, History as HistoryPanel, SourceAt } from "./Panels.js";
+import { ChecksPane } from "./ChecksPane.js";
+import { History as HistoryPanel } from "./Panels.js";
+import { SourceAt } from "./SourceAt.js";
 import { Rail } from "./Rail.js";
 import { Reported } from "./Reported.js";
 import { WikiPane } from "./WikiPane.js";
@@ -40,6 +45,7 @@ import { Chat } from "./Chat.js";
 import { Launcher } from "./Launcher.js";
 import { Settings } from "./Settings.js";
 import { Sources } from "./Sources.js";
+import { Button } from "./ui/Button.js";
 
 /**
  * How long a burst of folder changes is gathered before the screen redraws.
@@ -47,6 +53,15 @@ import { Sources } from "./Sources.js";
  * `readPage` walk the whole tree.
  */
 const COALESCE_MS = 120;
+
+/**
+ * The panes that draw their own bar and scroll their own body.
+ *
+ * Listed rather than derived by excluding chat, so a pane added later gets the
+ * padded `<main>` — the old behaviour — until somebody gives it a frame, rather
+ * than silently rendering edge to edge with no bar at all.
+ */
+const FRAMED_PANES: ReadonlySet<Pane> = new Set<Pane>(["wiki", "sources", "checks"]);
 
 /**
  * The shell (plan 8.2), browsing the wiki inside it (8.5), and the screens
@@ -235,6 +250,9 @@ export function App(): React.JSX.Element {
     [visit, show],
   );
 
+  /** Which slugs a fix button may offer to open (5.3). */
+  const knownSlugs = useMemo(() => new Set(index.slugs), [index.slugs]);
+
   /** What the reader column is showing, when it is not showing a page (R4). */
   const reading = readerState({
     pageCount: indexKnown ? index.pages.length : null,
@@ -340,7 +358,11 @@ export function App(): React.JSX.Element {
       <div className="app-body">
         <Rail current={location.pane} onGoTo={goTo} language={project?.language ?? "en"} />
 
-        <main className={location.pane === "wiki" ? "main main--bleed" : "main"}>
+        {/* Three of the four panes draw their own frame — a bar, and a body
+            that scrolls inside it — so `<main>` stops padding and stops
+            scrolling for them. The chat pane is not one of them and keeps the
+            padded `<main>` it was built against. */}
+        <main className={FRAMED_PANES.has(location.pane) ? "main main--bleed" : "main"}>
           {/* Beside the controls they are about: the recording notice under
               the titlebar, the shell's own above every pane. */}
           <div className="main__notices">
@@ -431,10 +453,25 @@ export function App(): React.JSX.Element {
             <Sources
               reloadKey={reloadKey}
               onOpenPage={(slug) => visit({ pane: "wiki", selection: slug })}
+              onOpenSource={(id, fragment) => show({ kind: "provenance", source: id, fragment })}
             />
           ) : null}
           {location.pane === "checks" ? (
-            <Findings reloadKey={reloadKey} onCount={setFindings} />
+            <ChecksPane
+              reloadKey={reloadKey}
+              onCount={setFindings}
+              notice={<Reported notices={notices} place="checks" />}
+              /* 5.3 — reaching what the finding named, from the finding. */
+              actionFor={(finding) => (
+                <Fixes
+                  fixes={fixesFor(finding, knownSlugs)}
+                  onOpenPage={(slug) => visit({ pane: "wiki", selection: slug })}
+                  onOpenSource={(id) => void openSourceAt(id, show)}
+                  onFixed={() => setReloadKey((n) => n + 1)}
+                  say={say}
+                />
+              )}
+            />
           ) : null}
           {/* The chat pane stays mounted and is hidden when you are elsewhere.
               Unmounting it would reset the reducer holding the transcript and
@@ -735,4 +772,85 @@ function InboxWaiting({
       </ul>
     </div>
   );
+}
+
+/**
+ * The fix buttons a finding carries (desktop-ui 5.3).
+ *
+ * Three, not the draft's five. What is missing and why is in `fixes.ts`: a
+ * `Finding` does not carry the slug a broken link names, the instant a citation
+ * overran, or the two words a synonym finding is about — those live inside the
+ * prose of `message`, and cutting them back out is the failure `checks.ts`
+ * already names at the site that would produce it.
+ */
+function Fixes({
+  fixes,
+  onOpenPage,
+  onOpenSource,
+  onFixed,
+  say,
+}: {
+  fixes: Fix[];
+  onOpenPage: (slug: string) => void;
+  onOpenSource: (id: string) => void;
+  onFixed: () => void;
+  say: (notice: Notice) => void;
+}): React.JSX.Element | null {
+  const [busy, setBusy] = useState(false);
+  if (fixes.length === 0) return null;
+
+  const take = async (fix: Fix): Promise<void> => {
+    if (fix.kind === "open-page") return onOpenPage(fix.target);
+    if (fix.kind === "open-source") return onOpenSource(fix.target);
+    setBusy(true);
+    try {
+      const result = await bridge().addToIndex(fix.target);
+      // Already linked is not a failure and not a success either: the finding
+      // was stale, and saying so is better than a button that appears to do
+      // nothing.
+      if (!result.added) {
+        say(note("checks", `${fix.target} was already linked from the index.`));
+      }
+      onFixed();
+    } catch (e) {
+      say(failure("checks", e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="check__fixes">
+      {fixes.map((fix) => (
+        <Button
+          key={fix.kind}
+          size="sm"
+          variant={fix.kind === "add-to-index" ? "default" : "ghost"}
+          disabled={busy}
+          onClick={() => void take(fix)}
+        >
+          {fix.label}
+        </Button>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Open a source at its own start (5.3).
+ *
+ * The kind decides the fragment — `0:00` for a recording, `p1` for a document
+ * (`startFragment`) — and only the main process knows which this is, so the
+ * detail is fetched rather than guessed. A guess would resolve to nothing on
+ * half the sources while reading perfectly reasonably.
+ */
+async function openSourceAt(id: string, show: (overlay: Overlay) => void): Promise<void> {
+  let kind: SourceKind | null = null;
+  try {
+    kind = (await bridge().sourceDetail(id)).kind;
+  } catch {
+    // A source the finding names and the project cannot describe still opens:
+    // the panel says what is wrong with it, which is the answer either way.
+  }
+  show({ kind: "provenance", source: id, fragment: startFragment(kind) });
 }

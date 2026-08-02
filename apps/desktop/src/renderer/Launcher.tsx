@@ -45,7 +45,7 @@ export function Launcher(): React.JSX.Element {
           {projects.map((project) => (
             <li key={project.name} className="operation">
               <strong>{project.name}</strong>
-              <code className="source__id">{project.path || "— moved or deleted"}</code>
+              <code className="launcher__path">{project.path || "— moved or deleted"}</code>
               {!project.present ? (
                 <span className="badge badge--failed">not where it was</span>
               ) : null}

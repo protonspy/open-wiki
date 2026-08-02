@@ -1,6 +1,12 @@
 import type { Finding, Language, Operation } from "@open-wiki/access";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
-import type { CreateInput, RenameResult, SaveInput, SaveResult } from "../main/edit.js";
+import type {
+  CreateInput,
+  IndexResult,
+  RenameResult,
+  SaveInput,
+  SaveResult,
+} from "../main/edit.js";
 import type { DropOutcome } from "../main/ingest.js";
 import type { RecorderStatus } from "../main/recorder.js";
 import type {
@@ -43,6 +49,8 @@ export interface OwBridge {
   create(input: CreateInput): Promise<SaveResult>;
   rename(from: string, to: string): Promise<RenameResult>;
   remove(slug: string): Promise<{ operationId: string }>;
+  /** 5.3 — the one-click fix for 7.1's `page.orphan`. */
+  addToIndex(slug: string): Promise<IndexResult>;
   history(): Promise<Operation[]>;
   undo(id: string): Promise<void>;
 

@@ -360,6 +360,44 @@ export function renamePage(projectRoot: string, from: string, to: string): Renam
   return { repointed, operationId: operation.id };
 }
 
+export interface IndexResult {
+  /** False when the page was already linked from the index. */
+  added: boolean;
+  /** Absent when nothing was written, because nothing happened to undo. */
+  operationId?: string;
+}
+
+/**
+ * Link a page from `wiki/index.md` (desktop-ui 5.3, for 7.1's `page.orphan`).
+ *
+ * **The operation a create already performs, on its own.** `createPage` calls
+ * `registerInIndex` as part of creating a page; this is the same call for a
+ * page that exists and is not linked — which is what an orphan is, and what
+ * the finding's own `fix` says to do.
+ *
+ * Nothing is recorded when nothing is written: an operation restoring the file
+ * to what it already was is an entry in the history offering to undo a write
+ * that never happened, and 8.11's whole claim is that the history is what was
+ * observed.
+ *
+ * `index.md` is not an entity page — 5.1 validates it as itself — so this does
+ * not go through `gateWrite`, for the same reason `createPage`'s index write
+ * does not.
+ */
+export function addToIndex(projectRoot: string, slug: string): IndexResult {
+  assertSlug(slug);
+  // A page that is not there is not an orphan; it is a finding that has gone
+  // stale, and linking it would create the broken wikilink 7.1 reports.
+  if (!pageRef(projectRoot, slug)) throw new NoSuchPageError(slug);
+
+  const operation = appendOperation(projectRoot, {
+    ...snapshotOf(projectRoot, [INDEX_PAGE]),
+    origin: "editor",
+  });
+  if (!registerInIndex(projectRoot, slug)) return { added: false };
+  return { added: true, operationId: operation.id };
+}
+
 /**
  * Delete a page (plan 8.9).
  *

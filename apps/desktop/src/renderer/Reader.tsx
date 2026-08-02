@@ -29,12 +29,7 @@ import { linkTarget, type LinkTarget } from "./navigation.js";
  * told apart by a test rather than by looking at a screenshot.
  */
 export type ReaderState =
-  | "loading-wiki"
-  | "empty-wiki"
-  | "no-selection"
-  | "loading"
-  | "failed"
-  | "page";
+  "loading-wiki" | "empty-wiki" | "no-selection" | "loading" | "failed" | "page";
 
 export function readerState(where: {
   /**

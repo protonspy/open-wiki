@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NoSuchPageError } from "../src/main/api.js";
 import {
+  addToIndex,
   createPage,
   InvalidRenameError,
   InvalidSlugError,
@@ -470,5 +471,48 @@ describe("undo puts back everything the operation touched", () => {
     const index = readFileSync(join(root, "wiki", "index.md"), "utf8");
     expect(index).toContain("[[phoenix]]");
     expect(index).not.toContain("[[fenix]]");
+  });
+});
+
+/**
+ * Linking an orphan from the index (desktop-ui 5.3, for 7.1's `page.orphan`).
+ *
+ * The operation a create already performs, on its own — and the only one of the
+ * draft's five fix buttons that was in fact an existing operation.
+ */
+describe("addToIndex (5.3)", () => {
+  it("links a page the index does not mention", () => {
+    write("fenix", page("fenix"));
+    const result = addToIndex(root, "fenix");
+    expect(result.added).toBe(true);
+    expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).toContain("[[fenix]]");
+  });
+
+  it("records the write, so it can be undone like any other", () => {
+    write("fenix", page("fenix"));
+    const result = addToIndex(root, "fenix");
+    undoOperation(root, result.operationId ?? "");
+    expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).not.toContain("[[fenix]]");
+  });
+
+  it("says nothing happened when the page was already linked", () => {
+    write("fenix", page("fenix"));
+    addToIndex(root, "fenix");
+    const again = addToIndex(root, "fenix");
+    // Not a failure and not a success: the finding had gone stale, and an
+    // operation offering to undo a write that never happened is worse than
+    // saying so — 8.11's whole claim is that the history is what was observed.
+    expect(again.added).toBe(false);
+    expect(again.operationId).toBeUndefined();
+  });
+
+  it("refuses a page that is not there rather than linking to nothing", () => {
+    // Linking a page that does not exist would create the broken wikilink 7.1
+    // reports — the check's own fix, producing the check's own finding.
+    expect(() => addToIndex(root, "ghost")).toThrow(NoSuchPageError);
+  });
+
+  it("refuses a slug that is a path", () => {
+    expect(() => addToIndex(root, "../escape")).toThrow(InvalidSlugError);
   });
 });
