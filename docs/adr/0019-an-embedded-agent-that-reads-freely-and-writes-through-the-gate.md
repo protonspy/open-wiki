@@ -21,22 +21,32 @@ already had a harness open — for them the argument still holds completely, and
 record does not touch it. But the product now ships a signed installer, and somebody who
 downloads it and has no harness has nothing: a window that scaffolds a project, validates
 what is written into it, records every write, and cannot write a single page. The desktop
-UI plan says so on screen in as many words — *there is no model behind this window* —
+application says so on screen in as many words — *there is no model behind this window* —
 which is honest and is also a description of a dead end.
 
-`plans/harness-portability.md` closed the other half of this. `ow init` now scaffolds for
-Claude Code, Codex and opencode, plural, so a project reaches whoever clones it. The user
-with a harness is served, by several harnesses. The user with none is the whole of what
-is left.
+The user with a harness is served, and `plans/harness-portability.md` is about serving
+them better — `ow init` taking harnesses plural, so a project reaches whoever clones it
+whichever one they use. That plan is written and not yet built; either way it is about
+somebody who already has an agent. The user with none is the whole of what is left, and
+nothing in this repository is addressed to them.
 
 **And the reason the methodology works turns out to be a constraint on the answer.** The
 LLM-Wiki convention works in Claude Code because the agent can explore: grep for a term
 before coining a second name for it, glob the tree to see how pages are organised, read a
-neighbouring page before writing one beside it. `adr:0010-a-derived-index-engine-behind-a-cli`
-gives structural answers — which pages exist, which links resolve, what cites what — and
-those are exact and cheap. They are not a substitute for search over content. An agent
-given only "read the page with this slug" cannot discover that the concept already exists
-under a different name, which is the exact failure `docs/glossary.md` exists to prevent.
+neighbouring page before writing one beside it.
+
+The project already answers part of that. `ow search` is a lexical scan over every page's
+title and body, and `ow graph` walks the structure. But `runSearch` returns
+`{ slug, title, matches }` — **which pages mention a term and how many times, not the
+passage**. `adr:0010-a-derived-index-engine-behind-a-cli` described "lexical hits with
+page or source, passage, anchor"; what was built is narrower, and the difference decides
+this. An agent told "three pages mention *cutover*" must read all three in full to learn
+how the term is used there; `grep` hands it the line. For the cheap models this door
+exists for, that is the context window.
+
+So the gap is not that content search is missing. It is that one query returning counts
+is not a discovery loop, and discovering that a concept already has a name is the exact
+failure `docs/glossary.md` exists to prevent.
 
 ## Decision
 
@@ -50,24 +60,52 @@ glob, grep, read — over the project directory, every path confined with `asser
 the way `packages/mcp` already confines its own. This is a reversal of nothing: reads
 were never what the guarantees rested on.
 
-**Writing has exactly one door, and it is the existing one.** No `write_file`, no
-`edit_file`, no shell. Every page the agent produces goes through the same validated
-write the editor and the hooks use — frontmatter against the schema, wikilinks that
-resolve, citations that point at a source and an instant that exist — and lands in the
-operation log with its own origin, undoable like any other.
+**MCP's read-only rule does not transfer, and is not the reason for the next paragraph.**
+That rule exists because one resident process serves *many* projects to a caller it does
+not know, so the blast radius is every wiki on the machine and read-only has to be what
+the process *can* do. The embedded agent is scoped to the project this window opened, in
+this process, started by the person who clicked. Neither half of that reasoning applies.
+
+**What does apply is the store's own invariant: nothing enters `wiki/` unvalidated.**
+That is not distrust of the agent — the human typing in the editor goes through the same
+door, and so does every hook. Frontmatter against the schema, wikilinks that resolve,
+citations that point at a source and an instant that exist, the write atomic, the
+operation logged with its origin and undoable. So the agent creates, edits, renames and
+deletes pages through tools that do those things, and **no tool writes into `wiki/`
+without passing through them**. Nothing is taken from the agent by this: `write_file` and
+`writePage` are the same act, and only one of them is recoverable.
+
+Outside `wiki/` the rule does not apply. A scratchpad — in memory, or under the
+application's own temp — is where a proposal lives before anyone has approved it, and
+that is a place the agent may write freely.
 
 `adr:0003` closed by naming the shape that would preserve its decision if this day came:
 "an embedded agent speaking the same MCP tools — **not a second writer with direct disk
 access**". MCP is no longer the bridge, so the first half is now "the same tools the
 external agent gets"; the second half is untouched and is the load-bearing half of this
-record. The filesystem tool surface of a general coding agent — write, edit, execute — is
-exactly what it excludes.
+record. An agent toolkit's default filesystem surface — `write_file`, `edit_file`,
+`execute` reaching the real disk — is exactly what it excludes, and that surface is the
+ergonomic default of every such toolkit rather than a corner of one.
 
-**The convention is generated, never re-authored.** The agent's instructions are built
-from `generateClaudeMd` and the scaffolded skills — the same source the external harness
-reads. One convention, two consumers. A system prompt written by hand beside them would
-recreate 0003's two-authors problem inside one product, where it would be harder to see:
-two agents writing the same folder by two conventions, both passing every check.
+**The convention is carried in, never re-authored.** The agent's instructions are the
+generated `CLAUDE.md` — or the entry file whichever harness the project was scaffolded
+for reads — and the scaffolded skills, unchanged. One convention, two consumers. A system
+prompt written by hand beside them would recreate 0003's two-authors problem inside one
+product, where it would be harder to see: two agents writing the same folder by two
+conventions, both passing every check.
+
+`scaffoldSkills` already writes `.claude/skills/<name>/SKILL.md` with `name` and
+`description` in the frontmatter, which is the layout the agent toolkits converged on, so
+this is a path to point at rather than a format to convert. That is luck rather than
+foresight — `adr:0015-the-convention-ships-as-skills` chose it to be read by Claude Code —
+and it is worth naming as luck, because the day the two shapes diverge nothing will fail
+loudly.
+
+**Neither the skills nor `CLAUDE.md` name a search tool, and both assume one.** They
+instruct the agent to use the project's own term, one page per concept, aliases for the
+names to avoid. Obeying that requires finding out which terms are already in use. The
+methodology assumed a harness that could look before it wrote, without ever saying so —
+which is why this record has to say so.
 
 **This narrows `adr:0013` rather than superseding it.** One of its three surviving
 clauses falls — the application may now call an LLM. The other two stand, and the second
