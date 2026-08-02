@@ -214,6 +214,26 @@ they are the difference between a port and an application.
 
 ## Notes
 
+**The renderer is a browser, and neither `typecheck` nor `lint` remembers that.**
+Group 5 broke CI on it: `families.ts` imported `sortFindings` — a *value* — from
+`@open-wiki/access`, which pulls the barrel, which reaches `paths.ts`, which
+imports `node:fs` and `node:path`. Vite externalises those and rollup fails with
+*"resolve" is not exported by `__vite-browser-external`*. Both local gates were
+green; only the bundle build sees it, and that runs in CI.
+
+It is the third time this exact trap has been sprung — chokidar through
+`main/watcher.js`, `import.meta.url` in the packaged main process, and now the
+store's barrel — so it is a lint rule now rather than a fourth comment:
+`no-restricted-imports` over `apps/desktop/src/renderer` and `src/shared`, with
+`allowTypeImports` on, because a type import is erased and costs the bundle
+nothing. **`pnpm --filter @open-wiki/desktop run build` belongs in the per-task
+loop for anything that touches the renderer**, beside the scoped tests and the
+lint.
+
+The fix was not to sort in the renderer at all: `checkProject` already sorts
+before it returns, so the pane reads the order `ow check` produced and there is
+one authority on it instead of two.
+
 **Order matters once.** Group 1 ships on its own and can merge before anything else
 lands — it is the difference between an application that cannot create a page and
 one that can, and none of it is touched by the repaint. Group 2 blocks 3 through 8,

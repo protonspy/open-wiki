@@ -52,6 +52,39 @@ function restrictedProperties(object) {
   }));
 }
 
+/**
+ * Packages the renderer may name in a type and may never *call* into.
+ *
+ * A value import from `@open-wiki/access` pulls its barrel into the browser
+ * bundle, and the barrel reaches `paths.ts`, which imports `node:fs` and
+ * `node:path`. Vite externalises those for the browser and rollup then fails
+ * with *"resolve" is not exported by `__vite-browser-external`* — at bundle
+ * time, in CI, long after `typecheck` and `lint` have both passed. This rule is
+ * here so it is a failed lint instead.
+ *
+ * `allowTypeImports` is the whole point: `import type { Finding }` is erased by
+ * `verbatimModuleSyntax` and costs the bundle nothing, so the renderer keeps
+ * the store's types and loses only its code. What it actually needs at runtime
+ * comes over the bridge, which is `main`'s side of the wall.
+ *
+ * The same trap caught `main/watcher.js` and chokidar once already — see the
+ * note at the top of `App.tsx`.
+ */
+const NOT_IN_THE_BUNDLE = [
+  {
+    name: "@open-wiki/access",
+    allowTypeImports: true,
+    message:
+      "A value import pulls `node:fs` into the renderer bundle. Import the type, and ask the main process for the value over the bridge.",
+  },
+  {
+    name: "@open-wiki/access/read",
+    allowTypeImports: true,
+    message:
+      "A value import pulls `node:fs` into the renderer bundle. Import the type, and ask the main process for the value over the bridge.",
+  },
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -83,10 +116,11 @@ export default tseslint.config(
     },
   },
   {
-    files: [RENDERER],
+    files: [RENDERER, "apps/desktop/src/shared/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-globals": ["error", ...Object.entries(BLOCKED).map(restrictedGlobal)],
       "no-restricted-properties": ["error", ...HOLDERS.flatMap(restrictedProperties)],
+      "no-restricted-imports": ["error", { paths: NOT_IN_THE_BUNDLE }],
     },
   },
   // Last so it wins: turn off every eslint rule that fights prettier.

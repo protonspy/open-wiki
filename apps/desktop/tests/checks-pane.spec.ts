@@ -65,12 +65,18 @@ describe("groupFindings (5.2)", () => {
     expect(groups).toHaveLength(1);
   });
 
-  it("puts an error above a warning inside a group", () => {
-    const groups = groupFindings([
-      finding("page.orphan", { severity: "warning", page: "wiki/a.md" }),
+  it("keeps the order it was given inside a group", () => {
+    // `checkProject` sorts through `sortFindings` before it returns — errors
+    // above warnings — and this pane reads what `ow check` produced. Sorting
+    // again here would be a second authority on that order, and the two would
+    // disagree the day one of them changed. It would also have cost a *value*
+    // import from `@open-wiki/access`, which pulls `node:fs` into a browser
+    // bundle: the reason this is a comment and not a call.
+    const sorted = [
       finding("wikilink.broken", { severity: "error", page: "wiki/b.md" }),
-    ]);
-    expect(groups[0]?.findings.map((f) => f.severity)).toEqual(["error", "warning"]);
+      finding("page.orphan", { severity: "warning", page: "wiki/a.md" }),
+    ];
+    expect(groupFindings(sorted)[0]?.findings).toEqual(sorted);
   });
 
   it("has nothing to show for a project with no findings", () => {

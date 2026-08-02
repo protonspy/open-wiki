@@ -1,4 +1,10 @@
-import { sortFindings, type Finding, type FindingCode } from "@open-wiki/access";
+// **Type-only, and that is load-bearing.** A value import from
+// `@open-wiki/access` pulls its barrel into this browser bundle, and the barrel
+// reaches `paths.ts`, which imports `node:fs` and `node:path` — rollup then
+// fails with *"resolve" is not exported by `__vite-browser-external`*. It is
+// the same trap `App.tsx` names for `main/watcher.js` and chokidar, and neither
+// `typecheck` nor `lint` sees it: only the bundle does.
+import type { Finding, FindingCode } from "@open-wiki/access";
 
 /**
  * How the checks pane arranges what `ow check` found (desktop-ui 5.2).
@@ -75,10 +81,14 @@ export interface FindingGroup {
 /**
  * The findings as groups, empty ones left out.
  *
- * Ordered by `FAMILIES` rather than by what happened to be found first, so the
- * pane does not rearrange itself between two runs — and sorted inside a group
- * by `sortFindings`, which is the store's own order and puts an error above a
- * warning.
+ * **The groups are ordered; what is inside one is not reordered.** `FAMILIES`
+ * fixes the order of the bands, so the pane does not rearrange itself between
+ * two runs of the same check. Inside a band the findings keep the order they
+ * arrived in — which is `sortFindings`', because `checkProject` sorts before it
+ * returns and the pane reads what `ow check` produced.
+ *
+ * Sorting again here would be a second authority on what order findings are
+ * read in, and the two would disagree the day one of them changed.
  */
 export function groupFindings(findings: readonly Finding[]): FindingGroup[] {
   const byKey = new Map<string, Finding[]>();
@@ -90,7 +100,7 @@ export function groupFindings(findings: readonly Finding[]): FindingGroup[] {
   }
   return FAMILIES.filter((family) => byKey.has(family.key)).map((family) => ({
     family,
-    findings: sortFindings(byKey.get(family.key) ?? []),
+    findings: byKey.get(family.key) ?? [],
   }));
 }
 
