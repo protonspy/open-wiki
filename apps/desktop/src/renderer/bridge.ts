@@ -11,6 +11,14 @@ import type {
 } from "../main/settings.js";
 import type { PageSource, SourceLocation, SourceRow } from "../main/sources.js";
 import type { TranscribeOutcome } from "../main/transcribe-run.js";
+import type {
+  ChatCancelInput,
+  ChatEvent,
+  ChatResumeInput,
+  ChatRunStarted,
+  ChatSendInput,
+} from "../main/agent/chat-events.js";
+import type { AgentPrefs } from "../main/agent/agent-prefs.js";
 import type { ProjectChange } from "../shared/changes.js";
 
 /**
@@ -49,12 +57,21 @@ export interface OwBridge {
   inboxDrain(): Promise<DropOutcome[]>;
   credential(): Promise<CredentialState>;
   saveCredential(input: SaveCredentialInput): Promise<CredentialCheck>;
+  /** The agent's model list + current selection (specs/embedded-agent, R2.5). */
+  agentModels(): Promise<AgentPrefs>;
+  /** Record the user's model pick; refuses a model the list never offered. */
+  selectModel(model: string): Promise<AgentPrefs>;
   language(): Promise<Language>;
   setLanguage(language: Language): Promise<Language>;
   knownProjects(): Promise<KnownProject[]>;
   createProject(name: string, directory: string, language: Language): Promise<KnownProject>;
   forgetProject(name: string): Promise<void>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
+
+  /** The embedded agent — drive a run (specs/embedded-agent, R1.2, R5.2–R5.5). */
+  chatSend(input: ChatSendInput): Promise<ChatRunStarted>;
+  chatResume(input: ChatResumeInput): Promise<ChatRunStarted>;
+  chatCancel(input: ChatCancelInput): Promise<void>;
 
   /** 3.5 — `File.path` was removed in Electron 32; the preload knows the path. */
   pathForFile(file: File): string;
@@ -63,6 +80,9 @@ export interface OwBridge {
 
   /** 3.7 — a file that arrived through `raw/_inbox/`, reported as a drop is. */
   onInbox(handler: (outcome: DropOutcome) => void): () => void;
+
+  /** The agent's stream — one {@link ChatEvent} per push (specs/embedded-agent). */
+  onChatEvent(handler: (event: ChatEvent) => void): () => void;
 }
 
 declare global {

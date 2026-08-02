@@ -1,3 +1,4 @@
+import "./agent/tracing.js"; // disable tracing before any langchain import (R2.6) — keep first
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,8 +10,11 @@ import { RecorderSession, resolveRecorder, spawnTransport } from "./recorder.js"
 import { applyPackagedBinaries } from "./resources.js";
 import { serveQueries } from "@open-wiki/access/socket";
 import { drainInbox, watchInbox, type InboxOutcome, type InboxWatcher } from "@open-wiki/access";
+import { defaultAppDataDir, readSecrets } from "@open-wiki/access/secrets";
+import { readAgentPrefs, resolveModel } from "./agent/agent-prefs.js";
 import { isOpenableExternally } from "../renderer/navigation.js";
 import { watchProject } from "./watcher.js";
+import { createChatControl, type ChatCredentials } from "./agent/chat-control.js";
 
 /**
  * The Electron entry point (plan 8.2).
@@ -80,23 +84,14 @@ function createWindow(projectRoot: string | null): BrowserWindow {
   const inboxDrain = (root: string): Promise<InboxOutcome[]> =>
     inbox ? inbox.drain() : drainInbox(root, { stabilityMs: INBOX_STABILITY_MS });
 
-  const api = createApi({
-    projectRoot,
-    recorder,
-    ...(projectRoot ? { inbox: { drain: () => inboxDrain(projectRoot) } } : {}),
-  });
-  for (const channel of Object.values(CHANNELS)) {
-    if (PUSH_CHANNELS.has(channel)) continue; // main → renderer only
-    ipcMain.handle(channel, (_event, ...args: unknown[]) => dispatch(api, channel, args));
-  }
-
   /**
    * Tell the window something.
    *
    * **Buffered until the document has loaded.** `webContents.send` before that
    * is dropped on the floor with no queue and no error, and the things pushed
-   * here are reports — a file that arrived, a watcher that died. A report that
-   * silently goes nowhere is the failure this channel exists to prevent.
+   * here are reports — a file that arrived, a watcher that died, an agent token.
+   * A report that silently goes nowhere is the failure this channel exists to
+   * prevent (3.2: the agent's stream is buffered through the same path).
    */
   let loaded = false;
   const waiting: Array<{ channel: string; payload: unknown }> = [];
@@ -115,6 +110,39 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     }
     waiting.length = 0;
   });
+
+  // The embedded agent (specs/embedded-agent). One control per project window,
+  // built where the buffered `send` lives so the agent's stream inherits the
+  // queue-before-load behavior (3.2). The credential is read from the secret
+  // store — never `process.env` — and the model from the saved selection with
+  // the default fallback; group 5 refines the model source. A launcher window
+  // has no project, so it gets no agent.
+  const chat = projectRoot
+    ? createChatControl({
+        projectRoot,
+        send,
+        resolveCredentials: (): ChatCredentials | null => {
+          const secrets = readSecrets(projectRoot, defaultAppDataDir());
+          const apiKey = secrets?.stt?.apiKey;
+          if (!apiKey) return null;
+          // The model the user picked in settings, captured at credential-save
+          // time (5.4) and read from the prefs file beside the secrets file.
+          const modelName = resolveModel(readAgentPrefs(projectRoot, defaultAppDataDir()));
+          return { apiKey, modelName };
+        },
+      })
+    : undefined;
+
+  const api = createApi({
+    projectRoot,
+    recorder,
+    ...(projectRoot ? { inbox: { drain: () => inboxDrain(projectRoot) } } : {}),
+    ...(chat ? { chat } : {}),
+  });
+  for (const channel of Object.values(CHANNELS)) {
+    if (PUSH_CHANNELS.has(channel)) continue; // main → renderer only
+    ipcMain.handle(channel, (_event, ...args: unknown[]) => dispatch(api, channel, args));
+  }
 
   // 9.14 — the CLI asks here rather than starting a process, when this
   // window already has the project open. Read and validate only; the socket

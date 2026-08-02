@@ -416,7 +416,9 @@ describe("the widened IPC surface (6.x, 7.6, 8.6 to 8.11)", () => {
     // means a channel wrongly added to it is skipped twice over: no handler
     // registered, no dispatch case exercised, test green, and the renderer's
     // `invoke` hanging against a channel nobody answers. This pins it.
-    expect([...PUSH_CHANNELS].sort()).toEqual([CHANNELS.changed, CHANNELS.inbox].sort());
+    expect([...PUSH_CHANNELS].sort()).toEqual(
+      [CHANNELS.changed, CHANNELS.inbox, CHANNELS.chatEvent].sort(),
+    );
   });
 
   it("handles every channel it declares, with no gaps", async () => {

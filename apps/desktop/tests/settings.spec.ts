@@ -18,7 +18,10 @@ import {
   RelativeProjectPathError,
   saveCredential,
   setLanguage,
+  agentModels,
+  selectAgentModel,
 } from "../src/main/settings.js";
+import { readAgentPrefs, DEFAULT_MODEL } from "../src/main/agent/agent-prefs.js";
 
 let root: string;
 let appData: string;
@@ -44,12 +47,23 @@ function fakeFetch(status: number) {
   return { doFetch, calls };
 }
 
+/** A `fetch` that answers 200 with a Groq `/models` body, so the list is captured. */
+function fakeModelsFetch(models: string[]) {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const body = JSON.stringify({ data: models.map((id) => ({ id })) });
+  const doFetch: FetchLike = async (url, init) => {
+    calls.push({ url, init });
+    return new Response(body, { status: 200 });
+  };
+  return { doFetch, calls };
+}
+
 describe("checkCredential (8.3)", () => {
   it("accepts a key Groq accepts", async () => {
     const { doFetch } = fakeFetch(200);
     await expect(
       checkCredential({ provider: "groq", apiKey: "gsk_good" }, { fetch: doFetch }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toEqual({ ok: true, models: [] });
   });
 
   it("checks it on the spot, without sending audio", async () => {
@@ -69,6 +83,17 @@ describe("checkCredential (8.3)", () => {
       "Bearer gsk_secret",
     );
     expect(calls[0]!.url).not.toContain("gsk_secret");
+  });
+
+  it("captures the model list the validation call doubles as (5.4)", async () => {
+    // The same `GET /models` that proves the key returns the catalogue, so the
+    // settings dropdown is what Groq actually offered rather than a guess.
+    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+    const result = await checkCredential(
+      { provider: "groq", apiKey: "gsk_good" },
+      { fetch: doFetch },
+    );
+    expect(result).toEqual({ ok: true, models: ["openai/gpt-oss-120b", "llama-3.3-70b"] });
   });
 
   it("says a rejected key was rejected", async () => {
@@ -181,6 +206,95 @@ describe("credentialState (8.3)", () => {
 
   it("says there is none when there is none", () => {
     expect(credentialState(root, appData)).toEqual({ provider: null, hasKey: false });
+  });
+});
+
+describe("agent model list + selection (5.4, R2.5)", () => {
+  it("persists the captured model list beside the secrets file when a key checks out", async () => {
+    // The validation call is the model-list fetch: the catalogue Groq returned
+    // is written to its own file, separate from the secrets file (5.4).
+    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+    await saveCredential(
+      root,
+      { provider: "groq", apiKey: "gsk_good" },
+      {
+        fetch: doFetch,
+        appDataDir: appData,
+      },
+    );
+    const prefs = readAgentPrefs(root, appData);
+    expect(prefs?.models).toEqual(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+    // The default is selected when it is in the list.
+    expect(prefs?.selectedModel).toBe("openai/gpt-oss-120b");
+  });
+
+  it("falls back to the first model when the default is not in the list", async () => {
+    const { doFetch } = fakeModelsFetch(["llama-3.3-70b", "mixtral-8x7b"]);
+    await saveCredential(
+      root,
+      { provider: "groq", apiKey: "gsk_good" },
+      {
+        fetch: doFetch,
+        appDataDir: appData,
+      },
+    );
+    expect(readAgentPrefs(root, appData)?.selectedModel).toBe("llama-3.3-70b");
+  });
+
+  it("does not write agent prefs for whisper.cpp — the agent does not run for it", async () => {
+    // whisper.cpp needs no credential and offers no model list; the Chat pane is
+    // disabled while it is chosen (R2.4, 5.3), so no prefs file is written.
+    await saveCredential(root, { provider: "whispercpp" }, { appDataDir: appData });
+    expect(readAgentPrefs(root, appData)).toBeUndefined();
+  });
+
+  it("does not put the model list in the secrets file", async () => {
+    // The list is not a secret; it lives in a sibling file, so the secrets file
+    // stays exactly the credential and nothing else.
+    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b"]);
+    await saveCredential(
+      root,
+      { provider: "groq", apiKey: "gsk_secret" },
+      {
+        fetch: doFetch,
+        appDataDir: appData,
+      },
+    );
+    const secrets = readSecrets(root, appData);
+    expect(JSON.stringify(secrets)).not.toContain("openai/gpt-oss-120b");
+  });
+
+  it("agentModels reports the list and selection, or the empty default", async () => {
+    // Before a key is saved, there is nothing to pick.
+    expect(agentModels(root, appData)).toEqual({ models: [], selectedModel: DEFAULT_MODEL });
+    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+    await saveCredential(
+      root,
+      { provider: "groq", apiKey: "gsk_good" },
+      {
+        fetch: doFetch,
+        appDataDir: appData,
+      },
+    );
+    expect(agentModels(root, appData).models).toEqual(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+  });
+
+  it("selectAgentModel records the user's pick, and refuses a model the list never offered", async () => {
+    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+    await saveCredential(
+      root,
+      { provider: "groq", apiKey: "gsk_good" },
+      {
+        fetch: doFetch,
+        appDataDir: appData,
+      },
+    );
+    const next = selectAgentModel(root, "llama-3.3-70b", appData);
+    expect(next.selectedModel).toBe("llama-3.3-70b");
+    expect(readAgentPrefs(root, appData)?.selectedModel).toBe("llama-3.3-70b");
+    // A model Groq never offered — a stale dropdown, a hand-edited value — must
+    // not become the agent's model.
+    expect(() => selectAgentModel(root, "gpt-4", appData)).toThrow(/not one of the models/);
   });
 });
 

@@ -52,6 +52,8 @@ const api = {
 
   credential: () => ipcRenderer.invoke(CHANNELS.credential),
   saveCredential: (input: unknown) => ipcRenderer.invoke(CHANNELS.saveCredential, input),
+  agentModels: () => ipcRenderer.invoke(CHANNELS.agentModels),
+  selectModel: (model: string) => ipcRenderer.invoke(CHANNELS.selectModel, model),
   language: () => ipcRenderer.invoke(CHANNELS.language),
   setLanguage: (language: string) => ipcRenderer.invoke(CHANNELS.setLanguage, language),
   knownProjects: () => ipcRenderer.invoke(CHANNELS.knownProjects),
@@ -60,6 +62,10 @@ const api = {
   forgetProject: (name: string) => ipcRenderer.invoke(CHANNELS.forgetProject, name),
   transcribe: (id: string, restart?: boolean) =>
     ipcRenderer.invoke(CHANNELS.transcribe, id, restart === true),
+
+  chatSend: (input: unknown) => ipcRenderer.invoke(CHANNELS.chatSend, input),
+  chatResume: (input: unknown) => ipcRenderer.invoke(CHANNELS.chatResume, input),
+  chatCancel: (input: unknown) => ipcRenderer.invoke(CHANNELS.chatCancel, input),
 
   /**
    * The path of a dropped file (plan 3.5).
@@ -90,6 +96,13 @@ const api = {
     const listener = (_event: unknown, outcome: unknown): void => handler(outcome);
     ipcRenderer.on(CHANNELS.inbox, listener);
     return () => ipcRenderer.removeListener(CHANNELS.inbox, listener);
+  },
+
+  /** The agent's stream — token/tool/interrupt/done/error (specs/embedded-agent). */
+  onChatEvent: (handler: (event: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown): void => handler(payload);
+    ipcRenderer.on(CHANNELS.chatEvent, listener);
+    return () => ipcRenderer.removeListener(CHANNELS.chatEvent, listener);
   },
 };
 

@@ -20,7 +20,10 @@ which is why each one is listed in the exact form it takes in the schemas.
 - **claim** — a statement recorded on a page, of type `decision`, `fact`, `action_item` or `open_question`, always with a citation. Avoid: insight
 - **supersession** — marking an earlier decision as replaced, never deleting it. It is carried twice: as data, in the replaced page's `status`, `superseded-by` and the date, which is what a traversal can answer from; and as prose, struck through with the same date and a link, which is what a reader sees. The prose alone is not supersession — nothing can walk it. Avoid: override
 - **provenance link** — the link that opens the source where a claim came from: an instant for audio, a page for a PDF. Avoid: backlink
-- **write gate** — whatever makes an agent's write to `wiki/` pass through the group 5 validations now that MCP no longer writes. Which mechanism it is has not been chosen — `adr:0013-the-project-directory-is-the-unit`.
+- **write gate** — whatever makes an agent's write to `wiki/` pass through the group 5 validations now that MCP no longer writes — `adr:0013-the-project-directory-is-the-unit`. For the embedded agent the chosen mechanism is the **wiki-gate backend**; the term remains for the constraint itself, independent of the mechanism that enforces it.
+- **wiki-gate backend** — the `WikiGateBackend` (`BackendProtocolV2`) the embedded agent reads and writes through: every read is confined with `assertWithin`, every write routes through `gateWrite` + `writePage` with origin `"agent"`. The write gate made concrete for the agent. Avoid: gate backend, write-gate backend
+- **embedded agent** — the langchain `createAgent` graph scoped to one project window that reads the project like a harness and writes `wiki/` only through the wiki-gate backend with human-in-the-loop approval — `adr:0019`, `specs/embedded-agent`. Avoid: assistant, copilot, AI agent
+- **chat pane** — the desktop pane that hosts the embedded agent's conversation, the fourth pane alongside wiki, sources and checks. Avoid: agent panel, chat window, chat tab
 
 > **`session` stopped being a synonym to avoid.** It was listed against `recording`, from
 > when the only sessions in this product were audio ones.

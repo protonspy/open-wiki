@@ -7,7 +7,7 @@ import { join } from "node:path";
  * it, and the folder observer records changes neither saw (plan task 2.4,
  * `adr:0013-the-project-directory-is-the-unit`).
  */
-export type Origin = "editor" | "cli" | "hook" | "observer";
+export type Origin = "editor" | "cli" | "hook" | "observer" | "agent";
 
 export interface OperationPage {
   /** Project-relative path, e.g. `wiki/page.md`. */

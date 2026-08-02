@@ -1167,3 +1167,204 @@ a:hover,
   overflow-wrap: anywhere;
   user-select: all;
 }
+
+/* The chat pane — the embedded agent's window into the project
+   (specs/embedded-agent). A scrolling transcript above a composer, with the
+   approve/reject/edit card a paused write surfaces folded into the stream. */
+
+/* The pane is mounted for the window's life so the conversation and its thread
+   id survive a pane switch (R7.1); the wrapper is what hides it. `contents`
+   keeps it out of the layout entirely, so `.chat` is the child of `.main` it
+   was before the wrapper existed. */
+.pane-chat {
+  display: contents;
+}
+
+.pane-chat[hidden] {
+  display: none;
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.chat__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.chat__turn {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.chat__turn--user {
+  justify-items: end;
+}
+
+.chat__bubble {
+  max-width: 80%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  border: 1px solid var(--border);
+}
+
+.chat__turn--user .chat__bubble {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: transparent;
+}
+
+.chat__tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.chat__tool {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+
+.chat__tool-phase {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+}
+
+/* The card a paused write surfaces — approve, reject, or edit the proposal. */
+.chat__interrupt {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-3);
+  background: var(--background);
+}
+
+.chat__interrupt-lead {
+  margin: 0;
+}
+
+.chat__interrupt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chat__proposal {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.chat__proposal dt {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+
+.chat__proposal dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.chat__diff {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 24rem;
+  overflow-y: auto;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+
+/* Where a proposed edit will land — one row per match site (R5.2). */
+.chat__sites-lead {
+  margin: 0 0 var(--space-1);
+  color: var(--muted-foreground);
+}
+
+.chat__sites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.chat__site {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.chat__site-line {
+  flex: none;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  text-align: right;
+  min-width: 3ch;
+}
+
+.chat__site-text {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.chat__edit {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* The composer — a textarea and a send/stop button. Pinned below the stream. */
+.chat__composer {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+  background: var(--background);
+}
+
+.chat__input {
+  flex: 1;
+  min-height: 2.5rem;
+  max-height: 12rem;
+  resize: none;
+  font: inherit;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}

@@ -18,7 +18,7 @@ absent from this file is a finding.
 - **Node.js** — Electron's runtime, already present; and what the CLI runs on when it is invoked with no application installed.
 - **ffmpeg (vendored)** — downmix, VAD and Opus encode in a single tool. Bundled with hash verification, never downloaded at run time.
 - **Opus 24 kbps** — the only encoding that puts an hour of meeting under the 25 MB upload limit. A requirement, not an optimisation. See `adr:0006-opus-as-the-provenance-format`.
-- **Groq `whisper-large-v3-turbo`** — the default STT provider: ~US$ 0.04 per hour and ~228x real time, multilingual, which is what lets the content language be a setting rather than a fixed choice — see `adr:0008-content-language-is-a-setting-english-by-default`. It is the **only** credential the application holds, now that the MCP token went away with the port — see `adr:0013-the-project-directory-is-the-unit`.
+- **Groq `whisper-large-v3-turbo`** — the default STT provider: ~US$ 0.04 per hour and ~228x real time, multilingual, which is what lets the content language be a setting rather than a fixed choice — see `adr:0008-content-language-is-a-setting-english-by-default`. It is the **only** credential the application holds, now that the MCP token went away with the port — see `adr:0013-the-project-directory-is-the-unit` — and it does double duty: the embedded agent reuses it as its model key (`adr:0019`).
 - **whisper.cpp** — optional local provider, for anyone who requires that the audio never leave the machine. It is what holds up the privacy argument without rewriting the pipeline.
 
 ## Application
@@ -37,6 +37,31 @@ The application neither reads nor writes a git repository —
 `adr:0002-workspace-as-a-local-markdown-folder`. The project directory usually *is* one,
 and that is the user's business, not a technology this product adopted.
 
+## Embedded agent
+
+The desktop application runs an agent behind a chat pane, for the user who has no harness of
+their own — see `adr:0019-an-embedded-agent-that-reads-freely-and-writes-through-the-gate`. It
+reads the project the way a harness does and writes `wiki/` only through the validated store.
+
+- **deepagents** — the filesystem middleware and tools (`ls`, `read_file`, `write_file`,
+  `edit_file`, `glob`, `grep`) the agent uses, re-pointed at a gate-backed `BackendProtocolV2`
+  so every write routes through `gateWrite` + `writePage` with origin `agent`; `execute` is
+  filtered because the backend is not a sandbox. Pinned at `1.12.1`, the version `adr:0019`
+  named — the `BackendProtocolV2` surface is internal and unversioned, so a bump is deliberate.
+- **langchain** — `createAgent`, the runtime primitive the agent is built on (assembled
+  explicitly, not via `createDeepAgent`, so the subagent `task` middleware is simply not in the
+  stack — `createDeepAgent` makes it required and its profile switch does not reach a `ChatGroq`
+  instance), and `humanInTheLoopMiddleware`, which wires `interruptOn` to `write_file`,
+  `edit_file`, `rename_page` and `delete_page`.
+- **@langchain/langgraph** — the graph the agent is: a `MemorySaver` checkpointer keyed by
+  `thread_id`, `streamEvents(v3)` for token and tool-call streaming, and `Command({ resume })`
+  to carry an approval back into a paused run.
+- **@langchain/groq** — `ChatGroq`, the model the agent runs, built with the same Groq key the
+  recorder uses (read from `readSecrets`, injected as `apiKey` — never into `process.env`) and
+  the user-selected model (default `openai/gpt-oss-120b`).
+- **@langchain/core** — the message, tool and language-model primitives the rest build on;
+  stated explicitly because the agent imports its types directly.
+
 ## Libraries
 
 - **yaml** — parses and writes the frontmatter the store validates. The page schema is the contract; a real YAML parser is what keeps it from drifting into "the subset we happened to hand-roll."
@@ -53,7 +78,7 @@ anchors, and the path stops writing there — see
 
 ## MCP server
 
-- **MCP TypeScript SDK** — how a project with no wiki of its own consults one that has: read-only, over stdio, spawned by the harness. It is not how the local wiki is reached, because the harness already has the directory open. See `adr:0013-the-project-directory-is-the-unit`.
+- **MCP TypeScript SDK** — how an agent reaches a project's wiki: read-only, over Streamable HTTP by one resident `ow serve` process, the project a tool parameter (`project_id`), per `adr:0018-mcp-over-http-serving-every-project` (which narrows `adr:0013-the-project-directory-is-the-unit` — read-only stays confinement by process, the project stays named and not pathed). The SDK still ships `ow mcp` over stdio today; the HTTP server is accepted but not yet built, so `ow serve` and its JWT are decisions on record rather than a running service.
 - **zod** — the schema the MCP read tools declare their arguments with. The SDK accepts a zod shape directly, so a tool's contract is one object rather than a hand-written JSON Schema drifting from the handler.
 
 ## Development tooling

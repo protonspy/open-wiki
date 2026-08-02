@@ -48,7 +48,7 @@ export interface GateInput {
  * safe direction on a case-sensitive filesystem too: at worst a page is
  * validated that need not have been, never one waved through.
  */
-function gatedPageRel(projectRoot: string, filePath: string): string | null {
+export function gatedPageRel(projectRoot: string, filePath: string): string | null {
   const rel = relative(resolve(projectRoot), resolve(projectRoot, filePath)).replace(/\\/g, "/");
   if (rel === "" || rel.startsWith("..")) return null;
   const folded = rel.toLowerCase();
