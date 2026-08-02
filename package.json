@@ -9,6 +9,7 @@
   "scripts": {
     "test": "pnpm -r --if-present run test",
     "test:coverage": "pnpm -r --if-present run test:coverage",
+    "dev:desktop": "pnpm --filter @open-wiki/desktop run dev:app",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
