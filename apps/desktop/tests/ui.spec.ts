@@ -5,6 +5,7 @@ import { buttonClass } from "../src/renderer/ui/Button.js";
 import { cellClass } from "../src/renderer/ui/Table.js";
 import { iconButtonClass } from "../src/renderer/ui/IconButton.js";
 import { pillClass } from "../src/renderer/ui/Pill.js";
+import { segmentClass } from "../src/renderer/ui/Segmented.js";
 
 /**
  * The primitives every later group is assembled from (plan 2.3, 2.4).
@@ -158,5 +159,22 @@ describe("the focus ring", () => {
     // the outline with it.
     const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/);
     expect(reduced?.[1]).not.toMatch(/outline/);
+  });
+});
+
+describe("segmentClass (desktop-ui 6.1)", () => {
+  it("names the chosen one, and says nothing about the others", () => {
+    expect(segmentClass(true)).toBe("seg__option seg__option--on");
+    expect(segmentClass(false)).toBe("seg__option");
+  });
+
+  it("keeps the caller's own class last, so it can win", () => {
+    expect(segmentClass(false, "seg__option--wide")).toBe("seg__option seg__option--wide");
+  });
+
+  it("carries weight as well as colour when chosen", () => {
+    // The same guarantee the rail and the pills make: a state that is only a
+    // colour is a state somebody cannot read.
+    expect(stylesheet()).toMatch(/\.seg__option--on\s*\{[^}]*font-weight:/);
   });
 });

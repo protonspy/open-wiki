@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readSecrets } from "@open-wiki/access/secrets";
+import { readSettings as currentSettings } from "@open-wiki/access";
 import { createApi, NoProjectError } from "../src/main/ipc.js";
 import type { FetchLike } from "@open-wiki/audio";
 import {
@@ -17,7 +18,9 @@ import {
   ProjectNameTakenError,
   RelativeProjectPathError,
   saveCredential,
+  setDeleteWav,
   setLanguage,
+  settingsView,
   agentModels,
   selectAgentModel,
 } from "../src/main/settings.js";
@@ -419,5 +422,63 @@ describe("a window with no project (8.4)", () => {
     expect(() => api.sources()).toThrow(NoProjectError);
     expect(() => api.findings()).toThrow(NoProjectError);
     expect(() => api.credential()).toThrow(NoProjectError);
+  });
+});
+
+/**
+ * The settings sheet's subject (plan desktop-ui 6.1): the values, and the two
+ * files they live in.
+ */
+describe("settingsView (6.1)", () => {
+  it("answers the settings and where they are kept", () => {
+    const view = settingsView(root, appData);
+    expect(view.settings).toEqual({ language: "en", deleteWavAfterTranscription: true });
+    expect(view.settingsFile).toBe(join(root, "ow.json"));
+    expect(view.secretsFile.startsWith(appData)).toBe(true);
+  });
+
+  it("shows the file as it is on disk, not a copy of what was parsed", () => {
+    // The point of showing the file is that it *is* the file. A pretty-printed
+    // re-serialisation would hide exactly the malformed thing somebody opened
+    // the sheet to understand.
+    const raw = '{\n  "language": "pt-BR",\n   "deleteWavAfterTranscription": false\n}\n';
+    writeFileSync(join(root, "ow.json"), raw, "utf8");
+    expect(settingsView(root, appData).settingsText).toBe(raw);
+  });
+
+  it("says the file is not written yet rather than inventing one", () => {
+    expect(settingsView(root, appData).settingsText).toBeNull();
+  });
+
+  it("never carries the credential across the bridge", async () => {
+    // 2.7 and `adr:0007`: the secret lives in the application's data directory,
+    // and `credentialState` already refuses to send it. This view names the
+    // file so a person can find it — putting its contents on a screen that
+    // renders markdown an agent wrote would be the same leak with a frame.
+    await saveCredential(
+      root,
+      { provider: "groq", apiKey: "gsk_super_secret" },
+      {
+        appDataDir: appData,
+        fetch: fakeFetch(200).doFetch,
+      },
+    );
+    const view = settingsView(root, appData);
+    expect(JSON.stringify(view)).not.toContain("gsk_super_secret");
+    expect(view.settingsText ?? "").not.toContain("gsk_");
+  });
+});
+
+describe("setDeleteWav (6.1)", () => {
+  it("writes the choice where `transcribe-run` reads it", () => {
+    expect(setDeleteWav(root, false).deleteWavAfterTranscription).toBe(false);
+    expect(currentSettings(root).deleteWavAfterTranscription).toBe(false);
+    expect(setDeleteWav(root, true).deleteWavAfterTranscription).toBe(true);
+  });
+
+  it("leaves the language alone", () => {
+    setLanguage(root, "pt-BR");
+    setDeleteWav(root, false);
+    expect(currentLanguage(root)).toBe("pt-BR");
   });
 });

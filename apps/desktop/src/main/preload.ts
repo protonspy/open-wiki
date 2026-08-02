@@ -39,6 +39,8 @@ const api = {
   rename: (from: string, to: string) => ipcRenderer.invoke(CHANNELS.rename, from, to),
   remove: (slug: string) => ipcRenderer.invoke(CHANNELS.remove, slug),
   addToIndex: (slug: string) => ipcRenderer.invoke(CHANNELS.addToIndex, slug),
+  saveAsCopy: (slug: string, markdown: string) =>
+    ipcRenderer.invoke(CHANNELS.saveAsCopy, slug, markdown),
   history: () => ipcRenderer.invoke(CHANNELS.history),
   undo: (id: string) => ipcRenderer.invoke(CHANNELS.undo, id),
 
@@ -57,6 +59,8 @@ const api = {
   selectModel: (model: string) => ipcRenderer.invoke(CHANNELS.selectModel, model),
   language: () => ipcRenderer.invoke(CHANNELS.language),
   setLanguage: (language: string) => ipcRenderer.invoke(CHANNELS.setLanguage, language),
+  settingsView: () => ipcRenderer.invoke(CHANNELS.settingsView),
+  setDeleteWav: (on: boolean) => ipcRenderer.invoke(CHANNELS.setDeleteWav, on),
   knownProjects: () => ipcRenderer.invoke(CHANNELS.knownProjects),
   createProject: (name: string, directory: string, language: string) =>
     ipcRenderer.invoke(CHANNELS.createProject, name, directory, language),

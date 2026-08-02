@@ -31,7 +31,7 @@ import { fixesFor, type Fix } from "./fixes.js";
 import { Reader, readerState } from "./Reader.js";
 import { Side } from "./Side.js";
 import { ChecksPane } from "./ChecksPane.js";
-import { History as HistoryPanel } from "./Panels.js";
+import { History as HistoryPanel } from "./History.js";
 import { SourceAt } from "./SourceAt.js";
 import { Rail } from "./Rail.js";
 import { Reported } from "./Reported.js";

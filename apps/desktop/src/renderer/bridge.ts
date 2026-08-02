@@ -1,7 +1,8 @@
-import type { Finding, Language, Operation } from "@open-wiki/access";
+import type { Finding, Language, Operation, ProjectSettings } from "@open-wiki/access";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type {
   CreateInput,
+  CopyResult,
   IndexResult,
   RenameResult,
   SaveInput,
@@ -14,6 +15,7 @@ import type {
   CredentialState,
   KnownProject,
   SaveCredentialInput,
+  SettingsView,
 } from "../main/settings.js";
 import type { PageSource, SourceLocation, SourceRow } from "../main/sources.js";
 import type { TranscribeOutcome } from "../main/transcribe-run.js";
@@ -51,6 +53,8 @@ export interface OwBridge {
   remove(slug: string): Promise<{ operationId: string }>;
   /** 5.3 — the one-click fix for 7.1's `page.orphan`. */
   addToIndex(slug: string): Promise<IndexResult>;
+  /** 6.4 — the third answer to 8.8: keep both, and name the copy. */
+  saveAsCopy(slug: string, markdown: string): Promise<CopyResult>;
   history(): Promise<Operation[]>;
   undo(id: string): Promise<void>;
 
@@ -71,6 +75,9 @@ export interface OwBridge {
   selectModel(model: string): Promise<AgentPrefs>;
   language(): Promise<Language>;
   setLanguage(language: Language): Promise<Language>;
+  /** 6.1 — the values, and the two files they live in. Never the key. */
+  settingsView(): Promise<SettingsView>;
+  setDeleteWav(on: boolean): Promise<ProjectSettings>;
   knownProjects(): Promise<KnownProject[]>;
   createProject(name: string, directory: string, language: Language): Promise<KnownProject>;
   forgetProject(name: string): Promise<void>;

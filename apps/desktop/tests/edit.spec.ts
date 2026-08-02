@@ -16,6 +16,7 @@ import {
   renamePage,
   retitleSource,
   savePage,
+  savePageAsCopy,
   undoOperation,
 } from "../src/main/edit.js";
 
@@ -514,5 +515,49 @@ describe("addToIndex (5.3)", () => {
 
   it("refuses a slug that is a path", () => {
     expect(() => addToIndex(root, "../escape")).toThrow(InvalidSlugError);
+  });
+});
+
+/**
+ * The third answer to a conflict (plan desktop-ui 6.4).
+ *
+ * 8.8 refuses to overwrite and shows both versions, on the ground that picking
+ * one silently is the only unrecoverable outcome. A *named* copy is not a
+ * silent pick, which is the plan's own reason for keeping the draft's button.
+ */
+describe("savePageAsCopy (6.4)", () => {
+  it("writes the buffer to a page of its own, beside the original", () => {
+    write("fenix", page("fenix"));
+    const result = savePageAsCopy(root, "fenix", page("fenix", "mine\n"), today);
+    expect(result.slug).toBe("fenix-copy");
+    expect(readFileSync(join(root, "wiki", "fenix-copy.md"), "utf8")).toContain("mine");
+  });
+
+  it("leaves the original exactly as it was", () => {
+    write("fenix", page("fenix", "theirs\n"));
+    savePageAsCopy(root, "fenix", page("fenix", "mine\n"), today);
+    expect(readFileSync(join(root, "wiki", "fenix.md"), "utf8")).toContain("theirs");
+  });
+
+  it("gives the copy an id that follows its slug", () => {
+    // The schema is `type:slug` (5.1), so a copy keeping the original's id
+    // would be refused on its very next save — a page saved once and never
+    // again, which is the worst place to find out.
+    write("fenix", page("fenix"));
+    savePageAsCopy(root, "fenix", page("fenix"), today);
+    const copy = readFileSync(join(root, "wiki", "fenix-copy.md"), "utf8");
+    expect(copy).toContain("id: topic:fenix-copy");
+  });
+
+  it("finds the next free name when a copy is already there", () => {
+    write("fenix", page("fenix"));
+    savePageAsCopy(root, "fenix", page("fenix"), today);
+    expect(savePageAsCopy(root, "fenix", page("fenix"), today).slug).toBe("fenix-copy-2");
+  });
+
+  it("goes through the gate like every other write", () => {
+    write("fenix", page("fenix"));
+    const result = savePageAsCopy(root, "fenix", "no frontmatter at all\n", today);
+    expect(result.saved).toBe(false);
   });
 });

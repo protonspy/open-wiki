@@ -1535,17 +1535,60 @@ a:hover,
   font-size: var(--text-base);
 }
 
-/* --- The operation history (8.11). */
-.operation {
+/* --- The operation history (8.11, then desktop-ui 6.2). Two lines per
+   operation: what happened, and when — with Undo on the first, where the eye
+   already is. */
+.history__honest {
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.hist {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2) 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hist:last-child {
+  border-bottom: 0;
+}
+
+.hist__what {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 7px;
   font-size: var(--text-sm);
 }
 
-.operation__time {
+.hist__what code {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+  color: var(--primary);
+}
+
+.hist__when {
+  grid-column: 1 / -1;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--muted-foreground);
+}
+
+/* Who wrote it. Every origin looks the same on purpose: the log does not rank
+   them, and a hook's write is not more or less real than the editor's. */
+.origin {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   color: var(--muted-foreground);
 }
 
@@ -1608,6 +1651,148 @@ a:hover,
   height: 12px;
   border-radius: 1px;
   background: var(--primary);
+}
+
+/* --- The settings sheet (8.3, 8.12, then desktop-ui 6.1). One block per
+   setting: what it is, what it costs you, and the control. */
+.setting {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting:last-child {
+  border-bottom: 0;
+}
+
+.setting > h4 {
+  margin: 0 0 3px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* The explanation, in every block. It is not decoration: three of these
+   settings cost the user something — a third party hears the audio, 690 MB
+   goes away, the agent is told to write in another language — and a control
+   with no sentence over it is a choice made blind. */
+.setting > p {
+  max-width: 62ch;
+  margin: 0 0 10px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.setting__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.setting__select {
+  height: var(--control);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+/* Where a setting is kept. Mono and quiet: it is a fact about the disk rather
+   than a control — and the point of showing it is that support for an
+   application with no backend is somebody opening their own configuration. */
+.setting__file {
+  margin: 10px 0 4px;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.setting__code {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--foreground);
+  white-space: pre-wrap;
+}
+
+.key-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.field {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.field input {
+  height: var(--control);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.validated {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--ok);
+}
+
+/* --- A row of mutually exclusive choices (6.1). */
+.seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.seg__option {
+  height: var(--control);
+  padding: 0 11px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.seg__option:last-child {
+  border-right: 0;
+}
+
+/* The chosen one carries weight as well as colour, so it survives being read
+   by somebody who cannot tell the two apart. */
+.seg__option--on {
+  background: rgb(217 154 78 / 14%);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.seg__option:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* --- A drop in progress (3.5). The whole window is the target. */

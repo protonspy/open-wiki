@@ -24,6 +24,7 @@ export const CHANNELS = {
   rename: "wiki:rename",
   remove: "wiki:delete",
   addToIndex: "wiki:add-to-index",
+  saveAsCopy: "wiki:save-as-copy",
   history: "history:list",
   undo: "history:undo",
 
@@ -47,6 +48,8 @@ export const CHANNELS = {
   selectModel: "settings:select-model",
   language: "settings:language",
   setLanguage: "settings:set-language",
+  settingsView: "settings:view",
+  setDeleteWav: "settings:delete-wav",
   knownProjects: "launcher:projects",
   createProject: "launcher:create",
   forgetProject: "launcher:forget",
