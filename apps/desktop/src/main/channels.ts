@@ -25,6 +25,7 @@ export const CHANNELS = {
   remove: "wiki:delete",
   addToIndex: "wiki:add-to-index",
   saveAsCopy: "wiki:save-as-copy",
+  waveform: "sources:waveform",
   history: "history:list",
   undo: "history:undo",
 

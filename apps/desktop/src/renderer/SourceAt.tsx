@@ -39,6 +39,33 @@ export function SourceAt({
   const [duration, setDuration] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [peaks, setPeaks] = useState<number[] | null>(null);
+
+  /**
+   * The shape of the sound (5.5), or null while nobody has drawn it yet.
+   *
+   * Fetched beside the location rather than with it: an hour of Opus takes a
+   * moment to decode the first time, and the citation — which is what the
+   * panel is *for* — must not wait behind a picture of it.
+   */
+  useEffect(() => {
+    setPeaks(null);
+    let live = true;
+    void bridge()
+      .waveform(id)
+      .then((found) => {
+        if (live) setPeaks(found);
+      })
+      .catch(() => {
+        // A recording with no Opus yet, a file source, an ffmpeg that is not
+        // there: none of them is worth an error in a panel whose subject is
+        // the citation. The transport draws a plain bar instead.
+        if (live) setPeaks(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [id]);
 
   useEffect(() => {
     setAt(null);
@@ -115,12 +142,26 @@ export function SourceAt({
               </Button>
             </div>
 
-            {/* Where in the recording this is. The waveform 5.5 draws goes
-                behind it; until then the bar is the shape of the answer. */}
+            {/* Where in the recording this is, over the shape of the sound
+                (5.5). Clicking seeks: the waveform is the one place a reader
+                can see where the talking is and go straight to it. */}
             <div className="playbar">
+              <Waveform peaks={peaks} />
               <span
                 className="playbar__head"
                 style={{ left: `${playheadPercent(position, duration)}%` }}
+              />
+              <button
+                type="button"
+                className="playbar__seek"
+                aria-label="Seek in this recording"
+                onClick={(event) => {
+                  const element = audio.current;
+                  if (!element || duration === null) return;
+                  const box = event.currentTarget.getBoundingClientRect();
+                  const at = ((event.clientX - box.left) / box.width) * duration;
+                  element.currentTime = Math.min(duration, Math.max(0, at));
+                }}
               />
             </div>
 
@@ -166,4 +207,38 @@ export function SourceAt({
 /** A local path as a URL the renderer may load, per the CSP's `media-src`. */
 function fileUrl(path: string): string {
   return `file:///${path.replace(/\\/g, "/").replace(/^\/+/, "")}`;
+}
+
+/**
+ * The recording, drawn (desktop-ui 5.5).
+ *
+ * **An SVG rather than a canvas**, which is where this departs from the draft.
+ * A canvas needs a pixel width to draw into, and the panel's is whatever the
+ * window is — so it would need a resize observer, a device-pixel-ratio
+ * multiplier and a redraw on both, to produce a picture that an SVG scales for
+ * free. The draft drew a canvas because it was a static HTML mock at a fixed
+ * width; nothing else about it argued for one.
+ *
+ * Static, and rendered once per source: the peaks come from the main process
+ * already bucketed, and they cannot change, because sound in `raw/` is sealed.
+ * There is no live meter here and there is not meant to be — the recorder is a
+ * separate process on purpose, and this is the one place a waveform earns its
+ * keep.
+ */
+function Waveform({ peaks }: { peaks: number[] | null }): React.JSX.Element | null {
+  if (!peaks || peaks.length === 0) return null;
+  return (
+    <svg
+      className="playbar__wave"
+      viewBox={`0 0 ${peaks.length} 2`}
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      {peaks.map((peak, i) => (
+        // Drawn from the centre out, so quiet is a line and loud is a band —
+        // the shape somebody scans for "where is the talking".
+        <rect key={i} x={i} y={1 - peak} width={1} height={Math.max(0.04, peak * 2)} />
+      ))}
+    </svg>
+  );
 }

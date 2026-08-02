@@ -63,6 +63,8 @@ export interface OwBridge {
   retitle(id: string, title: string): Promise<void>;
   findings(): Promise<Finding[]>;
   locate(id: string, fragment: string): Promise<SourceLocation>;
+  /** 5.5 — the peaks the provenance transport draws, or null when there is no audio. */
+  waveform(id: string): Promise<number[] | null>;
   drop(paths: readonly string[]): Promise<DropOutcome[]>;
   /** 3.7 — what is sitting in the doorway, and taking it when asked. */
   inboxWaiting(): Promise<string[]>;
