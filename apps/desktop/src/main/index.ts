@@ -135,6 +135,11 @@ function createWindow(projectRoot: string | null): BrowserWindow {
 
   const api = createApi({
     projectRoot,
+    // 6.3 — the first run opens the project it just made. `createWindow` is
+    // here and not in `ipc.ts`, which is what the tests reach.
+    openWindow: (root) => {
+      createWindow(root);
+    },
     recorder,
     ...(projectRoot ? { inbox: { drain: () => inboxDrain(projectRoot) } } : {}),
     ...(chat ? { chat } : {}),
