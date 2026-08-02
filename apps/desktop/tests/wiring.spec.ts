@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -62,6 +62,32 @@ describe("resolveRecorder (8.2)", () => {
   it("says how to get one rather than failing obscurely", () => {
     expect(() => resolveRecorder(root)).toThrow(RecorderError);
     expect(() => resolveRecorder(root)).toThrow(/cargo build --release/);
+  });
+});
+
+describe("the transcription door withdraws a processed declaration (source-status R3.1)", () => {
+  // `text.md` reaches a source through two doors. `writeSourceText` is one and
+  // withdraws in `@open-wiki/access`, where its own tests exercise it. The other
+  // is `finishRecording`, which writes through `@open-wiki/audio` — a package
+  // that deliberately does not depend on `@open-wiki/access` — so the
+  // withdrawal has to be made by the caller that imports both.
+  //
+  // This is a source-level assertion, the way the MCP read-only boundary is
+  // pinned, because `runTranscription` needs a configured provider and an
+  // ffmpeg binary and CI has neither. It cannot prove the call runs; it does
+  // catch the regression that actually happened once — the recording path
+  // quietly not withdrawing at all, which is the very case R3.1 exists for.
+  const source = readFileSync(join(__dirname, "..", "src", "main", "transcribe-run.ts"), "utf8");
+
+  it("imports the one withdrawal both doors share, rather than writing a second", () => {
+    expect(source).toMatch(/withdrawProcessed/);
+    expect(source).not.toMatch(/processed:\s*null/);
+  });
+
+  it("withdraws only once the transcript actually landed", () => {
+    // A part-done run gets a timeline and no `text.md`, and nothing changed
+    // under a declaration that has not been outrun.
+    expect(source).toMatch(/finished\.textReady\s*\)?\s*withdrawProcessed\(projectRoot, id\)/);
   });
 });
 

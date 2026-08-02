@@ -15,13 +15,24 @@ function tempProject(): string {
 function source(
   root: string,
   id: string,
-  parts: { kind?: "file" | "recording"; text?: string; journal?: unknown } = {},
+  parts: {
+    kind?: "file" | "recording";
+    text?: string;
+    journal?: unknown;
+    processed?: string;
+  } = {},
 ): void {
   const dir = join(root, "raw", id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, "manifest.json"),
-    JSON.stringify({ id, title: `Title of ${id}`, kind: parts.kind ?? "file", original: id }),
+    JSON.stringify({
+      id,
+      title: `Title of ${id}`,
+      kind: parts.kind ?? "file",
+      original: id,
+      ...(parts.processed !== undefined ? { processed: parts.processed } : {}),
+    }),
     "utf8",
   );
   if (parts.text !== undefined) writeFileSync(join(dir, "text.md"), parts.text, "utf8");
@@ -149,6 +160,42 @@ describe("source state (6.1)", () => {
       expect(() => sourceState(root, "nothing")).toThrow(MissingSourceError);
     });
 
+    describe("the one declared fact, beside the derived stage (R1.1, R1.2)", () => {
+      it("carries the declaration and the date it was made", () => {
+        source(root, "arch.pdf", { processed: "2026-08-02" });
+        expect(sourceState(root, "arch.pdf").processed).toBe("2026-08-02");
+      });
+
+      it("leaves it absent when nobody declared anything", () => {
+        source(root, "arch.pdf");
+        expect(sourceState(root, "arch.pdf").processed).toBeUndefined();
+      });
+
+      it("does not touch the stage, which stays what the disk says", () => {
+        // The two axes are independent. Declaring a source read tells the
+        // pipeline nothing, and a recording still mid-transcription that
+        // somebody marked is still transcribing.
+        source(root, "arch.pdf", { processed: "2026-08-02" });
+        expect(sourceState(root, "arch.pdf").stage).toBe("received");
+
+        source(root, "weekly", {
+          kind: "recording",
+          processed: "2026-08-02",
+          journal: { chunks: [{ done: true }, { done: false }] },
+        });
+        const weekly = sourceState(root, "weekly");
+        expect(weekly.stage).toBe("transcribing");
+        expect(weekly.processed).toBe("2026-08-02");
+      });
+
+      it("is carried on a cited source too — processed and cited are not the same answer", () => {
+        source(root, "arch.pdf", { text: "# Arch\n", processed: "2026-08-02" });
+        const state = sourceState(root, "arch.pdf", ["wiki/fenix.md"]);
+        expect(state.stage).toBe("cited");
+        expect(state.processed).toBe("2026-08-02");
+      });
+    });
+
     it("refuses an id that escapes raw/ but stays inside the project", () => {
       // The interesting case is a single `..`: it leaves `raw/` while staying
       // in the project, so confining against the project root would let it
@@ -172,6 +219,14 @@ describe("source state (6.1)", () => {
       const states = listSourceStates(root, new Map([["a.md", ["wiki/fenix.md"]]]));
       expect(states.find((s) => s.id === "a.md")?.stage).toBe("cited");
       expect(states.find((s) => s.id === "b.md")?.stage).toBe("text-ready");
+    });
+
+    it("carries each source's declaration through the listing (R1.1)", () => {
+      source(root, "a.md", { text: "a", processed: "2026-08-02" });
+      source(root, "b.md", { text: "b" });
+      const states = listSourceStates(root);
+      expect(states.find((s) => s.id === "a.md")?.processed).toBe("2026-08-02");
+      expect(states.find((s) => s.id === "b.md")?.processed).toBeUndefined();
     });
 
     it("never lists the inbox, which is a doorway and not a source", () => {

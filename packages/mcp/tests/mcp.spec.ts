@@ -274,6 +274,7 @@ describe("MCP read-only boundary (9.9)", () => {
       "writeSettings",
       "uploadTextSource",
       "writeSourceText",
+      "updateManifest",
     ];
     for (const w of writeExports) {
       expect(

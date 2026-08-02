@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { isDate } from "../dates.js";
 import { assertWithin, OutsideProjectError } from "../paths.js";
 
 /**
@@ -31,6 +32,21 @@ export interface SourceManifest {
   kind: SourceKind;
   /** The original filename for a file; empty for a recording. */
   original: string;
+  /**
+   * The date somebody declared they had finished reading this source, and the
+   * one thing about a source that is **declared rather than derived**.
+   *
+   * Everything else here and in `state.ts` is observable on disk. *The agent
+   * read this and found nothing worth writing* is observable nowhere, and is
+   * indistinguishable from a source nobody opened — which made every
+   * deliberately-discarded source a permanent `source.uncited` finding
+   * (`adr:0021-sources-are-stored-not-parsed`).
+   *
+   * Absent means unprocessed. There is deliberately no `processed: false`: one
+   * field cannot then disagree with its own date, and a manifest written before
+   * this existed is a valid manifest of an unprocessed source.
+   */
+  processed?: string;
 }
 
 export class TakenIdError extends Error {
@@ -91,7 +107,20 @@ export function parseManifest(id: string, text: string): SourceManifest {
     throw new InvalidManifestError(id, '`kind` is neither "file" nor "recording"');
   }
   const original = record["original"];
-  return { id, title, kind, original: typeof original === "string" ? original : "" };
+  // A declaration that is not a date degrades to unprocessed rather than
+  // refusing the manifest, and the direction is chosen rather than convenient:
+  // reading as *unprocessed* costs a re-read, reading as *processed* drops the
+  // source out of the queue and out of the uncited check at once — a source
+  // silently never read again. `title` is refused instead of degraded because
+  // there is no safe default for it; here there is.
+  const processed = record["processed"];
+  return {
+    id,
+    title,
+    kind,
+    original: typeof original === "string" ? original : "",
+    ...(isDate(processed) ? { processed } : {}),
+  };
 }
 
 /**

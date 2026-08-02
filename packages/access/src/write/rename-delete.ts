@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { stringify } from "yaml";
+import { today } from "../dates.js";
 import { assertWithin, OutsideProjectError, resolveReal } from "../paths.js";
 import { gatedPageRel, gateWrite } from "../gate/gate.js";
 import { appendOperation, type Origin } from "./log.js";
@@ -38,11 +39,6 @@ import { registerInIndex } from "../store/index-write.js";
  * `node:fs` delete the desktop used never asked the gate, so this primitive
  * does.
  */
-
-/** Today, as the store writes it. `YYYY-MM-DD`. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /** The slug a page path carries: the filename without `.md`. */
 function slugOf(pagePath: string): string {

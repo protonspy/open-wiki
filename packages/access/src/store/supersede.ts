@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
+import { DATE } from "../dates.js";
 import { assertWithin } from "../paths.js";
 import { readFrontmatter, validatePage, type PageIssue } from "./page.js";
 import { writePage } from "../write/atomic-write.js";
@@ -23,7 +24,6 @@ import { recordWrite } from "./record.js";
 
 const TYPE = /^[a-z][a-z0-9-]*$/;
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 export type SupersessionResult = { ok: true } | { ok: false; errors: PageIssue[] };
 

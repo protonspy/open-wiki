@@ -185,3 +185,36 @@ describe("parseManifest — a manifest arrives with a clone, so its shape is che
     expect(parseManifest("weekly", '{"title":"W","kind":"recording"}').original).toBe("");
   });
 });
+
+describe("parseManifest — the one declared fact (source-status R1)", () => {
+  it("reads the declaration, which is the date it was made", () => {
+    const m = parseManifest("a.pdf", '{"title":"A","kind":"file","processed":"2026-08-02"}');
+    expect(m.processed).toBe("2026-08-02");
+  });
+
+  it("reports a manifest carrying no declaration as unprocessed", () => {
+    // Absent *is* unprocessed, so there is no state where the declaration and
+    // its date disagree, and every manifest written before this change is a
+    // valid manifest of an unprocessed source.
+    expect(parseManifest("a.pdf", '{"title":"A","kind":"file"}').processed).toBeUndefined();
+  });
+
+  it("degrades a declaration that is not a date, rather than refusing the manifest", () => {
+    // The direction is chosen. An unreadable declaration that reads as
+    // *unprocessed* costs a re-read; one that reads as *processed* drops the
+    // source out of the queue and out of the uncited check at once, which is a
+    // source silently never read again.
+    for (const value of [
+      "true",
+      '"yesterday"',
+      '"2026-13-40"',
+      "{}",
+      '"2026-08-02T10:00:00Z"',
+      "1",
+    ]) {
+      const m = parseManifest("a.pdf", `{"title":"A","kind":"file","processed":${value}}`);
+      expect(m.processed, value).toBeUndefined();
+      expect(m.title, value).toBe("A");
+    }
+  });
+});

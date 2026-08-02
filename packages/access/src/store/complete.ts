@@ -1,4 +1,5 @@
 import { stringify } from "yaml";
+import { DATE } from "../dates.js";
 import { readFrontmatter, type FrontmatterBlock } from "./page.js";
 import { extractProvenanceLinks } from "./provenance.js";
 
@@ -20,8 +21,6 @@ export { extractProvenanceLinks };
  * mapping is the robust way to set two fields at once. The body is preserved
  * verbatim.
  */
-
-const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");

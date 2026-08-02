@@ -384,6 +384,31 @@ describe("retitleSource (6.7)", () => {
   it("refuses an id that is not a source", () => {
     expect(() => retitleSource(root, "../../elsewhere", "x")).toThrow();
   });
+
+  it("leaves a processed declaration standing — a retitle is not a re-read", () => {
+    // The write moved into `@open-wiki/access` (source-status R2.1), and this
+    // is what the move could quietly have cost: correcting a name is not new
+    // information about the contents, so it must not put the source back in
+    // the queue.
+    mkdirSync(join(root, "raw", "notes.txt"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "notes.txt", "manifest.json"),
+      JSON.stringify({
+        id: "notes.txt",
+        title: "notes.txt",
+        kind: "file",
+        original: "notes.txt",
+        processed: "2026-08-02",
+      }),
+      "utf8",
+    );
+    retitleSource(root, "notes.txt", "Q3 incident timeline");
+    const manifest = JSON.parse(
+      readFileSync(join(root, "raw", "notes.txt", "manifest.json"), "utf8"),
+    ) as { title: string; processed?: string };
+    expect(manifest.title).toBe("Q3 incident timeline");
+    expect(manifest.processed).toBe("2026-08-02");
+  });
 });
 
 describe("a page name is a name, not a path", () => {

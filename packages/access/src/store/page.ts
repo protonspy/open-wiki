@@ -1,4 +1,5 @@
 import { parse } from "yaml";
+import { DATE } from "../dates.js";
 
 /**
  * The validated store (plan group 5). The application does not guarantee the
@@ -74,7 +75,6 @@ const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 // A type token: lowercase, letters/digits/dashes.
 const TYPE = /^[a-z][a-z0-9-]*$/;
 // `updated` is a calendar date in the only form a reader scans: YYYY-MM-DD.
-const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 // A provenance link's shape: `src://<id>#p<N>` or `rec://<id>#<instant>`. The
 // id must be non-empty; the fragment must be non-empty. Resolving the id to a
 // real source — and the instant to one inside the recording — is plan 5.4;

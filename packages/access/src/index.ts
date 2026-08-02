@@ -89,6 +89,7 @@ export {
   type SourceKind,
 } from "./sources/manifest.js";
 export { registerSource, type RegisterInput } from "./sources/register.js";
+export { updateManifest, withdrawProcessed, type ManifestChange } from "./sources/update.js";
 export { deriveId, slugify, isIdTaken, EmptyNameError } from "./sources/id.js";
 export { recordingId, baseId, type RecordingIdInput } from "./sources/recording-id.js";
 export {
