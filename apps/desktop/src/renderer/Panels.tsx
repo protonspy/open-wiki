@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Finding, Operation } from "@open-wiki/access";
 import type { PageSource, SourceLocation } from "../main/sources.js";
 import { bridge } from "./bridge.js";
@@ -88,14 +88,48 @@ export function PageSources({
  * where the person reading the problem is, and never to invent advice of its
  * own.
  */
-export function Findings({ reloadKey }: { reloadKey: number }): React.JSX.Element {
+export function Findings({
+  reloadKey,
+  onCount,
+}: {
+  reloadKey: number;
+  /**
+   * How many there were, for the status bar (spec `desktop-shell`, R5.2).
+   *
+   * Handed up from this one load rather than counted again: `ow check` walks
+   * the whole project, and running it a second time to fill in a number in the
+   * frame is how a status bar becomes the slowest thing in the window.
+   */
+  onCount?: (count: number) => void;
+}): React.JSX.Element {
   const [findings, setFindings] = useState<Finding[] | null>(null);
+  // Read through a ref so the effect below depends on `reloadKey` alone. A
+  // caller passing a fresh closure each render would otherwise re-run the
+  // whole check on every render.
+  const report = useRef(onCount);
+  report.current = onCount;
 
   useEffect(() => {
+    // Guarded, like `PageSources` above and for a sharper reason: two
+    // `reloadKey` bumps can overlap, and a slow answer for the older one
+    // arriving last would put a stale count in the status bar as well as stale
+    // findings on screen.
+    let live = true;
     void bridge()
       .findings()
-      .then(setFindings)
-      .catch(() => setFindings([]));
+      .then((found) => {
+        if (!live) return;
+        setFindings(found);
+        report.current?.(found.length);
+      })
+      .catch(() => {
+        if (!live) return;
+        setFindings([]);
+        report.current?.(0);
+      });
+    return () => {
+      live = false;
+    };
   }, [reloadKey]);
 
   if (!findings) return <p className="empty">Checking…</p>;

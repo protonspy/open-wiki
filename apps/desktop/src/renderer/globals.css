@@ -152,10 +152,129 @@ body {
   }
 }
 
+/* --- The frame (spec `desktop-shell`): a titlebar, the rail beside the pane,
+   a status bar. Three rows, and only the middle one scrolls. */
 .app {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: 38px 1fr 24px;
   height: 100%;
+  background: var(--card);
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-body {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  min-height: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  background: var(--background);
+  border-right: 1px solid var(--border);
+}
+
+.rail-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 44px;
+  height: auto;
+  padding: 6px 0 5px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.rail-btn:hover:not(:disabled) {
+  background: var(--muted);
+  color: var(--foreground);
+  border-color: transparent;
+}
+
+/* Marked twice over: the accent, and a bar down the left edge. Colour alone is
+   not a state anybody should be asked to rely on. */
+.rail-btn[aria-selected="true"] {
+  color: var(--primary);
+  background: rgb(217 154 78 / 10%);
+}
+
+.rail-btn[aria-selected="true"]::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary);
+}
+
+/* The language is shown, not offered — the settings sheet is where it changes. */
+.rail-btn--static {
+  cursor: default;
+}
+
+.rail-btn--static:hover {
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.rail-spacer {
+  flex: 1;
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 var(--space-3);
+  background: var(--background);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.statusbar__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Text that acts. A `.btn` here would be a control in a bar of labels. */
+.statusbar__button {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.statusbar__button:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--foreground);
 }
 
 .chrome {
@@ -174,11 +293,6 @@ body {
 
 .chrome__spacer {
   flex: 1;
-}
-
-.nav {
-  display: flex;
-  gap: var(--space-1);
 }
 
 /* ===========================================================================

@@ -6,7 +6,7 @@ import {
   renderPageBody,
   SOURCE_ATTR,
 } from "../src/renderer/markdown.js";
-import { History, isOpenableExternally, linkTarget } from "../src/renderer/navigation.js";
+import { History, isOpenableExternally, linkTarget, Shell } from "../src/renderer/navigation.js";
 import { describeRecording, formatElapsed, readStatus, IDLE } from "../src/renderer/recording.js";
 
 describe("extractWikilinks", () => {
@@ -157,52 +157,146 @@ describe("renderPageBody (8.5)", () => {
 describe("History (8.5)", () => {
   it("remembers where the reader came from", () => {
     const history = new History();
-    history.visit({ view: "wiki", slug: "a" });
-    history.visit({ view: "wiki", slug: "b" });
-    expect(history.back()).toEqual({ view: "wiki", slug: "a" });
+    history.visit({ pane: "wiki", selection: "a" });
+    history.visit({ pane: "wiki", selection: "b" });
+    expect(history.back()).toEqual({ pane: "wiki", selection: "a" });
     expect(history.canGoForward).toBe(true);
   });
 
   it("goes forward again", () => {
     const history = new History();
-    history.visit({ view: "wiki", slug: "a" });
-    history.visit({ view: "wiki", slug: "b" });
+    history.visit({ pane: "wiki", selection: "a" });
+    history.visit({ pane: "wiki", selection: "b" });
     history.back();
-    expect(history.forward()).toEqual({ view: "wiki", slug: "b" });
+    expect(history.forward()).toEqual({ pane: "wiki", selection: "b" });
   });
 
   it("discards the forward history when a new link is followed", () => {
     // Exactly as a browser does, or Back stops meaning "where I came from".
     const history = new History();
-    history.visit({ view: "wiki", slug: "a" });
-    history.visit({ view: "wiki", slug: "b" });
+    history.visit({ pane: "wiki", selection: "a" });
+    history.visit({ pane: "wiki", selection: "b" });
     history.back();
-    history.visit({ view: "wiki", slug: "c" });
+    history.visit({ pane: "wiki", selection: "c" });
     expect(history.canGoForward).toBe(false);
-    expect(history.back()).toEqual({ view: "wiki", slug: "a" });
+    expect(history.back()).toEqual({ pane: "wiki", selection: "a" });
   });
 
   it("does not record visiting the place you are already at", () => {
     const history = new History();
-    history.visit({ view: "wiki", slug: "a" });
-    history.visit({ view: "wiki", slug: "a" });
+    history.visit({ pane: "wiki", selection: "a" });
+    history.visit({ pane: "wiki", selection: "a" });
     expect(history.canGoBack).toBe(false);
   });
 
   it("cannot go back past the beginning or forward past the end", () => {
     const history = new History();
     expect(history.back()).toBeNull();
-    history.visit({ view: "wiki" });
-    expect(history.back()).toEqual({ view: "wiki" });
-    expect(history.forward()).toEqual({ view: "wiki" });
+    history.visit({ pane: "wiki" });
+    expect(history.back()).toEqual({ pane: "wiki" });
+    expect(history.forward()).toEqual({ pane: "wiki" });
   });
 
   it("keeps the trail behind the cursor", () => {
     const history = new History();
-    history.visit({ view: "wiki", slug: "a" });
-    history.visit({ view: "wiki", slug: "b" });
+    history.visit({ pane: "wiki", selection: "a" });
+    history.visit({ pane: "wiki", selection: "b" });
     history.back();
-    expect(history.trail).toEqual([{ view: "wiki", slug: "a" }]);
+    expect(history.trail).toEqual([{ pane: "wiki", selection: "a" }]);
+  });
+});
+
+/**
+ * The window's position, and the thing that is not part of it
+ * (spec `desktop-shell`, R1 and R2).
+ */
+describe("Shell", () => {
+  it("starts in the wiki, with nothing selected", () => {
+    expect(new Shell().location).toEqual({ pane: "wiki" });
+  });
+
+  it("records a pane and a selection as places you have been — R1.2, R1.3", () => {
+    const shell = new Shell();
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.goTo("sources");
+    expect(shell.location).toEqual({ pane: "sources" });
+    expect(shell.back()).toEqual({ pane: "wiki", selection: "fenix" });
+  });
+
+  it("comes back to a pane at what it was last showing — R1.7", () => {
+    // The rail is how you leave a page for a moment, not how you close it.
+    const shell = new Shell();
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.goTo("sources");
+    expect(shell.goTo("wiki")).toEqual({ pane: "wiki", selection: "fenix" });
+  });
+
+  it("does not forget a pane's page when that pane's index is visited", () => {
+    // Otherwise Back and the rail disagree about what "the wiki" means the
+    // moment you go to its list of pages.
+    const shell = new Shell();
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.visit({ pane: "wiki" });
+    shell.goTo("sources");
+    expect(shell.goTo("wiki")).toEqual({ pane: "wiki", selection: "fenix" });
+  });
+
+  it("does not record the location you are already at — R1.6", () => {
+    const shell = new Shell();
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.back();
+    expect(shell.location).toEqual({ pane: "wiki" });
+    expect(shell.canGoBack).toBe(false);
+  });
+
+  it("discards the future when you go somewhere new after going back — R1.5", () => {
+    const shell = new Shell();
+    shell.visit({ pane: "wiki", selection: "a" });
+    shell.visit({ pane: "wiki", selection: "b" });
+    shell.back();
+    shell.visit({ pane: "wiki", selection: "c" });
+    expect(shell.canGoForward).toBe(false);
+    // `b` is gone: `c` was chosen from `a`, so `a` is what `c` came from.
+    expect(shell.back()).toEqual({ pane: "wiki", selection: "a" });
+  });
+
+  it("does not record an overlay as a place you went — R2.2, R2.3", () => {
+    // The failure this exists for: with the settings sheet in the history,
+    // Back after closing it lands on the pane *before* the one you opened it
+    // from, the sheet having eaten the press that should have taken you there.
+    const shell = new Shell();
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.goTo("sources");
+    shell.show({ kind: "settings" });
+    shell.dismiss();
+    expect(shell.location).toEqual({ pane: "sources" });
+    expect(shell.back()).toEqual({ pane: "wiki", selection: "fenix" });
+  });
+
+  it("shows one overlay at a time — R2.5", () => {
+    const shell = new Shell();
+    shell.show({ kind: "settings" });
+    shell.show({ kind: "history" });
+    expect(shell.overlay).toEqual({ kind: "history" });
+  });
+
+  it("stays where it is while an overlay is open — R2.4", () => {
+    // The modal makes the pane behind it unclickable, but the keyboard
+    // shortcuts of 8.1 are not behind that inert layer.
+    const shell = new Shell();
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.show({ kind: "provenance", source: "weekly", fragment: "14:32" });
+    shell.goTo("sources");
+    shell.back();
+    expect(shell.location).toEqual({ pane: "wiki", selection: "fenix" });
+  });
+
+  it("moves again once the overlay is dismissed", () => {
+    const shell = new Shell();
+    shell.show({ kind: "history" });
+    shell.dismiss();
+    expect(shell.goTo("checks")).toEqual({ pane: "checks" });
   });
 });
 
