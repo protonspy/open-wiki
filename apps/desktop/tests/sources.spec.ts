@@ -4,14 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CHANNELS, createApi, dispatch } from "../src/main/ipc.js";
 import { PUSH_CHANNELS } from "../src/main/channels.js";
-import {
-  asDropOutcome,
-  inboxFailure,
-  ingestDrop,
-  ingestFile,
-  recognises,
-  recognisedExtensions,
-} from "../src/main/ingest.js";
+import { asDropOutcome, inboxFailure, ingestDrop, ingestFile } from "../src/main/ingest.js";
 import {
   findings,
   locateCitation,
@@ -289,22 +282,16 @@ describe("dropping files onto the window (3.5)", () => {
     return path;
   }
 
-  it("recognises what it has an adapter for", () => {
-    expect(recognises("notes.md")).toBe(true);
-    expect(recognises("NOTES.MD")).toBe(true);
-    expect(recognises("deck.pptx")).toBe(false);
-    expect(recognisedExtensions()).toContain(".pdf");
-  });
-
   it("ingests a markdown file through the same path 3.1 registers everything with", async () => {
     const outcome = await ingestFile(root, file("Notes.md"));
     expect(outcome).toMatchObject({ ok: true, id: "notes.md" });
   });
 
-  it("says what it did not recognise, rather than dropping it silently", async () => {
+  it("stores a format nothing here reads, rather than refusing it", async () => {
+    // `adr:0021-sources-are-stored-not-parsed`: there is nothing left to
+    // recognise. A deck is bytes, and the agent opens it.
     const outcome = await ingestFile(root, file("deck.pptx"));
-    expect(outcome.ok).toBe(false);
-    expect(outcome.ok === false && outcome.reason).toContain(".pdf");
+    expect(outcome).toMatchObject({ ok: true, id: "deck.pptx" });
   });
 
   it("reports a name already taken as itself", async () => {
@@ -319,9 +306,10 @@ describe("dropping files onto the window (3.5)", () => {
   it("reports every file in a drop, good and bad", async () => {
     // A partial success reported as success is how a source silently never
     // arrives.
-    const outcomes = await ingestDrop(root, [file("one.md"), file("deck.pptx"), file("two.txt")]);
+    mkdirSync(join(root, "raw", "taken.md"), { recursive: true });
+    const outcomes = await ingestDrop(root, [file("one.md"), file("taken.md"), file("two.txt")]);
     expect(outcomes.map((o) => o.ok)).toEqual([true, false, true]);
-    expect(outcomes.map((o) => o.name)).toEqual(["one.md", "deck.pptx", "two.txt"]);
+    expect(outcomes.map((o) => o.name)).toEqual(["one.md", "taken.md", "two.txt"]);
   });
 
   it("does not let one failure stop the rest", async () => {
@@ -334,7 +322,7 @@ describe("dropping files onto the window (3.5)", () => {
 describe("the inbox doorway, as the window reports it (3.7)", () => {
   it("says an arrival the way a drop says it", () => {
     expect(
-      asDropOutcome({ ok: true, name: "notes.md", format: "text", id: "notes.md", removed: true }),
+      asDropOutcome({ ok: true, name: "notes.md", stored: "text", id: "notes.md", removed: true }),
     ).toEqual({
       name: "notes.md",
       ok: true,
@@ -350,7 +338,6 @@ describe("the inbox doorway, as the window reports it (3.7)", () => {
       asDropOutcome({
         ok: false,
         name: "big.pdf",
-        format: null,
         reason: "over the size limit for a source",
         removed: false,
       }),
