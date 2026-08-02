@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeSettings, type ProjectSettings } from "./config/settings.js";
 import { writeIgnore } from "./ignore.js";
@@ -87,20 +87,26 @@ export function scaffold(projectRoot: string): ScaffoldResult {
  * mean a second `ow init` silently replacing an index the agent had spent the
  * project curating.
  *
- * **Two guards, because "does it exist" is not the question that matters.**
- * `assertWithin` resolves junctions and symlinks before the write, which is the
- * confinement `adr:0013` states and every other writer in this package honours.
- * And the write itself is `wx` — `O_CREAT | O_EXCL`, which the kernel refuses
- * on a symlink of any kind, dangling included. A dangling link planted at
- * `wiki/index.md` is precisely the case a prior `existsSync` answers "no" to,
- * because it follows the link to a target that is not there, and the write then
- * follows it right out of the project. `EEXIST` here means "something is
- * already at that name", which is the answer this function wanted anyway.
+ * **`existsSync` is the wrong question, and it is the dangerous one.** It
+ * follows a symlink, so a *dangling* link planted at `wiki/index.md` answers
+ * "nothing is there" — and the write then follows the same link and creates
+ * the file at its target, wherever on disk that is. `assertWithin` does not
+ * catch this one either: `resolveReal` resolves the longest ancestor that
+ * exists and appends the rest verbatim, and for a dangling link that ancestor
+ * is `wiki/` itself.
+ *
+ * So the guard is `lstat`, which answers about the name rather than about what
+ * the name points at: **anything at all there means this function does not
+ * write.** That holds identically on every platform, where `O_CREAT | O_EXCL`
+ * refusing a symlink is a POSIX rule with no Win32 equivalent — and Windows is
+ * what this ships on. `wx` stays for the sliver between the two calls; a lost
+ * race is `EEXIST`, which is the same answer the guard would have given.
  */
 function seedWiki(projectRoot: string): { written: string[] } {
   const written: string[] = [];
   for (const seed of SEEDS) {
     const file = assertWithin(projectRoot, join(projectRoot, seed.path));
+    if (occupied(file)) continue;
     try {
       writeFileSync(file, seed.content, { encoding: "utf8", flag: "wx" });
       written.push(seed.path);
@@ -109,4 +115,18 @@ function seedWiki(projectRoot: string): { written: string[] } {
     }
   }
   return { written };
+}
+
+/**
+ * Whether anything at all bears this name — a file, a directory, a symlink
+ * pointing anywhere or nowhere. `lstat`, never `stat`: the difference between
+ * the two is the whole of the guard above.
+ */
+function occupied(file: string): boolean {
+  try {
+    lstatSync(file);
+    return true;
+  } catch {
+    return false;
+  }
 }

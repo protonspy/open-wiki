@@ -101,13 +101,24 @@ describe("scaffold seeds the wiki's own pages (1.3)", () => {
     expect(second.wiki.written).toEqual([]);
   });
 
+  it("writes nothing when something else already bears the name", () => {
+    // The platform-independent half of the guard, and the half that runs
+    // everywhere: `lstat` answers about the name rather than about what the
+    // name points at, so anything there at all means this does not write. A
+    // directory is that case, plantable without the privilege a symlink needs.
+    scaffold(root);
+    rmSync(join(root, "wiki", "index.md"));
+    mkdirSync(join(root, "wiki", "index.md"));
+    expect(scaffold(root).wiki.written).toEqual([]);
+  });
+
   it("refuses to follow a dangling symlink planted at one of the seed paths", (ctx) => {
     // The case `existsSync` answers "no" to and a plain write then follows out
-    // of the project: the link's target does not exist yet, so the guard sees
-    // nothing there and creates the target — outside `projectRoot`, which is
-    // the containment `adr:0013` states. `wx` is `O_CREAT | O_EXCL`, and the
-    // kernel refuses that on a symlink of any kind.
-    mkdirSync(join(root, "wiki"), { recursive: true });
+    // of the project: it follows the link to a target that is not there, so the
+    // guard sees nothing and the write creates that target — outside
+    // `projectRoot`, which is the containment `adr:0013` states.
+    scaffold(root);
+    rmSync(join(root, "wiki", "index.md"));
     const outside = join(dirname(root), "planted.md");
     try {
       symlinkSync(outside, join(root, "wiki", "index.md"));
@@ -118,7 +129,7 @@ describe("scaffold seeds the wiki's own pages (1.3)", () => {
       return;
     }
     try {
-      scaffold(root);
+      expect(scaffold(root).wiki.written).toEqual([]);
       expect(existsSync(outside)).toBe(false);
     } finally {
       rmSync(outside, { force: true });
