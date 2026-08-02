@@ -47,6 +47,8 @@ export const CHANNELS = {
   selectModel: "settings:select-model",
   language: "settings:language",
   setLanguage: "settings:set-language",
+  settingsView: "settings:view",
+  setDeleteWav: "settings:delete-wav",
   knownProjects: "launcher:projects",
   createProject: "launcher:create",
   forgetProject: "launcher:forget",

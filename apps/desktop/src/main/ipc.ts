@@ -1,5 +1,10 @@
 import { join } from "node:path";
-import { recordingId, type Language, type Operation } from "@open-wiki/access";
+import {
+  recordingId,
+  type Language,
+  type Operation,
+  type ProjectSettings,
+} from "@open-wiki/access";
 import type { Finding, SourceState } from "@open-wiki/access/read";
 import type { PageView, ProjectInfo, WikiIndex } from "./api.js";
 import { projectInfo, readPage, sources, wikiIndex } from "./api.js";
@@ -36,13 +41,16 @@ import {
   forgetProject,
   knownProjects,
   saveCredential,
+  setDeleteWav,
   setLanguage,
+  settingsView,
   agentModels,
   selectAgentModel,
   type CredentialCheck,
   type CredentialState,
   type KnownProject,
   type SaveCredentialInput,
+  type SettingsView,
 } from "./settings.js";
 import type { AgentPrefs } from "./agent/agent-prefs.js";
 import { runTranscription, type TranscribeOutcome } from "./transcribe-run.js";
@@ -186,6 +194,8 @@ export interface DesktopApi {
   selectModel(model: string): AgentPrefs;
   language(): Language;
   setLanguage(language: Language): Language;
+  settingsView(): SettingsView;
+  setDeleteWav(on: boolean): ProjectSettings;
   knownProjects(): KnownProject[];
   createProject(name: string, directory: string, language: Language): KnownProject;
   forgetProject(name: string): void;
@@ -293,6 +303,8 @@ export function createApi(deps: Deps): DesktopApi {
     selectModel: (model) => selectAgentModel(root(), model),
     language: () => currentLanguage(root()),
     setLanguage: (language) => setLanguage(root(), language),
+    settingsView: () => settingsView(root()),
+    setDeleteWav: (on) => setDeleteWav(root(), on),
     knownProjects: () => knownProjects(),
     createProject: (name, directory, language) => createProject(name, directory, language),
     forgetProject: (name) => forgetProject(name),
@@ -379,6 +391,10 @@ export async function dispatch(
       return api.language();
     case CHANNELS.setLanguage:
       return api.setLanguage(String(args[0] ?? "") as Language);
+    case CHANNELS.settingsView:
+      return api.settingsView();
+    case CHANNELS.setDeleteWav:
+      return api.setDeleteWav(args[0] === true);
     case CHANNELS.knownProjects:
       return api.knownProjects();
     case CHANNELS.createProject:

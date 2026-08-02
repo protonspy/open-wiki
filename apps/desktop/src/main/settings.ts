@@ -1,14 +1,16 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import {
   LANGUAGES,
   ProjectRegistry,
   readSettings,
+  settingsPath,
   scaffold,
   scaffoldSkills,
   writeClaudeMd,
   writeIgnore,
   writeSettings,
+  type ProjectSettings,
   type Language,
 } from "@open-wiki/access";
 // The one import of the secret in the whole product. `config/secrets.ts` says
@@ -18,6 +20,7 @@ import {
 import {
   defaultAppDataDir,
   readSecrets,
+  secretsFile,
   writeSecrets,
   type ProjectSecrets,
   type SttSecret,
@@ -262,6 +265,59 @@ export function setLanguage(projectRoot: string, language: Language): Language {
 
 export function currentLanguage(projectRoot: string): Language {
   return readSettings(projectRoot).language;
+}
+
+/**
+ * Keep the WAV after transcribing, or let it go (desktop-ui 6.1).
+ *
+ * An hour of raw capture is ~690 MB and the Opus is what a citation opens
+ * (`adr:0006`), so the default deletes it — but the toggle is real, and
+ * `transcribe-run.ts` reads it on the way into `seal`. Somebody keeping the
+ * originals for their own reasons is not this application's business to refuse.
+ */
+export function setDeleteWav(projectRoot: string, on: boolean): ProjectSettings {
+  return writeSettings(projectRoot, { deleteWavAfterTranscription: on });
+}
+
+/**
+ * The settings sheet's whole subject (desktop-ui 6.1): the values, and the two
+ * files they actually live in.
+ *
+ * **The draft's "this is the whole file" is kept, and is truer here than in the
+ * draft.** There is no backend to ask, so support for this application is
+ * somebody opening their own configuration — which is worth them knowing exists
+ * and what shape it has.
+ *
+ * It is *two* files rather than the draft's one, and the split is 2.7's:
+ * project settings are committed inside the project under a closed schema and
+ * carry no secret and no local path, while every secret lives in the
+ * application's data directory keyed by project path. So `ow.json` is shown
+ * verbatim — by construction it cannot hold a secret — and the credential file
+ * is shown as **a path and nothing else**. Its contents never cross the bridge,
+ * which is the rule `credentialState` already follows: a window that renders
+ * markdown an agent wrote must not have the key in its DOM.
+ */
+export interface SettingsView {
+  settings: ProjectSettings;
+  /** Where the project's settings live, committed with the project. */
+  settingsFile: string;
+  /** `ow.json` as it is on disk, or null before anything has written it. */
+  settingsText: string | null;
+  /** Where the credential lives. The path only, never what is in it. */
+  secretsFile: string;
+}
+
+export function settingsView(projectRoot: string, appDataDir?: string): SettingsView {
+  const file = settingsPath(projectRoot);
+  return {
+    settings: readSettings(projectRoot),
+    settingsFile: file,
+    // Read rather than re-serialised from what we parsed: the point of showing
+    // the file is that it *is* the file, and a pretty-printed copy would hide
+    // exactly the malformed thing somebody opened the sheet to understand.
+    settingsText: existsSync(file) ? readFileSync(file, "utf8") : null,
+    secretsFile: secretsFile(projectRoot, appDataDir ?? defaultAppDataDir()),
+  };
 }
 
 /** One entry in the launcher (plan 8.4). */
