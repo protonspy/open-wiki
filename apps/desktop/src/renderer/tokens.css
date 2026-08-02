@@ -530,3 +530,100 @@ a:hover,
   align-items: center;
   gap: var(--space-1);
 }
+
+/* --- The questions this window asks (1.1).
+   A native `<dialog>` opened with `showModal`: the top layer, the focus trap,
+   Escape, and returning focus to whatever held it before are all the
+   platform's. What is left here is what it looks like — and the UA stylesheet
+   paints a dialog for a light document, which is why the colours are restated
+   rather than inherited. */
+.ask {
+  width: min(440px, calc(100vw - var(--space-8)));
+  padding: var(--space-4);
+  color: var(--ink-0);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.ask::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.ask__form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ask__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+
+/* The sentence that says what the button is about to do. It is not decoration,
+   so it goes one step of contrast down and no further. */
+.ask__detail {
+  margin: 0;
+  color: var(--ink-1);
+  font-size: var(--text-sm);
+}
+
+.ask__field {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--ink-1);
+}
+
+.ask__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* --- What an empty wiki says (1.4). It is prose, so it is set as prose: a
+   reading measure, and not the dimmed one-liner an empty list gets. The thing
+   it explains is the shape of the product, and dimming that is how it stopped
+   being said at all. */
+.doorway {
+  max-width: 62ch;
+  display: grid;
+  gap: var(--space-3);
+  color: var(--ink-1);
+  font-size: var(--text-sm);
+}
+
+.doorway__lead {
+  margin: 0;
+  color: var(--ink-0);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+
+.doorway p {
+  margin: 0;
+}
+
+.doorway code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-0);
+  background: var(--surface-inset);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+/* The path is there to be read off the screen and typed into a terminal. */
+.doorway__path {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-1);
+  background: var(--surface-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  overflow-wrap: anywhere;
+  user-select: all;
+}

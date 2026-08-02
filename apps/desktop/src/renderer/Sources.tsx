@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { SourceRow } from "../main/sources.js";
+import { useDialogs, type Dialogs } from "./Ask.js";
 import { bridge } from "./bridge.js";
+import { retitleQuestion } from "./dialogs.js";
 
 /**
  * The sources screen (plan 6.2, 6.3, 6.4, 6.6, 6.7).
@@ -19,6 +21,9 @@ export function Sources({
 }): React.JSX.Element {
   const [rows, setRows] = useState<SourceRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // One for the screen rather than one per row: only one row can be asked
+  // about at a time, because the box is modal.
+  const { ask, element: dialog } = useDialogs();
 
   const load = useCallback(async () => {
     try {
@@ -42,20 +47,31 @@ export function Sources({
   }
 
   return (
-    <ul className="list">
-      {rows.map((row) => (
-        <SourceItem key={row.id} row={row} onOpenPage={onOpenPage} onChanged={() => void load()} />
-      ))}
-    </ul>
+    <>
+      <ul className="list">
+        {rows.map((row) => (
+          <SourceItem
+            key={row.id}
+            row={row}
+            ask={ask}
+            onOpenPage={onOpenPage}
+            onChanged={() => void load()}
+          />
+        ))}
+      </ul>
+      {dialog}
+    </>
   );
 }
 
 function SourceItem({
   row,
+  ask,
   onOpenPage,
   onChanged,
 }: {
   row: SourceRow;
+  ask: Dialogs["ask"];
   onOpenPage: (slug: string) => void;
   onChanged: () => void;
 }): React.JSX.Element {
@@ -93,16 +109,22 @@ function SourceItem({
   // 6.7 — the title is correctable, which is what makes the frozen id bearable
   // (`adr:0011`). It never moves the directory or touches a citation.
   const retitle = useCallback(async () => {
-    const next = globalThis.prompt?.("Title for this source", row.title);
+    const next = await ask(retitleQuestion(row.title));
     if (!next || next === row.title) return;
     setBusy(true);
+    setNote(null);
     try {
       await bridge().retitle(row.id, next);
       onChanged();
+    } catch (e) {
+      // 1.5 — on this row. A refused retitle used to reject into nothing at
+      // all: the `finally` cleared the busy flag and the button simply came
+      // back, with the old title still on screen and no reason given.
+      setNote(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [row.id, row.title, onChanged]);
+  }, [ask, row.id, row.title, onChanged]);
 
   return (
     <li className="source">

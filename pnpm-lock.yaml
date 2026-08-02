@@ -71,6 +71,9 @@ importers:
       electron-builder:
         specifier: ^25.1.8
         version: 25.1.8(electron-builder-squirrel-windows@25.1.8)
+      eslint:
+        specifier: ^9.20.0
+        version: 9.39.5
       markdown-it:
         specifier: ^14.1.0
         version: 14.3.0

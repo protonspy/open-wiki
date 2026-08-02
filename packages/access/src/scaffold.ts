@@ -1,13 +1,28 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeSettings, type ProjectSettings } from "./config/settings.js";
 import { writeIgnore } from "./ignore.js";
 import { scaffoldSkills } from "./skills.js";
 import { INBOX } from "./sources/manifest.js";
+import { CHANGELOG_SEED, INDEX_SEED } from "./store/index.js";
 
 // `raw/_inbox` is created here rather than on first use: a doorway nobody can
 // see is a doorway nobody drops anything through (plan 3.7).
 const DIRS = ["raw", join("raw", INBOX), "wiki", ".state"];
+
+/**
+ * The wiki's own pages, seeded on the first run (plan 1.3).
+ *
+ * `log.md` is not among them, and that is the deliberate half of this: it is a
+ * log, and an empty log is noise. The other two are files something already
+ * refers to — the skills instruct the agent to link from `index.md`, the
+ * checks read both — so their absence was four components each assuming
+ * somebody else had made the first move.
+ */
+const SEEDS: ReadonlyArray<{ path: string; content: string }> = [
+  { path: join("wiki", "index.md"), content: INDEX_SEED },
+  { path: join("wiki", "changelog.md"), content: CHANGELOG_SEED },
+];
 
 export class DirectoryOccupiedError extends Error {
   constructor(public readonly dir: string) {
@@ -20,6 +35,8 @@ export interface ScaffoldResult {
   createdDirs: string[];
   settings: ProjectSettings;
   skills: { written: string[]; skipped: string[] };
+  /** The wiki's own pages this run wrote — empty on a project that had them. */
+  wiki: { written: string[] };
 }
 
 /**
@@ -58,5 +75,24 @@ export function scaffold(projectRoot: string): ScaffoldResult {
   const settings = writeSettings(projectRoot, {});
   writeIgnore(projectRoot);
   const skills = scaffoldSkills(projectRoot);
-  return { createdDirs, settings, skills };
+  return { createdDirs, settings, skills, wiki: seedWiki(projectRoot) };
+}
+
+/**
+ * Write the wiki's own pages, and never over one that is already there.
+ *
+ * Scaffolding runs again on an existing project — `ow init` is idempotent, and
+ * the launcher and first run go through the same door — so overwriting would
+ * mean a second `ow init` silently replacing an index the agent had spent the
+ * project curating.
+ */
+function seedWiki(projectRoot: string): { written: string[] } {
+  const written: string[] = [];
+  for (const seed of SEEDS) {
+    const file = join(projectRoot, seed.path);
+    if (existsSync(file)) continue;
+    writeFileSync(file, seed.content, "utf8");
+    written.push(seed.path);
+  }
+  return { written };
 }

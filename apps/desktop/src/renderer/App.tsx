@@ -5,10 +5,28 @@ import type { DropOutcome } from "../main/ingest.js";
 // watch, and importing it here pulled chokidar and `node:stream` into this
 // browser bundle — which vite externalises and rollup then fails on.
 import { isOpenPage } from "../shared/changes.js";
-import { bridge, hasBridge } from "./bridge.js";
+import { useDialogs, type Dialogs } from "./Ask.js";
+import { bridge, hasBridge, NoBridgeError } from "./bridge.js";
+import {
+  deleteQuestion,
+  newPageQuestion,
+  occasionOf,
+  occasionQuestion,
+  renameQuestion,
+} from "./dialogs.js";
 import { Editor } from "./Editor.js";
 import { renderPageBody } from "./markdown.js";
 import { History, linkTarget, type Location } from "./navigation.js";
+import {
+  clearAt,
+  clearFailureAt,
+  failure,
+  note,
+  noticeAt,
+  replaceAt,
+  type Notice,
+  type Place,
+} from "./notices.js";
 import { Findings, History as HistoryPanel, PageSources, SourceAt } from "./Panels.js";
 import { RecordingIndicator } from "./RecordingIndicator.js";
 import { useRecording, type RecordingState } from "./recording.js";
@@ -41,41 +59,56 @@ export function App(): React.JSX.Element {
   const [hasProject, setHasProject] = useState<boolean | null>(null);
   const [index, setIndex] = useState<WikiIndex>({ pages: [], slugs: [] });
   const [page, setPage] = useState<PageView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // 1.5 — one slot per place rather than one for the window. What failed is
+  // said where it failed, and a failure in one place no longer erases another.
+  const [notices, setNotices] = useState<readonly Notice[]>([]);
   const history = useRef(new History());
   const [location, setLocation] = useState<Location>({ view: "wiki" });
   const recording = useRecording();
+  // 1.1 — every question this shell asks. `window.prompt` answers nothing in
+  // Electron, so the four controls that used it did nothing at all.
+  const { ask, confirm, element: dialog } = useDialogs();
 
   const [openSource, setOpenSource] = useState<{ id: string; fragment: string } | null>(null);
   const [editing, setEditing] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [dropped, setDropped] = useState<DropOutcome[] | null>(null);
-  const [recordError, setRecordError] = useState<string | null>(null);
   /** Bumped whenever the project changed, so every panel refetches. */
   const [reloadKey, setReloadKey] = useState(0);
+
+  const say = useCallback((notice: Notice) => {
+    setNotices((current) => replaceAt(current, notice));
+  }, []);
 
   const refreshIndex = useCallback(async () => {
     try {
       setIndex(await bridge().index());
+      setNotices((current) => clearFailureAt(current, "wiki"));
     } catch (e) {
-      setError(message(e));
+      say(failure("wiki", e));
     }
-  }, []);
+  }, [say]);
 
-  const reload = useCallback(async (slug: string) => {
-    try {
-      setPage(await bridge().page(slug));
-      setError(null);
-    } catch (e) {
-      setPage(null);
-      setError(message(e));
-    }
-  }, []);
+  const reload = useCallback(
+    async (slug: string) => {
+      try {
+        setPage(await bridge().page(slug));
+        setNotices((current) => clearFailureAt(current, "page"));
+      } catch (e) {
+        setPage(null);
+        say(failure("page", e));
+      }
+    },
+    [say],
+  );
 
   const go = useCallback((next: Location | null) => {
     if (!next) return;
     setEditing(false);
     setLocation(next);
+    // The page left behind takes its notices with it. A rename's note is set
+    // after the navigation that carried it, so it survives this on purpose.
+    setNotices((current) => clearAt(current, "page"));
   }, []);
 
   const visit = useCallback(
@@ -86,8 +119,10 @@ export function App(): React.JSX.Element {
   );
 
   useEffect(() => {
+    // The two failures that really are the window's, and the only two: without
+    // a bridge or a project nothing on any pane would work either.
     if (!hasBridge()) {
-      setError("this page is not running inside the application");
+      say(failure("shell", new NoBridgeError()));
       return;
     }
     void bridge()
@@ -96,9 +131,9 @@ export function App(): React.JSX.Element {
         setProject(info);
         setHasProject(info !== null);
       })
-      .catch((e: unknown) => setError(message(e)));
+      .catch((e: unknown) => say(failure("shell", e)));
     void refreshIndex();
-  }, [refreshIndex]);
+  }, [refreshIndex, say]);
 
   // 8.10 — the folder changed, whoever wrote it. Coalesced: an agent writing
   // twenty pages is twenty events, and every panel walks the tree.
@@ -173,21 +208,28 @@ export function App(): React.JSX.Element {
     [visit],
   );
 
-  const record = useCallback(async (action: "start" | "pause" | "resume" | "stop") => {
-    try {
-      setRecordError(null);
-      const ow = bridge();
-      if (action === "start") {
-        // 4.16: an empty name falls back to the timestamp rather than blocking
-        // capture. A recording that started is worth more than a naming rule.
-        await ow.recordStart(globalThis.prompt?.("What are you recording?") ?? "");
-      } else if (action === "pause") await ow.recordPause();
-      else if (action === "resume") await ow.recordResume();
-      else await ow.recordStop();
-    } catch (e) {
-      setRecordError(message(e));
-    }
-  }, []);
+  const record = useCallback(
+    async (action: "start" | "pause" | "resume" | "stop") => {
+      try {
+        setNotices((current) => clearAt(current, "recording"));
+        const ow = bridge();
+        if (action === "start") {
+          // 4.16: an empty name falls back to the timestamp rather than blocking
+          // capture. A recording that started is worth more than a naming rule,
+          // so not answering the box still records — and the box's other button
+          // says so rather than saying "Cancel" and recording anyway.
+          await ow.recordStart(occasionOf(await ask(occasionQuestion())));
+        } else if (action === "pause") await ow.recordPause();
+        else if (action === "resume") await ow.recordResume();
+        else await ow.recordStop();
+      } catch (e) {
+        // Beside the control that failed, in the titlebar — where the record
+        // button is, and visible from whichever pane is open.
+        say(failure("recording", e));
+      }
+    },
+    [ask, say],
+  );
 
   // 3.5 — files dropped onto the window. Chromium gives a drop as paths; the
   // main process reads them, because the bytes are what becomes a source.
@@ -213,7 +255,12 @@ export function App(): React.JSX.Element {
         setDropped((current) => [...(current ?? []), ...outcomes]);
         setReloadKey((n) => n + 1);
       })
-      .catch((e: unknown) => setError(message(e)));
+      // 1.5 — a drop that failed is reported where a drop is reported. It used
+      // to land in the shell's one error line, beside failures from four other
+      // things, saying nothing about which files it was about.
+      .catch((e: unknown) =>
+        setDropped((current) => [...(current ?? []), { name: "that drop", ok: false, reason: message(e) }]),
+      );
   }, []);
 
   // 8.4 — a window opened outside a project shows the launcher. Nothing else
@@ -268,9 +315,12 @@ export function App(): React.JSX.Element {
         <RecordControls state={recording.state} onAction={(a) => void record(a)} />
       </header>
 
+      {/* Beside the controls it is about, and above every pane because it is
+          about the window rather than about any one of them. */}
+      <Reported notices={notices} place="recording" />
+      <Reported notices={notices} place="shell" />
+
       <main className="main">
-        {error ? <p className="error">{error}</p> : null}
-        {recordError ? <p className="error">{recordError}</p> : null}
         {dropped ? <Dropped outcomes={dropped} onDismiss={() => setDropped(null)} /> : null}
         <InboxWaiting
           reloadKey={reloadKey}
@@ -278,16 +328,25 @@ export function App(): React.JSX.Element {
             setDropped((current) => [...(current ?? []), ...outcomes]);
             setReloadKey((n) => n + 1);
           }}
-          onError={setError}
         />
         {dragging ? <p className="empty">Drop files to add them as sources.</p> : null}
 
         {location.view === "wiki" && !location.slug ? (
-          <PageList
-            index={index}
-            onOpen={(slug) => visit({ view: "wiki", slug })}
-            onCreate={() => void createPage(index, visit, setError)}
-          />
+          <>
+            {/* The wiki pane's own: reading the index failed, or creating a
+                page from this list did. */}
+            <Reported notices={notices} place="wiki" />
+            <PageList
+              index={index}
+              root={project?.root ?? ""}
+              onOpen={(slug) => visit({ view: "wiki", slug })}
+              onCreate={() => void createPage(index, ask, visit, say)}
+            />
+          </>
+        ) : null}
+
+        {location.view === "wiki" && !page && location.slug ? (
+          <Reported notices={notices} place="page" />
         ) : null}
 
         {location.view === "wiki" && page && !editing ? (
@@ -295,9 +354,11 @@ export function App(): React.JSX.Element {
             <PageBar
               page={page}
               onEdit={() => setEditing(true)}
-              onRename={() => void renameFlow(page.slug, visit, setError)}
-              onDelete={() => void deleteFlow(page.slug, visit, setError)}
+              onRename={() => void renameFlow(page.slug, ask, visit, say)}
+              onDelete={() => void deleteFlow(page.slug, confirm, visit, say)}
             />
+            {/* On the page, under the bar whose buttons caused it. */}
+            <Reported notices={notices} place="page" />
             <Frontmatter page={page} />
             {/* 6.5 — where this page came from, and a way into each source. */}
             <PageSources
@@ -342,8 +403,30 @@ export function App(): React.JSX.Element {
           onClose={() => setOpenSource(null)}
         />
       ) : null}
+
+      {/* The open question, if there is one. A modal is in the top layer, so
+          this sits at the end of the tree rather than beside what asked it. */}
+      {dialog}
     </div>
   );
+}
+
+/**
+ * What one place has to say, if it has anything (plan 1.5).
+ *
+ * Rendered at each place rather than once at the top, which is the whole of
+ * this task: the component is trivial and where it is put is the point.
+ */
+function Reported({
+  notices,
+  place,
+}: {
+  notices: readonly Notice[];
+  place: Place;
+}): React.JSX.Element | null {
+  const notice = noticeAt(notices, place);
+  if (!notice) return null;
+  return <p className={notice.tone === "error" ? "error" : "empty"}>{notice.text}</p>;
 }
 
 /** Record, pause, stop — the affordance 8.2 asks for. */
@@ -426,26 +509,32 @@ function PageBar({
   );
 }
 
+/**
+ * Creating a page. Every way it can fail is reported in the wiki pane, beside
+ * the list and the button that started it — not in a line above the whole
+ * window, where it was indistinguishable from a failed drop.
+ */
 async function createPage(
   index: WikiIndex,
+  ask: Dialogs["ask"],
   visit: (location: Location) => void,
-  onError: (message: string) => void,
+  say: (notice: Notice) => void,
 ): Promise<void> {
-  const slug = globalThis.prompt?.("New page slug")?.trim();
+  const slug = await ask(newPageQuestion());
   if (!slug) return;
   if (index.slugs.includes(slug)) {
-    onError(`a page named "${slug}" already exists`);
+    say(failure("wiki", `a page named "${slug}" already exists — open it, or pick another name`));
     return;
   }
   try {
     const result = await bridge().create({ slug, markdown: template(slug) });
     if (!result.saved) {
-      onError(result.reason === "stale" ? "that page moved" : result.problems.join("; "));
+      say(failure("wiki", result.reason === "stale" ? "that page moved" : result.problems.join("; ")));
       return;
     }
     visit({ view: "wiki", slug });
   } catch (e) {
-    onError(message(e));
+    say(failure("wiki", e));
   }
 }
 
@@ -470,47 +559,54 @@ function template(slug: string): string {
 
 async function renameFlow(
   slug: string,
+  ask: Dialogs["ask"],
   visit: (location: Location) => void,
-  onError: (message: string) => void,
+  say: (notice: Notice) => void,
 ): Promise<void> {
-  const to = globalThis.prompt?.("Rename this page to", slug)?.trim();
+  const to = await ask(renameQuestion(slug));
   if (!to || to === slug) return;
   try {
     const result = await bridge().rename(slug, to);
-    if (result.repointed.length > 0) {
-      onError(`Renamed. Repointed links on: ${result.repointed.join(", ")}`);
-    }
+    // **After the navigation, and a note rather than an error.** It reported a
+    // success through the error channel before, in the same red box a failed
+    // rename used — so the one outcome worth reading looked like the other.
     visit({ view: "wiki", slug: to });
+    if (result.repointed.length > 0) {
+      say(note("page", `Renamed. Repointed the links on: ${result.repointed.join(", ")}`));
+    }
   } catch (e) {
-    onError(message(e));
+    say(failure("page", e));
   }
 }
 
 async function deleteFlow(
   slug: string,
+  confirm: Dialogs["confirm"],
   visit: (location: Location) => void,
-  onError: (message: string) => void,
+  say: (notice: Notice) => void,
 ): Promise<void> {
   // A delete leaves the links that pointed here alone, on purpose — they are
   // the record that something was expected to be there, and 7.1 reports them.
-  const ok = globalThis.confirm?.(
-    `Delete "${slug}"? Links pointing at it stay, and the checks will report them.`,
-  );
-  if (!ok) return;
+  // `deleteQuestion` is where that sentence lives, beside the button that acts
+  // on it.
+  if (!(await confirm(deleteQuestion(slug)))) return;
   try {
     await bridge().remove(slug);
     visit({ view: "wiki" });
   } catch (e) {
-    onError(message(e));
+    // Still on the page, because the delete did not happen.
+    say(failure("page", e));
   }
 }
 
 function PageList({
   index,
+  root,
   onOpen,
   onCreate,
 }: {
   index: WikiIndex;
+  root: string;
   onOpen: (slug: string) => void;
   onCreate: () => void;
 }): React.JSX.Element {
@@ -520,7 +616,7 @@ function PageList({
         <button onClick={onCreate}>New page</button>
       </div>
       {index.pages.length === 0 ? (
-        <p className="empty">This wiki has no pages yet.</p>
+        <EmptyWiki root={root} />
       ) : (
         <ul className="list">
           {index.pages.map((ref) => (
@@ -531,6 +627,42 @@ function PageList({
         </ul>
       )}
     </>
+  );
+}
+
+/**
+ * What an empty wiki says (plan 1.4).
+ *
+ * **The central fact about this product is not visible anywhere else.** The
+ * application does not call an LLM and never writes a page: it scaffolds,
+ * validates, records and shows, and the pages are the agent's to write. A
+ * person who installs the binary, opens a project and finds nothing has no way
+ * to learn that — *This wiki has no pages yet* reads as a defect, and the
+ * conclusion it invites is that the application is broken.
+ *
+ * So the empty state is where the sentence goes, together with the path to
+ * open in a harness, because the next thing to do is somewhere else.
+ */
+function EmptyWiki({ root }: { root: string }): React.JSX.Element {
+  return (
+    <div className="doorway">
+      <p className="doorway__lead">This wiki is empty, and this window is not what fills it.</p>
+      <p>
+        open-wiki scaffolds a project, checks what is written into it, records every write and shows
+        you the result. The pages themselves are your agent&rsquo;s to write — there is no model
+        behind this window, and an empty wiki is the ordinary way a project starts.
+      </p>
+      <p>
+        Open this directory in your harness and ask it for a page. The scaffold left{" "}
+        <code>.claude/skills/</code> and a <code>CLAUDE.md</code> inside it that say how a page here
+        is written, linked from <code>wiki/index.md</code> and recorded in{" "}
+        <code>wiki/changelog.md</code>.
+      </p>
+      {root ? <p className="doorway__path">{root}</p> : null}
+      <p className="empty">
+        Writing the first one yourself is fine too — <strong>New page</strong>, above.
+      </p>
+    </div>
   );
 }
 
@@ -587,14 +719,16 @@ function sameOutcome(a: DropOutcome, b: DropOutcome): boolean {
 function InboxWaiting({
   reloadKey,
   onTaken,
-  onError,
 }: {
   reloadKey: number;
   onTaken: (outcomes: DropOutcome[]) => void;
-  onError: (message: string) => void;
 }): React.JSX.Element | null {
   const [names, setNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // 1.5 — its own, because taking the doorway's files is its own operation.
+  // It reported upwards into the shell's one line before, where it read as a
+  // failure of whatever pane happened to be open.
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!hasBridge()) return;
@@ -608,15 +742,16 @@ function InboxWaiting({
 
   const take = useCallback(async () => {
     setBusy(true);
+    setError(null);
     try {
       onTaken(await bridge().inboxDrain());
       load();
     } catch (e) {
-      onError(message(e));
+      setError(message(e));
     } finally {
       setBusy(false);
     }
-  }, [load, onTaken, onError]);
+  }, [load, onTaken]);
 
   if (names.length === 0) return null;
 
@@ -631,6 +766,7 @@ function InboxWaiting({
           {busy ? "Adding…" : "Add them"}
         </button>
       </div>
+      {error ? <p className="error">{error}</p> : null}
       <ul>
         {names.map((name) => (
           <li key={name}>{name}</li>

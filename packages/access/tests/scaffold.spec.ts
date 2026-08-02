@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scaffold, DirectoryOccupiedError } from "../src/scaffold.js";
 import { readSettings } from "../src/config/settings.js";
+import { checkProject } from "../src/check/checks.js";
 
 function tempDir() {
   return mkdtempSync(join(tmpdir(), "ow-scaffold-"));
@@ -54,3 +55,54 @@ describe("scaffold (2.1)", () => {
     expect(body).toContain("open-wiki-version:");
   });
 });
+
+/**
+ * The wiki's own pages (plan 1.3). The skills tell the agent to link a new page
+ * from `index.md` and record it in `changelog.md`; the checks read both. Before
+ * this, neither file existed until something happened to write one.
+ */
+describe("scaffold seeds the wiki's own pages (1.3)", () => {
+  let root: string;
+  beforeEach(() => (root = tempDir()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("writes index.md and changelog.md, and says it did", () => {
+    const result = scaffold(root);
+    expect(existsSync(join(root, "wiki", "index.md"))).toBe(true);
+    expect(existsSync(join(root, "wiki", "changelog.md"))).toBe(true);
+    expect(result.wiki.written).toEqual(["wiki/index.md", "wiki/changelog.md"].map(toPlatform));
+  });
+
+  it("leaves log.md absent, because an empty log is noise", () => {
+    scaffold(root);
+    expect(existsSync(join(root, "wiki", "log.md"))).toBe(false);
+  });
+
+  it("gives the index the section a page is registered into", () => {
+    scaffold(root);
+    expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).toContain("## Pages");
+  });
+
+  it("never writes over a wiki somebody has been keeping", () => {
+    // `ow init` is idempotent and the launcher goes through the same door, so
+    // a second scaffold must not replace a curated index with the seed.
+    scaffold(root);
+    writeFileSync(join(root, "wiki", "index.md"), "# Index\n\n- [[fenix]]\n", "utf8");
+    const second = scaffold(root);
+    expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).toContain("[[fenix]]");
+    expect(second.wiki.written).toEqual([]);
+  });
+
+  it("leaves a brand-new project with nothing for `ow check` to report", () => {
+    // The seeds are prose, and prose in the changelog is read for wikilinks:
+    // an example link written into either file would report itself as a page
+    // that does not exist, on the first check a project ever runs.
+    scaffold(root);
+    expect(checkProject(root).findings).toEqual([]);
+  });
+});
+
+/** The result reports paths the way `join` builds them on this platform. */
+function toPlatform(path: string): string {
+  return join(...path.split("/"));
+}

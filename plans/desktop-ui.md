@@ -102,11 +102,11 @@ into `globals.css`, which is task 2.1.
 First, because it is the complaint, and because every later group is built on top of
 a renderer nobody can create a page in.
 
-- [ ] 1.1 (Unit) A `Prompt` and a `Confirm` dialog in the renderer, focus-trapped and Escape-dismissable, and every `window.prompt` / `window.confirm` call site converted to them — `App.tsx` new page, `App.tsx` rename, `App.tsx` record occasion, `Sources.tsx` retitle. The record occasion is the one that must keep 4.16's fallback: cancelling names the recording by timestamp rather than refusing to record
-- [ ] 1.2 (Unit) A lint rule banning `prompt(`, `confirm(` and `alert(` under `src/renderer`, so the next one is a failed build rather than a dead button found by a user. The three are one class: Electron implements `alert` and `confirm` as native modals that block the main process, and does not implement `prompt` at all
-- [ ] 1.3 (Unit) Seed `wiki/index.md` and `wiki/changelog.md` in `scaffold()`, so the file the skills tell the agent to link from and the file `checks.ts` reads both exist from the first run. `log.md` stays absent until there is a write to record, because it is a log and an empty one is noise
-- [ ] 1.4 (Unit) An empty wiki explains itself: this application does not write pages, the agent does; the project was scaffolded with skills and a `CLAUDE.md` that say how; and here is the path to open in the harness. Replaces *This wiki has no pages yet*
-- [ ] 1.5 (Unit) Errors reach the user where they happened. Today every failure in the shell renders as one `<p class="error">` at the top of `main`, so a failed rename and a failed drop are indistinguishable and a failure inside a pane is reported outside it
+- [x] 1.1 (Unit) A `Prompt` and a `Confirm` dialog in the renderer, focus-trapped and Escape-dismissable, and every `window.prompt` / `window.confirm` call site converted to them — `App.tsx` new page, `App.tsx` rename, `App.tsx` record occasion, `Sources.tsx` retitle. The record occasion is the one that must keep 4.16's fallback: cancelling names the recording by timestamp rather than refusing to record
+- [x] 1.2 (Unit) A lint rule banning `prompt(`, `confirm(` and `alert(` under `src/renderer`, so the next one is a failed build rather than a dead button found by a user. The three are one class: Electron implements `alert` and `confirm` as native modals that block the main process, and does not implement `prompt` at all
+- [x] 1.3 (Unit) Seed `wiki/index.md` and `wiki/changelog.md` in `scaffold()`, so the file the skills tell the agent to link from and the file `checks.ts` reads both exist from the first run. `log.md` stays absent until there is a write to record, because it is a log and an empty one is noise
+- [x] 1.4 (Unit) An empty wiki explains itself: this application does not write pages, the agent does; the project was scaffolded with skills and a `CLAUDE.md` that say how; and here is the path to open in the harness. Replaces *This wiki has no pages yet*
+- [x] 1.5 (Unit) Errors reach the user where they happened. Today every failure in the shell renders as one `<p class="error">` at the top of `main`, so a failed rename and a failed drop are indistinguishable and a failure inside a pane is reported outside it
 
 ## 2 — The design system
 
