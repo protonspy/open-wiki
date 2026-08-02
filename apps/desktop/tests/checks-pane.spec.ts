@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FAMILIES, familyOf, groupFindings, whereOf } from "../src/renderer/families.js";
+import { fixesFor, slugOfPath } from "../src/renderer/fixes.js";
 
 /**
  * The checks pane (plan desktop-ui 5.2): the findings 7.6 already produces,
@@ -116,5 +117,70 @@ describe("the checks pane, as it ships (5.2)", () => {
   it("tells an error from a warning by shape as well as by colour", () => {
     expect(source).toContain("CircleAlert");
     expect(source).toContain("TriangleAlert");
+  });
+});
+
+/**
+ * The fix buttons (plan desktop-ui 5.3).
+ *
+ * The task claimed each of the draft's five was "an existing operation". Three
+ * of them are not reachable at all from what a `Finding` carries, and the tests
+ * below are as much about what is deliberately absent as about what is there.
+ */
+describe("slugOfPath (5.3)", () => {
+  it("takes the basename, wherever the page sits", () => {
+    // `adr:0016-a-page-is-its-slug-wherever-it-sits` — this is the addressing
+    // model, not string trimming that happens to work.
+    expect(slugOfPath("wiki/topics/retention.md")).toBe("retention");
+    expect(slugOfPath("wiki/fenix.md")).toBe("fenix");
+  });
+
+  it("leaves a name with no extension alone", () => {
+    expect(slugOfPath("raw/fenix-weekly-2026-07-31")).toBe("fenix-weekly-2026-07-31");
+  });
+});
+
+describe("fixesFor (5.3)", () => {
+  const known = new Set(["fenix", "retention"]);
+
+  it("offers the one-click fix for an orphan, and the page beside it", () => {
+    const fixes = fixesFor(finding("page.orphan", { page: "wiki/fenix.md" }), known);
+    expect(fixes.map((f) => f.kind)).toEqual(["add-to-index", "open-page"]);
+    expect(fixes[0]?.target).toBe("fenix");
+  });
+
+  it("offers the source for a finding that names one", () => {
+    const fixes = fixesFor(finding("source.uncited", { source: "weekly-2026-07-31" }), known);
+    expect(fixes.map((f) => f.kind)).toEqual(["open-source"]);
+  });
+
+  it("offers the page for any finding that is about one", () => {
+    const fixes = fixesFor(
+      finding("wikilink.broken", { page: "wiki/retention.md", line: 4 }),
+      known,
+    );
+    expect(fixes.map((f) => f.kind)).toEqual(["open-page"]);
+  });
+
+  it("offers nothing that cannot be opened", () => {
+    // `changelog.md` is not an entity page (5.1 validates it as itself) and is
+    // not in the index, so opening it by slug would fail — from a button the
+    // pane offered. A fix nobody can take costs the reader a click to find out.
+    const fixes = fixesFor(finding("changelog.missing-page", { page: "wiki/changelog.md" }), known);
+    expect(fixes).toEqual([]);
+  });
+
+  it("offers nothing for a finding that names neither a page nor a source", () => {
+    expect(fixesFor(finding("glossary.conflict"), known)).toEqual([]);
+  });
+
+  it("does not offer to create the page a broken link names", () => {
+    // The draft draws that button and it is not built: a `Finding` does not
+    // carry the target, only a sentence containing it. `checks.ts` names this
+    // failure at the very site that would produce it — the target comes off the
+    // issue rather than being cut back out of the sentence, "which produced
+    // garbage the moment the wording changed".
+    const fixes = fixesFor(finding("wikilink.broken", { page: "wiki/fenix.md" }), known);
+    expect(fixes.map((f) => f.kind)).not.toContain("create-page");
   });
 });

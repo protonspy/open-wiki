@@ -38,6 +38,7 @@ const api = {
   create: (input: unknown) => ipcRenderer.invoke(CHANNELS.create, input),
   rename: (from: string, to: string) => ipcRenderer.invoke(CHANNELS.rename, from, to),
   remove: (slug: string) => ipcRenderer.invoke(CHANNELS.remove, slug),
+  addToIndex: (slug: string) => ipcRenderer.invoke(CHANNELS.addToIndex, slug),
   history: () => ipcRenderer.invoke(CHANNELS.history),
   undo: (id: string) => ipcRenderer.invoke(CHANNELS.undo, id),
 

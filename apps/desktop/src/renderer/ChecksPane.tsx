@@ -31,9 +31,16 @@ export interface ChecksPaneProps {
   onCount?: (count: number) => void;
   /** What a finding's fix button does, when it has one (5.3). */
   actionFor?: (finding: Finding) => React.ReactNode;
+  /** What this pane has to say — a fix that failed, most of the time (1.5). */
+  notice?: React.ReactNode;
 }
 
-export function ChecksPane({ reloadKey, onCount, actionFor }: ChecksPaneProps): React.JSX.Element {
+export function ChecksPane({
+  reloadKey,
+  onCount,
+  actionFor,
+  notice,
+}: ChecksPaneProps): React.JSX.Element {
   const [findings, setFindings] = useState<Finding[] | null>(null);
   // Read through a ref so the effect below depends on its inputs alone. A
   // caller passing a fresh closure each render would otherwise re-run the whole
@@ -83,6 +90,7 @@ export function ChecksPane({ reloadKey, onCount, actionFor }: ChecksPaneProps): 
       </PaneBar>
 
       <div className="checks-body">
+        {notice}
         {findings === null ? <p className="empty">Checking&hellip;</p> : null}
         {findings !== null && findings.length === 0 ? (
           <p className="empty">Nothing to fix.</p>

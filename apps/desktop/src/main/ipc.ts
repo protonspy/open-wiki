@@ -12,6 +12,7 @@ import type {
 import type { ChatControl } from "./agent/chat-control.js";
 import {
   createPage,
+  addToIndex,
   deletePage,
   history,
   renamePage,
@@ -20,6 +21,7 @@ import {
   savePageToday,
   undoOperation,
   type CreateInput,
+  type IndexResult,
   type RenameResult,
   type SaveInput,
   type SaveResult,
@@ -155,6 +157,7 @@ export interface DesktopApi {
   create(input: CreateInput): SaveResult;
   rename(from: string, to: string): RenameResult;
   remove(slug: string): { operationId: string };
+  addToIndex(slug: string): IndexResult;
   history(): Operation[];
   undo(id: string): void;
 
@@ -261,6 +264,7 @@ export function createApi(deps: Deps): DesktopApi {
     create: (input) => createPage(root(), input, savePageToday),
     rename: (from, to) => renamePage(root(), from, to),
     remove: (slug) => deletePage(root(), slug),
+    addToIndex: (slug) => addToIndex(root(), slug),
     history: () => history(root()),
     undo: (id) => undoOperation(root(), id),
 
@@ -338,6 +342,8 @@ export async function dispatch(
       return api.rename(String(args[0] ?? ""), String(args[1] ?? ""));
     case CHANNELS.remove:
       return api.remove(String(args[0] ?? ""));
+    case CHANNELS.addToIndex:
+      return api.addToIndex(String(args[0] ?? ""));
     case CHANNELS.history:
       return api.history();
     case CHANNELS.undo:

@@ -26,7 +26,7 @@
  * own belongs to that pane, page or operation instead, which is the whole
  * point of this module.
  */
-export type Place = "shell" | "wiki" | "page" | "recording";
+export type Place = "shell" | "wiki" | "page" | "recording" | "checks";
 
 export interface Notice {
   place: Place;

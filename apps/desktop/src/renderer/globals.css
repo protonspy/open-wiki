@@ -939,6 +939,16 @@ button[aria-current="true"],
   color: var(--muted-foreground);
 }
 
+/* The fix buttons (5.3), in the third column of the finding they act on. They
+   stack rather than wrap, because a row of them beside a two-line finding
+   pushes the text into a third line for no reason. */
+.check__fixes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: stretch;
+}
+
 .checks-body__note {
   max-width: 70ch;
   margin: 2px 0 0;
