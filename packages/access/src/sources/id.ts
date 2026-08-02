@@ -35,13 +35,21 @@ export function deriveId(name: string): string {
   // A file source keeps its extension in the id (adr:0011): the directory is
   // `raw/arquitetura-fenix.pdf/` and the citation is `src://arquitetura-fenix.pdf#p12`.
   // The format is part of the identity — a PDF and a DOCX of the same content are
-  // different sources. Slug the base name, then reattach the extension verbatim.
+  // different sources. Slug the base name, then reattach the extension.
   // Only a trailing alphabetic group counts as an extension: a recording name
   // carries a date, not a format, so `Fenix weekly 2026-07-31` has none (`.31` is
   // digits) and is slugged whole.
   const extMatch = name.match(/\.[a-z]{1,8}$/i);
   const base = extMatch ? name.slice(0, name.length - extMatch[0].length) : name;
-  const ext = extMatch ? extMatch[0] : "";
+  // **Lowercased, like every other character an id can hold.** It was
+  // reattached verbatim, so `Report.PDF` derived `report.PDF` — an id that
+  // names a directory and that every citation spells, differing from
+  // `report.pdf` in case alone. On a case-insensitive filesystem those are one
+  // directory under two ids; on a case-sensitive one they are two sources
+  // nothing downstream tells apart. `adr:0021` is what made it worth fixing
+  // rather than noting: a camera writes `.JPG` and a phone writes `.MOV`, and
+  // until now every id that could exist came from six lowercase extensions.
+  const ext = extMatch ? extMatch[0].toLowerCase() : "";
   const trimmed = slugify(base);
   if (trimmed === "") throw new EmptyNameError(name);
   return trimmed + ext;

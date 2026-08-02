@@ -1,7 +1,6 @@
 import { basename } from "node:path";
-import { uploadTextSource } from "./ingest.js";
-import { uploadPdfSource } from "./pdf.js";
-import { uploadDocxSource } from "./docx.js";
+import { registerSource } from "./register.js";
+import { writeSourceText } from "./ingest.js";
 
 /**
  * The largest file any door accepts. The inbox refuses on the `stat`, before
@@ -13,113 +12,103 @@ export const MAX_SOURCE_BYTES = 64 * 1024 * 1024;
 /**
  * One door for every uploaded file, whichever way it arrived — dragged onto the
  * window (plan 3.5), dropped into `raw/_inbox/` (3.7), or handed over by the
- * CLI. It recognises the format and dispatches to the adapter that turns it
- * into `text.md`; registration itself is always 3.1's, so a source is the same
- * source whichever door it came through.
+ * CLI.
+ *
+ * **It stores; it does not parse** — `adr:0021-sources-are-stored-not-parsed`.
+ * The original is preserved under `raw/<id>/`, the id is derived from the
+ * filename and frozen there (`adr:0011-sources-are-named-by-what-they-are`),
+ * and nothing is refused for its extension. Reading a source is the agent's
+ * job: it opens a PDF as a document and an image as an image, which is a better
+ * answer than any extractor here produced — layout, tables and figures survive
+ * — and the set of things a source can be stops being a list somebody
+ * maintains.
+ *
+ * The one thing still written on the way in is a `text.md` for text. Copying
+ * text that is already text is not extraction, and it costs one write to have
+ * it where every reader already looks.
  *
  * Nothing here throws for a condition the person who dropped the file caused —
- * an unreadable PDF, a format nobody supports, a name already taken. Those come
- * back as an outcome carrying the reason, because the callers are a drag-and-drop
- * surface and a watcher, and both have to report a batch rather than stop at the
- * first file that did not work.
+ * a name already taken, a file over the ceiling. Those come back as an outcome
+ * carrying the reason, because the callers are a drag-and-drop surface and a
+ * watcher, and both have to report a batch rather than stop at the first file
+ * that did not work.
  */
 
-export type SourceFormat = "text" | "pdf" | "docx";
+/** What the store did with a file, which is all there is to say now. */
+export type StoredAs =
+  /** The bytes were preserved, and copied into `text.md`. */
+  | "text"
+  /** The bytes were preserved, and nothing was read. */
+  | "stored";
 
 export type IngestOutcome =
-  | { ok: true; name: string; format: SourceFormat; id: string }
-  | { ok: false; name: string; format: SourceFormat | null; reason: string };
+  | { ok: true; name: string; id: string; stored: StoredAs }
+  | { ok: false; name: string; reason: string };
 
-/** Extension → adapter. Everything absent from here is not recognised. */
-const FORMATS: ReadonlyMap<string, SourceFormat> = new Map([
-  [".md", "text"],
-  [".markdown", "text"],
-  [".txt", "text"],
-  [".text", "text"],
-  [".pdf", "pdf"],
-  [".docx", "docx"],
-]);
+/**
+ * The extensions whose `text.md` is a **copy** rather than an extraction.
+ *
+ * Not a list of what is accepted — everything is accepted. It is the list of
+ * files for which writing `text.md` on the way in claims nothing the
+ * application did not do.
+ */
+const TEXT_EXTENSIONS: ReadonlySet<string> = new Set([".md", ".markdown", ".txt", ".text"]);
 
 /** The lowercased extension of a filename, `.pdf`, or `""` when it has none. */
 function extensionOf(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? name;
   const dot = base.lastIndexOf(".");
+  // `> 0`, so `.gitignore` is a name and not an extension.
   return dot > 0 ? base.slice(dot).toLowerCase() : "";
 }
 
-/**
- * The format this file will be read as, or `null` when nothing reads it. The
- * drag-and-drop surface of 3.5 asks this before ingesting, so it can say what
- * it recognised and what it did not without touching the disk.
- */
-export function recogniseSource(name: string): SourceFormat | null {
-  return FORMATS.get(extensionOf(name)) ?? null;
-}
-
-/** Every extension a caller may advertise as accepted. */
-export function recognisedExtensions(): string[] {
-  return [...FORMATS.keys()];
-}
-
-function unrecognised(name: string): string {
-  const ext = extensionOf(name);
-  const known = recognisedExtensions().join(", ");
-  if (ext === ".doc") {
-    // The legacy binary format is a different file format wearing a similar
-    // name; saying "unsupported" without saying that sends people in circles.
-    return `"${name}" is the legacy .doc format, which nothing here reads — save it as .docx and drop it again`;
-  }
-  return ext === ""
-    ? `"${name}" has no extension, so there is nothing to recognise it by (known: ${known})`
-    : `"${name}" is a ${ext} file, which is not a source format (known: ${known})`;
+/** Whether this file's `text.md` is a copy of it, rather than the agent's to write. */
+export function isTextSource(name: string): boolean {
+  return TEXT_EXTENSIONS.has(extensionOf(name));
 }
 
 /**
- * Register an uploaded file and write its `text.md`, choosing the adapter by
- * extension. Returns the frozen source id, or the reason it did not land.
+ * Store an uploaded file. Returns the frozen source id, or the reason it did
+ * not land.
  */
 export async function ingestSource(
   projectRoot: string,
   rawName: string,
   content: Buffer,
 ): Promise<IngestOutcome> {
-  // Reduce to the basename once, here. `recogniseSource` looked past directory
-  // components while `deriveId` did not, so a caller handing over a full path —
-  // which the drag-and-drop surface of 3.5 naturally has — was recognised as a
-  // PDF and then registered under the id `home-u-documents-report.pdf`. One
-  // answer to "what is `name`" for both.
+  // Reduce to the basename once, here. The drag-and-drop surface of 3.5
+  // naturally hands over a full path and `deriveId` takes a name, so this is
+  // one answer to "what is `name`" for the id and for the manifest both.
   const name = basename(rawName);
-
-  const format = recogniseSource(name);
-  if (format === null) return { ok: false, name, format: null, reason: unrecognised(name) };
 
   if (content.byteLength > MAX_SOURCE_BYTES) {
     return {
       ok: false,
       name,
-      format,
-      reason: `"${name}" is ${content.byteLength} bytes, over the ${MAX_SOURCE_BYTES}-byte limit for a source`,
+      reason:
+        `"${name}" is ${content.byteLength} bytes, over the ${MAX_SOURCE_BYTES}-byte limit for ` +
+        `a source. raw/ holds copied bytes and is committed with the project unless it is ` +
+        `ignored, so a file this size is a decision to make rather than to discover.`,
     };
   }
 
   try {
-    switch (format) {
-      case "text": {
-        const { id } = uploadTextSource(projectRoot, name, content.toString("utf8"));
-        return { ok: true, name, format, id };
-      }
-      case "pdf": {
-        const { id } = await uploadPdfSource(projectRoot, name, content);
-        return { ok: true, name, format, id };
-      }
-      case "docx": {
-        const { id } = await uploadDocxSource(projectRoot, name, content);
-        return { ok: true, name, format, id };
-      }
-    }
+    const { id } = registerSource(projectRoot, { name, kind: "file", content });
+    if (!isTextSource(name)) return { ok: true, name, id, stored: "stored" };
+    writeSourceText(projectRoot, id, content.toString("utf8"));
+    return { ok: true, name, id, stored: "text" };
   } catch (err) {
-    // A taken id, an empty name, a document the reader will not open: all of
-    // them are things about *this file*, and the caller has more files to try.
-    return { ok: false, name, format, reason: err instanceof Error ? err.message : String(err) };
+    // A taken id, a name that derives to nothing: both are about *this file*,
+    // and the caller has more files to try.
+    return { ok: false, name, reason: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/**
+ * `ingestSource` is now an `async` function that awaits nothing.
+ *
+ * Kept async on purpose: it is the door two callers `await`, one of them a
+ * watcher, and narrowing the signature to sync would be an API change for
+ * every caller to gain nothing. Group 6's archive unpacking puts real
+ * asynchrony back behind it.
+ */

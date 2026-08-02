@@ -1,12 +1,6 @@
-import { basename, extname } from "node:path";
+import { basename } from "node:path";
 import { readFile } from "node:fs/promises";
-import {
-  uploadDocxSource,
-  uploadPdfSource,
-  uploadTextSource,
-  TakenIdError,
-  type InboxOutcome,
-} from "@open-wiki/access";
+import { ingestSource, TakenIdError, type InboxOutcome } from "@open-wiki/access";
 
 /**
  * Files dropped onto the window (plan 3.5).
@@ -20,26 +14,19 @@ import {
 export type DropOutcome =
   { name: string; ok: true; id: string } | { name: string; ok: false; reason: string };
 
-/** What each adapter takes, from `docs/stack.md`'s "text extraction" section. */
-const ADAPTERS: Record<string, "text" | "pdf" | "docx"> = {
-  ".md": "text",
-  ".markdown": "text",
-  ".txt": "text",
-  ".pdf": "pdf",
-  ".docx": "docx",
-};
-
-export function recognises(name: string): boolean {
-  return extname(name).toLowerCase() in ADAPTERS;
-}
-
-/** The extensions the drop zone should say it takes. */
-export function recognisedExtensions(): string[] {
-  return Object.keys(ADAPTERS).sort();
-}
+/**
+ * **There is no table here any more** (plan 2.1).
+ *
+ * This module held a *second copy* of `upload.ts`'s extension table — two lists
+ * of what the product accepts, in two packages, kept in step by nobody.
+ * `adr:0021-sources-are-stored-not-parsed` removed the question they both
+ * answered: every file is accepted, so there is nothing to recognise and
+ * nothing to advertise. What is left here is reading the bytes, which is the
+ * one thing this side has to do.
+ */
 
 /**
- * Ingest one dropped file through the same path 3.1 registers everything with.
+ * Ingest one dropped file through the same door everything else goes through.
  *
  * It reads the file itself rather than taking the renderer's word for the
  * bytes: Chromium hands a drop over as a path, and the content is the thing
@@ -47,26 +34,10 @@ export function recognisedExtensions(): string[] {
  */
 export async function ingestFile(projectRoot: string, path: string): Promise<DropOutcome> {
   const name = basename(path);
-  const adapter = ADAPTERS[extname(name).toLowerCase()];
-  if (!adapter) {
-    return {
-      name,
-      ok: false,
-      reason: `open-wiki takes ${recognisedExtensions().join(", ")} — not ${extname(name) || "a file with no extension"}`,
-    };
-  }
   try {
     const content = await readFile(path);
-    if (adapter === "pdf") {
-      const { id } = await uploadPdfSource(projectRoot, name, content);
-      return { name, ok: true, id };
-    }
-    if (adapter === "docx") {
-      const { id } = await uploadDocxSource(projectRoot, name, content);
-      return { name, ok: true, id };
-    }
-    const { id } = uploadTextSource(projectRoot, name, content.toString("utf8"));
-    return { name, ok: true, id };
+    const outcome = await ingestSource(projectRoot, name, content);
+    return asDropOutcome({ ...outcome, removed: false });
   } catch (e) {
     // A name already taken is the one refusal `adr:0011` chose deliberately —
     // the user renames the file rather than the application inventing

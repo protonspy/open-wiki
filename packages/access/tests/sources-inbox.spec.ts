@@ -122,18 +122,18 @@ describe("the raw/_inbox doorway (3.7)", () => {
       expect(existsSync(join(root, "raw", INBOX, "a.md"))).toBe(false);
     });
 
-    // The one test in this file that loads pdfjs. Cold, on a CI runner, the
-    // dynamic import and the first parse together run past the 5 s default —
-    // which made this the only flaky test in the repository, failing on
-    // machine speed rather than on anything about the code. The timeout is
-    // deliberately generous rather than tuned: a number chosen to *just* pass
-    // is the same flake again on a slower day.
-    it("ingests a PDF dropped in, with its page anchors", async () => {
+    it("takes a PDF dropped in, and does not read it", async () => {
+      // `adr:0021-sources-are-stored-not-parsed`: the bytes are preserved and
+      // the agent opens the document itself. Nothing here loads pdf.js any
+      // more — which is why this stopped being the flakiest test in the
+      // repository, and why the drop path no longer parses a stranger's bytes
+      // inside a privileged process.
       writeFileSync(join(root, "raw", INBOX, "paper.pdf"), buildPdf([["page one"]]));
       const outcomes = await drainInbox(root);
-      expect(outcomes[0]).toMatchObject({ ok: true, format: "pdf", removed: true });
-      expect(readFileSync(join(root, "raw", "paper.pdf", "text.md"), "utf8")).toContain("## p1");
-    }, 30_000);
+      expect(outcomes[0]).toMatchObject({ ok: true, stored: "stored", removed: true });
+      expect(existsSync(join(root, "raw", "paper.pdf", "source.pdf"))).toBe(true);
+      expect(existsSync(join(root, "raw", "paper.pdf", "text.md"))).toBe(false);
+    });
 
     it("reports every file in a batch, in a stable order", async () => {
       writeFileSync(join(root, "raw", INBOX, "b.md"), "b");
@@ -144,15 +144,20 @@ describe("the raw/_inbox doorway (3.7)", () => {
     });
 
     it("leaves a file it could not ingest where it is, with the reason", async () => {
-      writeFileSync(join(root, "raw", INBOX, "clip.mp3"), "not a source");
+      // A format is no longer a reason to refuse anything
+      // (`adr:0021-sources-are-stored-not-parsed`), so the refusal that remains
+      // is the one `adr:0011` chose: a name already taken. The user renames the
+      // file rather than the application inventing `notes (2).md`.
+      mkdirSync(join(root, "raw", "notes.md"), { recursive: true });
+      writeFileSync(join(root, "raw", INBOX, "notes.md"), "# taken");
       const outcomes = await drainInbox(root);
 
       expect(outcomes[0]!.ok).toBe(false);
       expect(outcomes[0]!.removed).toBe(false);
       // The user's file is the only copy of it; tidying the doorway must not
       // be a way to lose material.
-      expect(existsSync(join(root, "raw", INBOX, "clip.mp3"))).toBe(true);
-      expect((outcomes[0] as { reason: string }).reason).toContain(".mp3");
+      expect(existsSync(join(root, "raw", INBOX, "notes.md"))).toBe(true);
+      expect((outcomes[0] as { reason: string }).reason).toMatch(/already exists/);
     });
 
     it("refuses to follow a symbolic link out of the project", async () => {
@@ -185,12 +190,15 @@ describe("the raw/_inbox doorway (3.7)", () => {
     });
 
     it("is idempotent — a second drain sees only what the first could not take", async () => {
+      // What the first drain cannot take is a name already held, which is the
+      // one refusal `adr:0011` keeps.
+      mkdirSync(join(root, "raw", "taken.md"), { recursive: true });
       writeFileSync(join(root, "raw", INBOX, "good.md"), "g");
-      writeFileSync(join(root, "raw", INBOX, "bad.mp3"), "b");
+      writeFileSync(join(root, "raw", INBOX, "taken.md"), "t");
       await drainInbox(root);
 
       const second = await drainInbox(root);
-      expect(second.map((o) => o.name)).toEqual(["bad.mp3"]);
+      expect(second.map((o) => o.name)).toEqual(["taken.md"]);
     });
 
     it("refuses an oversized file on its stat, without reading it", async () => {
@@ -406,14 +414,16 @@ describe("the raw/_inbox doorway (3.7)", () => {
         // Silence is how success looks here. Remembering the name forever means a
         // second, different file dropped under a name that once failed is never
         // mentioned, and the user believes it landed.
-        writeFileSync(join(root, "raw", INBOX, "clip.mp3"), "x");
+        // A name already taken is the refusal that remains (`adr:0011`).
+        mkdirSync(join(root, "raw", "clip.md"), { recursive: true });
+        writeFileSync(join(root, "raw", INBOX, "clip.md"), "x");
         const { seen, watcher } = await start();
         try {
           await until(() => seen.length > 0);
-          rmSync(join(root, "raw", INBOX, "clip.mp3"));
+          rmSync(join(root, "raw", INBOX, "clip.md"));
 
-          writeFileSync(join(root, "raw", INBOX, "clip.mp3"), "a different recording");
-          await until(() => seen.filter((o) => o.name === "clip.mp3").length === 2, 8000);
+          writeFileSync(join(root, "raw", INBOX, "clip.md"), "a different recording");
+          await until(() => seen.filter((o) => o.name === "clip.md").length === 2, 8000);
         } finally {
           await watcher.close();
         }

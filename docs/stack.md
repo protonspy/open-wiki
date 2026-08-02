@@ -66,15 +66,21 @@ reads the project the way a harness does and writes `wiki/` only through the val
 
 - **yaml** — parses and writes the frontmatter the store validates. The page schema is the contract; a real YAML parser is what keeps it from drifting into "the subset we happened to hand-roll."
 
-## Text extraction from sources
+## Reading sources
 
-Each source adapter has a single responsibility — becoming `text.md` with provenance
-anchors, and the path stops writing there — see
-`adr:0013-the-project-directory-is-the-unit`.
+**Nothing here extracts text from a source any more** —
+`adr:0021-sources-are-stored-not-parsed`. The application preserves the original
+and the agent reads it, so **pdfjs-dist** and **mammoth** are gone: two
+dependencies, one of them declaring an optional per-platform native binary, and
+a parser that ran on a stranger's bytes inside the privileged main process. An
+agent opening a PDF as a document keeps the layout, the tables and the figures,
+which is exactly what a text extraction dropped and what somebody citing an
+architecture document is citing.
 
-- **pdfjs-dist** — text and page boundaries of a PDF; it is the page number that makes the citation possible, and without it the source is of no use. Chosen over `pdf-parse`, which this file named before the adapter was built: `pdf-parse` wraps an old fork of this same engine and hands back the whole document as one string, so the page boundary — the only thing the citation needs — has to be recovered through a render hook. `pdfjs-dist` has `getPage(n).getTextContent()`, which is the boundary directly, and it is the engine upstream maintains. It declares `@napi-rs/canvas` as an *optional* dependency — a native binary, per platform — which rendering needs and text extraction does not; nothing here imports it, and the installer of 10.1 should not carry it.
-- **mammoth** — DOCX to markdown preserving the heading hierarchy, which is what a DOCX carries instead of a PDF's page: the file records no pagination, so the structure is the anchor. Its own markdown writer is deprecated and escapes ordinary prose (`split in two\.`), so the adapter converts mammoth's HTML — a small, predictable subset — itself.
-- **chokidar** — watches `raw/_inbox/` for material an agent dropped there (plan 3.7), and later the project folder (8.10). `fs.watch` alone reports a file the moment it appears, which on a copy is halfway through being written; `awaitWriteFinish` is the part that stops a half-copied PDF becoming a permanently wrong source.
+What replaced them is the agent's own file reading, which this project neither
+ships nor chooses.
+
+- **chokidar** — watches `raw/_inbox/` for material an agent dropped there (plan 3.7), and later the project folder (8.10). `fs.watch` alone reports a file the moment it appears, which on a copy is halfway through being written; `awaitWriteFinish` is the part that stops a half-copied file becoming a permanently wrong source.
 
 ## MCP server
 

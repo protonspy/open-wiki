@@ -128,7 +128,6 @@ export async function ingestInboxEntry(
   const refuse = (reason: string): InboxOutcome => ({
     ok: false,
     name,
-    format: null,
     reason,
     removed: false,
   });

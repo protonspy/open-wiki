@@ -224,17 +224,17 @@ were correct against what was decided then:
 
 ## 1 — The decision, recorded
 
-- [ ] 1.1 (Unit) An ADR: the application stores sources and does not parse them, the agent reads the original, and `text.md` becomes an artifact the agent may write rather than one the application always writes. It is hard to reverse — it changes the shape of `raw/`, what every downstream reader consumes, and the contract with the agent — so it is a record and not a paragraph in this file
+- [x] 1.1 (Unit) An ADR: the application stores sources and does not parse them, the agent reads the original, and `text.md` becomes an artifact the agent may write rather than one the application always writes. It is hard to reverse — it changes the shape of `raw/`, what every downstream reader consumes, and the contract with the agent — so it is a record and not a paragraph in this file
 
-- [ ] 1.2 (Unit) A second ADR: a source is its id wherever it sits under `raw/`, the same decision `adr:0016` made for `wiki/`. It is hard to reverse — it decides what a citation encodes, and a citation that encoded a path would have to be rewritten in every page the day somebody refiles a source
+- [x] 1.2 (Unit) A second ADR: a source is its id wherever it sits under `raw/`, the same decision `adr:0016` made for `wiki/`. It is hard to reverse — it decides what a citation encodes, and a citation that encoded a path would have to be rewritten in every page the day somebody refiles a source
 
 ## 2 — Accept any file
 
-- [ ] 2.1 (Unit) Collapse the two adapter tables into one place in `@open-wiki/access`. The desktop's copy is drift waiting to happen, and this work would otherwise edit both
-- [ ] 2.2 (TDD) Store any file: the original is preserved under `raw/<id>/`, the id is still derived and frozen per `adr:0011`, and nothing is refused for its extension. Test-first because it is the write path where a mistake is silent — a file accepted and stored under the wrong name, or outside `raw/`, is not visible until somebody goes looking
-- [ ] 2.3 (Unit) Stop extracting on ingest. `.md` and `.txt` still get a `text.md`, because copying text that is already text is not extraction; PDF and DOCX no longer do
-- [ ] 2.4 (Unit) A size stance, said out loud at the moment of the drop rather than discovered in `git status`
-- [ ] 2.5 (Unit) The drop and inbox reports say what was **stored**, not what was recognised — and a name already taken is still refused as itself, which is `adr:0011`'s deliberate refusal and does not change
+- [x] 2.1 (Unit) Collapse the two adapter tables into one place in `@open-wiki/access`. The desktop's copy is drift waiting to happen, and this work would otherwise edit both
+- [x] 2.2 (TDD) Store any file: the original is preserved under `raw/<id>/`, the id is still derived and frozen per `adr:0011`, and nothing is refused for its extension. Test-first because it is the write path where a mistake is silent — a file accepted and stored under the wrong name, or outside `raw/`, is not visible until somebody goes looking
+- [x] 2.3 (Unit) Stop extracting on ingest. `.md` and `.txt` still get a `text.md`, because copying text that is already text is not extraction; PDF and DOCX no longer do
+- [x] 2.4 (Unit) A size stance, said out loud at the moment of the drop rather than discovered in `git status`
+- [x] 2.5 (Unit) The drop and inbox reports say what was **stored**, not what was recognised — and a name already taken is still refused as itself, which is `adr:0011`'s deliberate refusal and does not change
 
 ## 3 — The status
 

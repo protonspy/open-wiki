@@ -100,19 +100,14 @@ export {
 export { projectVocabulary, rankNames, DEFAULT_VOCABULARY_LIMIT } from "./sources/vocabulary.js";
 export { transcriptionInputs, type TranscriptionInputs } from "./sources/transcription.js";
 export { uploadTextSource, writeSourceText, normaliseText } from "./sources/ingest.js";
-export {
-  uploadPdfSource,
-  extractPdfPages,
-  renderPdfText,
-  pageAnchor,
-  type PdfPage,
-} from "./sources/pdf.js";
-export { uploadDocxSource, extractDocxMarkdown, htmlToMarkdown } from "./sources/docx.js";
+// The PDF and DOCX adapters are gone — `adr:0021-sources-are-stored-not-parsed`.
+// The application preserves the original and the agent reads it, so there is no
+// extractor to export here and none left running in the privileged process.
 export {
   ingestSource,
-  recogniseSource,
-  recognisedExtensions,
-  type SourceFormat,
+  isTextSource,
+  MAX_SOURCE_BYTES,
+  type StoredAs,
   type IngestOutcome,
 } from "./sources/upload.js";
 export {
