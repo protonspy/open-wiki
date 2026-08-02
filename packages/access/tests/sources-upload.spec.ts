@@ -11,6 +11,13 @@ import {
 import { listSources } from "../src/sources/manifest.js";
 import { buildPdf, buildDocx } from "./fixtures/documents.js";
 
+/**
+ * How long a test that actually starts pdf.js is given — the note is in
+ * `sources-pdf.spec.ts`. Vitest's 5 s default bounds a unit test that does no
+ * I/O, and starting pdf.js under `--coverage` on a cold runner is not that.
+ */
+const PDFJS_MS = 30_000;
+
 function tempProject(): string {
   const root = mkdtempSync(join(tmpdir(), "ow-upload-"));
   mkdirSync(join(root, "raw"), { recursive: true });
@@ -63,14 +70,18 @@ describe("the upload door (3.5, 3.7)", () => {
       expect(readFileSync(join(root, "raw", outcome.id, "text.md"), "utf8")).toBe("# Notas\n");
     });
 
-    it("ingests a PDF through the PDF adapter, anchors and all", async () => {
-      const outcome = await ingestSource(root, "arch.pdf", buildPdf([["one"], ["two"]]));
-      expect(outcome).toMatchObject({ ok: true, format: "pdf", id: "arch.pdf" });
-      if (!outcome.ok) throw new Error("expected the upload to land");
-      const text = readFileSync(join(root, "raw", outcome.id, "text.md"), "utf8");
-      expect(text).toContain("## p1");
-      expect(text).toContain("## p2");
-    });
+    it(
+      "ingests a PDF through the PDF adapter, anchors and all",
+      { timeout: PDFJS_MS },
+      async () => {
+        const outcome = await ingestSource(root, "arch.pdf", buildPdf([["one"], ["two"]]));
+        expect(outcome).toMatchObject({ ok: true, format: "pdf", id: "arch.pdf" });
+        if (!outcome.ok) throw new Error("expected the upload to land");
+        const text = readFileSync(join(root, "raw", outcome.id, "text.md"), "utf8");
+        expect(text).toContain("## p1");
+        expect(text).toContain("## p2");
+      },
+    );
 
     it("ingests a DOCX through the DOCX adapter, hierarchy and all", async () => {
       const docx = buildDocx([{ text: "Title", style: "Heading1" }, { text: "Body" }]);
@@ -117,7 +128,7 @@ describe("the upload door (3.5, 3.7)", () => {
       expect(listSources(root)).toEqual([]);
     });
 
-    it("registers under the basename when handed a whole path", async () => {
+    it("registers under the basename when handed a whole path", { timeout: PDFJS_MS }, async () => {
       // The drag-and-drop surface of 3.5 naturally has a full path. Recognition
       // looked past the directories and id derivation did not, so this used to
       // land as `home-u-documents-report-pdf`.

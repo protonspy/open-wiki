@@ -12,6 +12,21 @@ import {
 import { readManifest } from "../src/sources/manifest.js";
 import { buildPdf } from "./fixtures/documents.js";
 
+/**
+ * How long a test that actually starts pdf.js is given.
+ *
+ * **Vitest's 5 s default is a bound on a unit test that does no I/O, and these
+ * are not that.** They start pdf.js — its worker, its standard font data, its
+ * stream machinery — and under `--coverage` on a cold Windows runner two of
+ * them took 6.6 s and 8.4 s and timed out, on a branch that touched nothing in
+ * this package. The same code with two answers is a flake by definition.
+ *
+ * Raised only for the tests that genuinely start pdf.js, never globally: every
+ * other test in this file is arithmetic over already-extracted text, and a
+ * suite with a 30 s default is a suite where a hang reads as slowness.
+ */
+const PDFJS_MS = 30_000;
+
 function tempProject(): string {
   const root = mkdtempSync(join(tmpdir(), "ow-pdf-"));
   mkdirSync(join(root, "raw"), { recursive: true });
@@ -60,7 +75,8 @@ describe("PDF upload (3.3)", () => {
     });
   });
 
-  describe("extractPdfPages", () => {
+  // Every test in here starts pdf.js — see `PDFJS_MS`.
+  describe("extractPdfPages", { timeout: PDFJS_MS }, () => {
     it("returns one entry per page, in order, with that page's text", async () => {
       const pdf = buildPdf([
         ["Fenix architecture", "The service is split in two."],
@@ -114,7 +130,7 @@ describe("PDF upload (3.3)", () => {
     });
   });
 
-  describe("uploadPdfSource", () => {
+  describe("uploadPdfSource", { timeout: PDFJS_MS }, () => {
     it("preserves the original and writes text.md with the page anchors", async () => {
       const pdf = buildPdf([["Fenix architecture"], ["Storage notes"]]);
       const { id, pages } = await uploadPdfSource(root, "Arquitetura Fenix.pdf", pdf);
