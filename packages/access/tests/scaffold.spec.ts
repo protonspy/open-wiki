@@ -1,7 +1,15 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { scaffold, DirectoryOccupiedError } from "../src/scaffold.js";
 import { readSettings } from "../src/config/settings.js";
 import { checkProject } from "../src/check/checks.js";
@@ -91,6 +99,30 @@ describe("scaffold seeds the wiki's own pages (1.3)", () => {
     const second = scaffold(root);
     expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).toContain("[[fenix]]");
     expect(second.wiki.written).toEqual([]);
+  });
+
+  it("refuses to follow a dangling symlink planted at one of the seed paths", (ctx) => {
+    // The case `existsSync` answers "no" to and a plain write then follows out
+    // of the project: the link's target does not exist yet, so the guard sees
+    // nothing there and creates the target — outside `projectRoot`, which is
+    // the containment `adr:0013` states. `wx` is `O_CREAT | O_EXCL`, and the
+    // kernel refuses that on a symlink of any kind.
+    mkdirSync(join(root, "wiki"), { recursive: true });
+    const outside = join(dirname(root), "planted.md");
+    try {
+      symlinkSync(outside, join(root, "wiki", "index.md"));
+    } catch (err) {
+      // Privileged on most Windows accounts, and that is a different failure
+      // from this one. Reported as a skip, never as a pass.
+      ctx.skip(`symlink creation unavailable: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
+    try {
+      scaffold(root);
+      expect(existsSync(outside)).toBe(false);
+    } finally {
+      rmSync(outside, { force: true });
+    }
   });
 
   it("leaves a brand-new project with nothing for `ow check` to report", () => {

@@ -170,3 +170,40 @@ export function canAnswer(question: Question, typed: string): boolean {
   if (question.kind === "confirm") return true;
   return question.emptyMeans === "accept" || typed.trim() !== "";
 }
+
+export interface DialogButton {
+  /** What it leaves on `returnValue`, which is how `answerOf` reads the exit. */
+  value: string;
+  label: string;
+  /**
+   * Whether it submits the form.
+   *
+   * **Exactly one button submits, and it is the one that answers.** Pressing
+   * Enter in a text field submits through the form's *default button* — the
+   * first submit button in tree order, not the one anybody has focused — so a
+   * cancel button that also submits swallows the answer of everyone who fills
+   * in a one-field form the ordinary way. It closed the box with the cancel
+   * button's empty `returnValue` and the typed slug went nowhere, which is the
+   * dead control of 1.1 in a new costume.
+   */
+  submits: boolean;
+  danger: boolean;
+}
+
+/**
+ * The buttons, in the order they are rendered.
+ *
+ * Here rather than in the JSX because the order and the types are a decision —
+ * see `submits` — and a decision in a component is a decision no test reaches.
+ */
+export function buttonsFor(question: Question): DialogButton[] {
+  return [
+    { value: "", label: question.cancelLabel, submits: false, danger: false },
+    {
+      value: ANSWERED,
+      label: question.confirmLabel,
+      submits: true,
+      danger: question.danger === true,
+    },
+  ];
+}

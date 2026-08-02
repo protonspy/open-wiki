@@ -259,7 +259,10 @@ export function App(): React.JSX.Element {
       // to land in the shell's one error line, beside failures from four other
       // things, saying nothing about which files it was about.
       .catch((e: unknown) =>
-        setDropped((current) => [...(current ?? []), { name: "that drop", ok: false, reason: message(e) }]),
+        setDropped((current) => [
+          ...(current ?? []),
+          { name: "that drop", ok: false, reason: message(e) },
+        ]),
       );
   }, []);
 
@@ -529,7 +532,9 @@ async function createPage(
   try {
     const result = await bridge().create({ slug, markdown: template(slug) });
     if (!result.saved) {
-      say(failure("wiki", result.reason === "stale" ? "that page moved" : result.problems.join("; ")));
+      say(
+        failure("wiki", result.reason === "stale" ? "that page moved" : result.problems.join("; ")),
+      );
       return;
     }
     visit({ view: "wiki", slug });

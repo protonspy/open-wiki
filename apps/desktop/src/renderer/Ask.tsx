@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ANSWERED, answerOf, canAnswer, type Question } from "./dialogs.js";
+import { answerOf, buttonsFor, canAnswer, type Question } from "./dialogs.js";
 
 /**
  * Asking a question, in the renderer, because the platform will not (plan 1.1).
@@ -10,9 +10,10 @@ import { ANSWERED, answerOf, canAnswer, type Question } from "./dialogs.js";
  * Every one of those is what "focus-trapped and Escape-dismissable" asks for,
  * and every hand-rolled version of them is a list of the ones it forgot.
  *
- * The form is `method="dialog"`, so Enter submits and the pressed button's
- * `value` lands on `returnValue`. That gives one exit path — `onClose` — for
- * the three ways out, rather than three handlers that have to agree.
+ * The form is `method="dialog"`, so the submitting button's `value` lands on
+ * `returnValue` and every way out arrives at one handler — `onClose` — rather
+ * than three that have to agree. Which button submits is not decoration:
+ * `buttonsFor` says why.
  */
 
 export interface Dialogs {
@@ -40,6 +41,14 @@ interface Pending {
 export function useDialogs(): Dialogs {
   const [pending, setPending] = useState<Pending | null>(null);
   const next = useRef(0);
+
+  // The same rule as replacing an open question, for the other way a question
+  // stops being answerable: the component that asked it went away — navigating
+  // out of Sources with a retitle box open, say. Nothing is left awaiting a
+  // promise that can no longer be settled by anything on screen.
+  const open = useRef<Pending | null>(null);
+  open.current = pending;
+  useEffect(() => () => open.current?.settle(null), []);
 
   const ask = useCallback(
     (question: Question) =>
@@ -125,17 +134,23 @@ function Ask({
           </label>
         ) : null}
         <div className="ask__buttons">
-          {/* An empty value: Escape's own, so the cancel button and Escape are
-              indistinguishable to `answerOf` rather than two paths to keep in
-              step. */}
-          <button value="">{question.cancelLabel}</button>
-          <button
-            value={ANSWERED}
-            className={question.danger ? "danger" : undefined}
-            disabled={!canAnswer(question, typed)}
-          >
-            {question.confirmLabel}
-          </button>
+          {buttonsFor(question).map((button) => (
+            <button
+              key={button.value}
+              // The one that answers submits; the one that cancels closes the
+              // dialog itself. Both leave the `returnValue` they would have
+              // left as submit buttons — the cancel button's is Escape's own
+              // empty string, so `answerOf` cannot tell those two exits apart
+              // and does not have to.
+              type={button.submits ? "submit" : "button"}
+              value={button.value}
+              className={button.danger ? "danger" : undefined}
+              disabled={button.submits && !canAnswer(question, typed)}
+              onClick={button.submits ? undefined : () => ref.current?.close("")}
+            >
+              {button.label}
+            </button>
+          ))}
         </div>
       </form>
     </dialog>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANSWERED,
   answerOf,
+  buttonsFor,
   canAnswer,
   deleteQuestion,
   newPageQuestion,
@@ -66,6 +67,48 @@ describe("canAnswer", () => {
 
   it("is always answerable when there is no box to fill", () => {
     expect(canAnswer(deleteQuestion("fenix"), "")).toBe(true);
+  });
+});
+
+describe("buttonsFor", () => {
+  /**
+   * The default button is the *first submit button in tree order*, and Enter in
+   * a text field submits through it — not through whatever has focus. When both
+   * buttons submitted and cancel came first, typing a slug and pressing Enter
+   * closed the box with cancel's empty `returnValue` and threw the answer away.
+   * Every prompt this plan adds is a one-field form, and Enter is how a
+   * one-field form gets filled in.
+   */
+  it("has exactly one submitting button, and it is the one that answers", () => {
+    const submitting = buttonsFor(newPageQuestion()).filter((button) => button.submits);
+    expect(submitting).toHaveLength(1);
+    expect(submitting[0]?.value).toBe(ANSWERED);
+  });
+
+  it("gives the cancel button Escape's empty returnValue", () => {
+    // So `answerOf` sees one exit rather than two that have to stay in step.
+    const cancel = buttonsFor(newPageQuestion()).find((button) => !button.submits);
+    expect(cancel?.value).toBe("");
+    expect(answerOf(cancel?.value ?? "", "typed")).toBeNull();
+  });
+
+  it("marks the destructive button, and only that one", () => {
+    const buttons = buttonsFor(deleteQuestion("fenix"));
+    expect(buttons.filter((button) => button.danger).map((button) => button.value)).toEqual([
+      ANSWERED,
+    ]);
+  });
+
+  it("leaves an ordinary question with no destructive button at all", () => {
+    expect(buttonsFor(newPageQuestion()).some((button) => button.danger)).toBe(false);
+  });
+
+  it("carries the question's own labels, so no button says OK", () => {
+    const question = occasionQuestion();
+    expect(buttonsFor(question).map((button) => button.label)).toEqual([
+      question.cancelLabel,
+      question.confirmLabel,
+    ]);
   });
 });
 

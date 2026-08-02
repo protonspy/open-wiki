@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeSettings, type ProjectSettings } from "./config/settings.js";
 import { writeIgnore } from "./ignore.js";
+import { assertWithin } from "./paths.js";
 import { scaffoldSkills } from "./skills.js";
 import { INBOX } from "./sources/manifest.js";
 import { CHANGELOG_SEED, INDEX_SEED } from "./store/index.js";
@@ -85,14 +86,27 @@ export function scaffold(projectRoot: string): ScaffoldResult {
  * the launcher and first run go through the same door — so overwriting would
  * mean a second `ow init` silently replacing an index the agent had spent the
  * project curating.
+ *
+ * **Two guards, because "does it exist" is not the question that matters.**
+ * `assertWithin` resolves junctions and symlinks before the write, which is the
+ * confinement `adr:0013` states and every other writer in this package honours.
+ * And the write itself is `wx` — `O_CREAT | O_EXCL`, which the kernel refuses
+ * on a symlink of any kind, dangling included. A dangling link planted at
+ * `wiki/index.md` is precisely the case a prior `existsSync` answers "no" to,
+ * because it follows the link to a target that is not there, and the write then
+ * follows it right out of the project. `EEXIST` here means "something is
+ * already at that name", which is the answer this function wanted anyway.
  */
 function seedWiki(projectRoot: string): { written: string[] } {
   const written: string[] = [];
   for (const seed of SEEDS) {
-    const file = join(projectRoot, seed.path);
-    if (existsSync(file)) continue;
-    writeFileSync(file, seed.content, "utf8");
-    written.push(seed.path);
+    const file = assertWithin(projectRoot, join(projectRoot, seed.path));
+    try {
+      writeFileSync(file, seed.content, { encoding: "utf8", flag: "wx" });
+      written.push(seed.path);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    }
   }
   return { written };
 }
