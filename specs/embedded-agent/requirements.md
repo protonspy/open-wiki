@@ -50,6 +50,10 @@ lands.
   agent and serves transcription and the agent both.
 - **R2.5** The settings screen shall offer a curated model selection for the agent, not the
   raw provider model list, with one default chosen for tool-calling reliability.
+- **R2.6** The embedded agent shall send project content only to Groq; it shall not read
+  tracing or telemetry environment variables, shall set tracing disabled before the agent is
+  constructed (so library-level auto-initialization does not fire), and shall not transmit
+  prompts, tool calls, or tool results to any third party.
 
 ## R3 · Reading — unrestricted within the project
 
@@ -66,22 +70,28 @@ lands.
   which validates frontmatter, resolves wikilinks and citations, writes atomically, logs the
   operation, and leaves it undoable.
 - **R4.2** The embedded agent shall have `rename_page` and `delete_page` tools that act on
-  wiki pages through the same store, and that supersede a page rather than editing one when
-  the operation is a supersession.
+  wiki pages through the validated store — `gateWrite`, then `writePage` or `supersedePage`,
+  then `appendOperation`, with origin `agent` — using a gated delete primitive in
+  `@open-wiki/access`. The desktop's existing `deletePage` writes with `node:fs` and a
+  hardcoded origin, so it shall not be reused.
 - **R4.3** If a write path resolves outside wiki, then the embedded agent shall return an
   error and write nothing.
 - **R4.4** The embedded agent shall not expose the `execute` (shell) or `task` (subagent)
   tools; no shell command shall run and no subagent shall spawn from the embedded agent.
 - **R4.5** The embedded agent shall carry the origin `agent` on every wiki write it makes,
   recorded in the operation log, so a bad run is one undo rather than an archaeology.
+- **R4.6** The `rename_page` tool shall refuse to clobber an existing page, and the
+  `rename_page` and `delete_page` tools shall refuse to operate on the wiki's index,
+  changelog, and log pages.
 
 ## R5 · Human-in-the-loop approval
 
 - **R5.1** When the embedded agent calls a write tool, the embedded agent shall pause the
   run before the write executes and wait for a human decision.
-- **R5.2** While a write is paused, the chat pane shall show the proposed change — the page
-  slug, and the old and new content (or the rename/delete target) — and shall offer approve,
-  reject, and edit.
+- **R5.2** While a write is paused, the chat pane shall show the complete effect of the
+  proposed change — the page slug, and the old and new content (or the rename/delete target)
+  — and for an `edit_file` with `replace_all` shall show every match site (or the full
+  resulting page), and shall offer approve, reject, and edit.
 - **R5.3** When the user rejects a paused write, the tool shall not execute and the agent
   shall be told the write was rejected and not to retry it unless asked.
 - **R5.4** When the user edits the arguments of a paused write, the tool shall execute with
