@@ -55,7 +55,11 @@ function parseLink(link: string): ParsedLink | null {
  * The in-range check against `timemap.json` is pending the recording time map
  * (plan 4.7); it activates there, where the map's format is decided.
  */
-export function resolveProvenance(projectRoot: string, sources: string[]): PageIssue[] {
+export function resolveProvenance(
+  projectRoot: string,
+  sources: string[],
+  dirs?: ReadonlyMap<string, string>,
+): PageIssue[] {
   const issues: PageIssue[] = [];
   for (const link of sources) {
     const parsed = parseLink(link);
@@ -63,7 +67,7 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
       issues.push({ field: "provenance", reason: `"${link}" is not a provenance link` });
       continue;
     }
-    if (!sourceExists(projectRoot, parsed.id)) {
+    if (!exists(projectRoot, parsed.id, dirs)) {
       issues.push({
         field: "provenance",
         reason: `"${link}" points at no source (no raw/${parsed.id})`,
@@ -86,7 +90,7 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
         });
         continue;
       }
-      const map = readTimeMap(projectRoot, parsed.id);
+      const map = readTimeMap(projectRoot, parsed.id, dirs);
       if (map && !containsInstant(map, instantNs)) {
         issues.push({
           field: "provenance",
@@ -98,6 +102,24 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
     }
   }
   return issues;
+}
+
+/**
+ * Whether a source with this id is on disk.
+ *
+ * `dirs` is one walk of `raw/`, handed in by a caller that resolves many ids —
+ * `ow check` resolves one per citation, per page, and `sourceExists` walks the
+ * whole tree per call, so the check ran a full walk for every citation in the
+ * project. The index answers the same question from the same walk
+ * `duplicateSourceIds` and `checkRecords` already do.
+ *
+ * The two agree by construction: the index holds exactly the directories that
+ * hold a `manifest.json`, which is what `sourceExists` tests for, and an id
+ * that escapes `raw/` is in neither — `assertWithin` rejects it there, and the
+ * walk cannot produce a name outside the tree it walked.
+ */
+function exists(projectRoot: string, id: string, dirs?: ReadonlyMap<string, string>): boolean {
+  return dirs ? dirs.has(id) : sourceExists(projectRoot, id);
 }
 
 /**
@@ -120,14 +142,19 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
  * harm than the thing it looks for. An escaped id has already been reported by
  * `sourceExists` above.
  */
-function readTimeMap(projectRoot: string, id: string): TimeMap | null {
+function readTimeMap(
+  projectRoot: string,
+  id: string,
+  dirs?: ReadonlyMap<string, string>,
+): TimeMap | null {
   try {
     // Found, not joined (task 8.3). Joining meant a *filed* recording appeared
     // to have no time map, so the in-range check silently did not run — and a
     // citation past the end of that recording passed `ow check` when it should
     // have been refused. Failing quietly is the outcome this check exists to
     // prevent, so it must not be how the check itself fails.
-    const file = join(resolvedSourceDir(projectRoot, id), TIMEMAP_FILE);
+    const found = dirs?.get(id);
+    const file = join(found ?? resolvedSourceDir(projectRoot, id), TIMEMAP_FILE);
     if (!existsSync(file)) return null;
     const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     return isTimeMap(parsed) ? parsed : null;

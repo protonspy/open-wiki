@@ -195,6 +195,26 @@ describe("ow graph superseded — sources as well as pages (8.6)", () => {
     ]);
   });
 
+  it("bounds the pointer, because a planted manifest prints straight into the agent", () => {
+    // `superseded-by` is free text out of a file that arrived with a clone, and
+    // this JSON is read by a harness. A megabyte-long replacement id would
+    // crowd out everything else the query answers.
+    mkdirSync(join(root, "raw", "planted"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "planted", "manifest.json"),
+      JSON.stringify({
+        title: "t",
+        kind: "file",
+        status: "superseded",
+        "superseded-by": "s".repeat(9000),
+      }),
+      "utf8",
+    );
+    const pointer = sources(root)[0]!["superseded-by"]!;
+    expect(pointer.length).toBeLessThan(9000);
+    expect(pointer).toMatch(/9000 characters, truncated/);
+  });
+
   it("skips a manifest it cannot read rather than losing the answer about the rest", () => {
     const old = registerSource(root, { name: OLD, kind: "file", content: Buffer.from("a") }).id;
     const fixed = registerSource(root, { name: NEW, kind: "file", content: Buffer.from("b") }).id;

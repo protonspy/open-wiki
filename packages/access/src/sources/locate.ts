@@ -109,6 +109,34 @@ export function sourceDirOf(projectRoot: string, id: string): string | undefined
 }
 
 /**
+ * Every source's id mapped to its directory, from **one** walk.
+ *
+ * For a caller that resolves many ids in a loop. `sourceDirOf` walks `raw/`
+ * per call, so `ow check` — which resolves a source per provenance citation,
+ * per page — walked the whole tree once for every citation in the project. That
+ * is the regression `checkLinks` hoists `linkableSlugs` out of its own loop to
+ * avoid, and the one task 8.3 already fixed twice in `listSourceStates` and
+ * `checkRecords`; a review caught that `checkProvenance` had it too.
+ *
+ * The same answer as `sourceDirOf` for every id, including where two
+ * directories claim one: the first in sorted order, which is deterministic
+ * rather than a resolution — `duplicateSourceIds` is the finding.
+ */
+export function sourceDirIndex(
+  projectRoot: string,
+  // The walk, when the caller has already done it — `checkProject` shares one
+  // across every check that needs it and the source count it reports. Building
+  // the map inline there instead would be a second copy of these three lines.
+  refs?: readonly SourceRef[],
+): ReadonlyMap<string, string> {
+  const index = new Map<string, string>();
+  for (const ref of refs ?? listSourceRefs(projectRoot)) {
+    if (!index.has(ref.id)) index.set(ref.id, ref.dir);
+  }
+  return index;
+}
+
+/**
  * Ids claimed by more than one directory.
  *
  * `src://weekly#p1` cannot mean two sources, so this is a finding rather than

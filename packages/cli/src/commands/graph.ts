@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  boundedManifest,
   findOrphans,
   listPages,
   listSourceRefs,
@@ -86,13 +87,21 @@ function supersessionWalk(projectRoot: string, refs: PageRef[]): SupersessionWal
  * `listSourceStates` skips one: `raw/` is not gated the way `wiki/` is and a
  * manifest arrives with a clone, so one bad directory must not take the answer
  * about every other source with it.
+ *
+ * **Through `boundedManifest`, because this prints into an agent's context.**
+ * `superseded-by` is free text out of a file that arrived with a clone, and a
+ * planted manifest naming a megabyte-long replacement would crowd out
+ * everything else this query answers. A security review found it unbounded
+ * here; the fix is the shared bound rather than a `boundedText` call added to
+ * this function, which is how the same field came to be missed on two surfaces
+ * at once.
  */
 function supersededSources(projectRoot: string): SupersededSource[] {
   const out: SupersededSource[] = [];
   for (const { id, dir } of listSourceRefs(projectRoot)) {
     let manifest;
     try {
-      manifest = readManifestAt(dir, id);
+      manifest = boundedManifest(readManifestAt(dir, id));
     } catch {
       continue;
     }

@@ -1,9 +1,10 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveProvenance } from "../src/store/provenance.js";
 import { registerSource } from "../src/sources/register.js";
+import { sourceDirIndex } from "../src/sources/locate.js";
 
 function tempProject() {
   const root = mkdtempSync(join(tmpdir(), "ow-prov-"));
@@ -151,6 +152,54 @@ describe("resolveProvenance (5.4)", () => {
         );
         expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"])).toEqual([]);
       }
+    });
+
+    it("measures against the map of a recording filed into a folder (8.3)", () => {
+      // The failure this closes is the quiet one. Joining `raw/<id>` meant a
+      // filed recording appeared to have no time map, so the in-range check
+      // silently did not run and a citation past the end of it passed `ow
+      // check` — a check failing open, which is worse than the citation.
+      writeTimeMap("fenix-weekly-2026-07-31", TWENTY_MINUTES_NS);
+      mkdirSync(join(root, "raw", "2026", "q3"), { recursive: true });
+      renameSync(
+        join(root, "raw", "fenix-weekly-2026-07-31"),
+        join(root, "raw", "2026", "q3", "fenix-weekly-2026-07-31"),
+      );
+      expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#14:32"])).toEqual([]);
+      const issues = resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#44:32"]);
+      expect(issues).toHaveLength(1);
+      expect(issues[0]!.reason).toContain("20:00");
+    });
+  });
+
+  describe("resolving from a walk the caller already did", () => {
+    // `ow check` resolves a source per citation, per page. Resolving each one
+    // on its own walked `raw/` per citation; the index is one walk for the run.
+    // What is pinned here is that the two answer identically — an index that
+    // disagreed with `sourceExists` would be a check reporting different
+    // findings depending on which caller ran it.
+
+    it("answers the same as resolving each id on its own", () => {
+      const links = [
+        "src://arquitetura-fenix.pdf#p12",
+        "src://ghost.pdf#p1",
+        "rec://fenix-weekly-2026-07-31#14:32",
+        "src://../../etc#p1",
+      ];
+      expect(resolveProvenance(root, links, sourceDirIndex(root))).toEqual(
+        resolveProvenance(root, links),
+      );
+    });
+
+    it("answers the same for a source filed into a folder", () => {
+      mkdirSync(join(root, "raw", "2026"), { recursive: true });
+      renameSync(
+        join(root, "raw", "arquitetura-fenix.pdf"),
+        join(root, "raw", "2026", "arquitetura-fenix.pdf"),
+      );
+      const links = ["src://arquitetura-fenix.pdf#p12"];
+      expect(resolveProvenance(root, links, sourceDirIndex(root))).toEqual([]);
+      expect(resolveProvenance(root, links)).toEqual([]);
     });
   });
 });

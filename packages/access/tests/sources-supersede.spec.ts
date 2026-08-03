@@ -241,4 +241,23 @@ describe("what reads it", () => {
   it("a source nobody replaced says nothing about supersession", () => {
     expect(sourceState(root, OLD).superseded).toBeUndefined();
   });
+
+  it("bounds a pointer a clone brought, the way it bounds a title", () => {
+    // The view is where every free-text field of a manifest is cut, because
+    // `parseManifest` keeps whatever length it finds — truncating on the read
+    // path would destroy somebody's data on a file nobody asked to write.
+    writeFileSync(
+      join(root, "raw", OLD, "manifest.json"),
+      JSON.stringify({
+        title: "t",
+        kind: "file",
+        status: "superseded",
+        "superseded-by": "s".repeat(9000),
+      }),
+      "utf8",
+    );
+    const by = sourceState(root, OLD).superseded!.by;
+    expect(by.length).toBeLessThan(9000);
+    expect(by).toMatch(/9000 characters, truncated/);
+  });
 });

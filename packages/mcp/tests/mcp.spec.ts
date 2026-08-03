@@ -208,6 +208,29 @@ describe("MCP read tools — path confinement (9.9)", () => {
     expect(manifest.description).toMatch(/9000 characters, truncated/);
   });
 
+  it("bounds a field the schema gained later, not only the two it was written for", () => {
+    // `superseded-by` (task 8.5) went out of here unbounded, because this
+    // bounded a list of field names rather than the manifest. A security review
+    // found it. The bound lives in `boundedManifest` now, so this pins the
+    // property — every free-text field is cut — rather than a third name.
+    writeFileSync(
+      join(root, "raw", "notes.txt", "manifest.json"),
+      JSON.stringify({
+        id: "notes.txt",
+        title: "t",
+        kind: "file",
+        original: "notes.txt",
+        status: "superseded",
+        "superseded-by": "s".repeat(9000),
+      }),
+      "utf8",
+    );
+
+    const manifest = listSourcesState(root)[0]!.manifest;
+    expect(manifest["superseded-by"]!.length).toBeLessThan(9000);
+    expect(manifest["superseded-by"]).toMatch(/9000 characters, truncated/);
+  });
+
   it("serves a filed source's own text, not a stray file at raw/<id>/ (8.3)", () => {
     // The spoof this closes. `readManifest` resolved through the walk while
     // `sourceTextPath` joined `raw/<id>` — so a repository could ship a bare

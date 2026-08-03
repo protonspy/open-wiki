@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { boundedText } from "../format.js";
-import { readManifestAt, requireSourceDir, type SourceKind } from "./manifest.js";
+import { boundedManifest, readManifestAt, requireSourceDir, type SourceKind } from "./manifest.js";
 import { listSourceRefs } from "./locate.js";
 
 /**
@@ -124,7 +123,11 @@ export function sourceState(
   // it, resolving here *and* inside `readManifest` meant two full walks of
   // `raw/` per source, so listing N sources walked the tree 2N+1 times.
   const dir = resolvedDir ?? requireSourceDir(projectRoot, id);
-  const manifest = readManifestAt(dir, id);
+  // Bounded as a whole rather than field by field. Three successive security
+  // reviews found a view that bounded the fields it knew and missed one added
+  // later — the last of them `superseded-by`, at task 8.5 — so the rule lives
+  // in `boundedManifest` and a field added there reaches every view at once.
+  const manifest = boundedManifest(readManifestAt(dir, id));
   const textReady = existsSync(join(dir, "text.md"));
 
   const journal = readJournal(dir);
@@ -148,22 +151,18 @@ export function sourceState(
   // `readManifest` directly and never build a `SourceState`.
   const base = {
     id,
-    title: boundedText(manifest.title),
+    title: manifest.title,
     kind: manifest.kind,
     // Carried on every stage, because the question it answers — has anybody
     // finished with this — is orthogonal to how far the pipeline got.
     ...(manifest.processed !== undefined ? { processed: manifest.processed } : {}),
-    ...(manifest.description !== undefined
-      ? { description: boundedText(manifest.description) }
-      : {}),
+    ...(manifest.description !== undefined ? { description: manifest.description } : {}),
     // Carried on every stage, like `processed`: being replaced says nothing
     // about how far the pipeline got with the bytes that are still there.
     ...(manifest.status === "superseded"
       ? {
           superseded: {
-            // Bounded for the same reason the title is: this reaches a screen
-            // and an agent's output out of a file that arrived with a clone.
-            by: boundedText(manifest["superseded-by"] ?? ""),
+            by: manifest["superseded-by"] ?? "",
             ...(manifest.superseded !== undefined ? { date: manifest.superseded } : {}),
           },
         }

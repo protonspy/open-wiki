@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { listSourceRefs, sourceDirOf } from "./locate.js";
 import { isDate } from "../dates.js";
+import { boundedText } from "../format.js";
 import { assertWithin, OutsideProjectError } from "../paths.js";
 
 /**
@@ -201,6 +202,41 @@ export function parseManifest(id: string, text: string): SourceManifest {
 }
 
 /**
+ * A manifest with **every** free-text field cut to what a reader's context can
+ * hold. A rendering: the stored file is untouched.
+ *
+ * `parseManifest` deliberately keeps whatever length it finds, because
+ * truncating on the read path would destroy somebody's data on a file that
+ * arrived with a `git clone` and that nobody asked to write. Bounding therefore
+ * belongs to each *view* — and this is that rule in one place rather than in
+ * each view.
+ *
+ * **It is one function because the per-caller version has now failed three
+ * times.** `boundedText` went into `ow source list`, and a security review
+ * found the MCP tools; a second pass found three desktop call sites; task 8.5
+ * added `superseded-by` and a third review found that `ow graph superseded` and
+ * the MCP tools printed the new field unbounded — because each of those callers
+ * bounds a *list of fields it knows*, and a field added later is a field the
+ * list does not have. Adding one here reaches every view at once, which is what
+ * the copies could never do.
+ */
+export function boundedManifest(manifest: SourceManifest): SourceManifest {
+  return {
+    ...manifest,
+    title: boundedText(manifest.title),
+    ...(manifest.description !== undefined
+      ? { description: boundedText(manifest.description) }
+      : {}),
+    ...(manifest["superseded-by"] !== undefined
+      ? { "superseded-by": boundedText(manifest["superseded-by"]) }
+      : {}),
+    // `superseded` and `processed` are not bounded because they are not free
+    // text: `parseManifest` drops either unless it is a `YYYY-MM-DD` date, so
+    // there is no length for a hostile manifest to choose.
+  };
+}
+
+/**
  * The confined path of a source's manifest; throws if the id escapes `raw/`.
  *
  * An id is not a path. It reaches here straight out of a page's prose — a
@@ -231,8 +267,21 @@ export function parseManifest(id: string, text: string): SourceManifest {
  * walk while its directory is nonetheless the right one.
  */
 export function resolvedSourceDir(projectRoot: string, id: string): string {
+  return confine(projectRoot, sourceDirOf(projectRoot, id), id);
+}
+
+/**
+ * The rule itself, over a directory the caller has already looked up: what the
+ * walk found, or `raw/<id>` when it found nothing, confined against `raw/`
+ * either way.
+ *
+ * Separate from `resolvedSourceDir` only so `requireSourceDir` can walk once
+ * and still apply the identical rule. Nothing outside this module needs it:
+ * a caller that has not walked wants `resolvedSourceDir`.
+ */
+function confine(projectRoot: string, found: string | undefined, id: string): string {
   const rawDir = join(projectRoot, "raw");
-  return assertWithin(rawDir, sourceDirOf(projectRoot, id) ?? join(rawDir, id));
+  return assertWithin(rawDir, found ?? join(rawDir, id));
 }
 
 /**
@@ -263,11 +312,17 @@ export function sourceDir(projectRoot: string, id: string): string | undefined {
  * from `raw/<id>`, which stopped being where a source necessarily lives at 8.3.
  */
 export function requireSourceDir(projectRoot: string, id: string): string {
-  // Through the one rule, so an escaping id raises `OutsideProjectError` before
-  // this turns a miss into the softer `MissingSourceError` — they are different
-  // failures and the callers tell them apart.
-  const resolved = resolvedSourceDir(projectRoot, id);
-  if (sourceDirOf(projectRoot, id) === undefined) throw new MissingSourceError(id);
+  // One walk, not two. Asking `resolvedSourceDir` and then `sourceDirOf`
+  // separately walked `raw/` twice on every manifest write — the regression
+  // this branch fixed three times elsewhere and reintroduced here. Both now go
+  // through `confine`, so the rule is still written once.
+  //
+  // The confinement is unchanged and still comes first: an escaping id raises
+  // `OutsideProjectError` before a miss becomes the softer `MissingSourceError`
+  // — different failures, and the callers tell them apart.
+  const found = sourceDirOf(projectRoot, id);
+  const resolved = confine(projectRoot, found, id);
+  if (found === undefined) throw new MissingSourceError(id);
   return resolved;
 }
 

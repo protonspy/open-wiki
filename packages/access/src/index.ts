@@ -88,6 +88,7 @@ export {
   readManifest,
   readManifestAt,
   parseManifest,
+  boundedManifest,
   listSources,
   sourceExists,
   sourceDir,

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   assertWithin,
-  boundedText,
+  boundedManifest,
   resolvedSourceDir,
   OutsideProjectError,
   listEntityPages,
@@ -91,32 +91,28 @@ export function readPageWhole(projectRoot: string, slug: string): WholePage {
 /**
  * Every source under `raw/` with its manifest and a flag for `text.md`.
  *
- * **The manifest's free text is bounded before it leaves.** `title` and
- * `description` come out of a `manifest.json` that arrived with a `git clone`,
- * and this tool exists so an agent in *another* project can consult this one —
- * so a multi-megabyte description would be one source crowding every other out
- * of a reader who never even opened this repository. `ow source list` bounds
- * the same two fields for the same reason; the stored value is untouched by
- * either.
+ * **The manifest's free text is bounded before it leaves**, and by
+ * `boundedManifest` rather than by a list of fields kept here. Every field of
+ * it comes out of a `manifest.json` that arrived with a `git clone`, and this
+ * tool exists so an agent in *another* project can consult this one — so a
+ * multi-megabyte value would be one source crowding every other out of a reader
+ * who never even opened this repository, over HTTP, with no way to inspect the
+ * file first.
+ *
+ * This bounded `title` and `description` by name until task 8.5 added
+ * `superseded-by` and a security review found it going out unbounded here. That
+ * is what a per-caller list of fields costs: it is correct on the day it is
+ * written and silently incomplete the next time the schema grows. The rule
+ * lives in one function now; the stored value is untouched by any of it.
  */
 export function listSourcesState(projectRoot: string): SourceState[] {
   return listSources(projectRoot).map((id) => {
     const manifest = readManifest(projectRoot, id);
     const text = sourceTextPath(projectRoot, id);
-    return { id, manifest: bounded(manifest), hasText: existsSync(text) };
+    return { id, manifest: boundedManifest(manifest), hasText: existsSync(text) };
   });
 }
 
-/** A manifest with its free text cut to what a reader's context can hold. */
-function bounded(manifest: SourceManifest): SourceManifest {
-  return {
-    ...manifest,
-    title: boundedText(manifest.title),
-    ...(manifest.description !== undefined
-      ? { description: boundedText(manifest.description) }
-      : {}),
-  };
-}
 
 /** A source's `text.md` — the normalised text the citations point into. */
 export function readSourceText(projectRoot: string, id: string): string {
