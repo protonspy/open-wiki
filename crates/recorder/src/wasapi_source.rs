@@ -34,6 +34,15 @@ const BITS: usize = 32;
 /// that stopping is prompt.
 const BUFFER_DURATION_HNS: i64 = 5_000_000;
 
+/// How long a poll waits for the device to say it has something.
+///
+/// **This is also what paces the capture thread.** That thread has no sleep of
+/// its own on the success path — it calls `poll` in a loop and relies on this
+/// wait to block. Any path through `poll` that returns without waiting has to
+/// wait for itself instead, or the thread spins a core for the rest of the
+/// recording.
+const EVENT_WAIT_MS: u32 = 20;
+
 fn err(context: &str, e: impl std::fmt::Display) -> CaptureError {
     CaptureError(format!("{context}: {e}"))
 }
@@ -237,7 +246,7 @@ impl WasapiSource {
             }
             // The default moved and this track follows it (R2.1).
             Action::MoveTo(id) => {
-                let (device, name, id) = open_by_id(&id)?;
+                let (device, name, id) = open_by_id(self.which, &id)?;
                 (device, name, id, true)
             }
         };
@@ -279,8 +288,8 @@ impl WasapiSource {
 ///
 /// `Default` asks Windows, which is what every caller did before there was a
 /// choice. `Pinned` is checked against the enumeration first, so a missing
-/// endpoint is refused by name (R2.4) rather than surfacing as whatever
-/// `GetDevice` says about an identifier it does not know.
+/// endpoint is refused by name (R2.4) rather than surfacing as whatever the
+/// enumerator says about an identifier it does not know.
 fn open_endpoint(
     which: Which,
     endpoint: &Endpoint,
@@ -290,23 +299,56 @@ fn open_endpoint(
     };
     let devices = list_devices()?;
     let chosen = resolve(endpoint, &devices, which).map_err(CaptureError)?;
-    let enumerator = DeviceEnumerator::new().map_err(|e| err("could not enumerate devices", e))?;
-    let device = enumerator
-        .get_device(id)
-        .map_err(|e| err(&format!("could not open the endpoint {id}"), e))?;
-    Ok((device, chosen.name.clone(), chosen.id.clone()))
+    let (device, name, _) = open_by_id(which, id)?;
+    Ok((device, name, chosen.id.clone()))
 }
 
-/// One endpoint, by its identifier.
-fn open_by_id(id: &str) -> Result<(Device, String, String), CaptureError> {
+/// One endpoint of this direction, by its identifier.
+///
+/// **Deliberately not `DeviceEnumerator::get_device`.** That method is unsound
+/// in `wasapi` 0.23.0: it writes
+///
+/// ```text
+/// let w_id = PCWSTR::from_raw(HSTRING::from(device_id).as_ptr());
+/// ```
+///
+/// where the `HSTRING` is an unnamed temporary, so it is dropped — and its
+/// heap buffer freed — at the end of that `let` statement, before `w_id` is
+/// handed to `GetDevice` on the next line. It is a use-after-free on every
+/// call, and the outcome is undefined rather than merely a panic: an access
+/// violation that takes the sidecar down mid-recording, or a corrupted
+/// identifier that opens a *different* endpoint, which is the one failure this
+/// whole spec exists to prevent.
+///
+/// So the identifier is matched against the enumeration instead, the same way
+/// `list_devices` reads endpoints. It costs one collection walk on open and on
+/// reopen, neither of which is hot.
+fn open_by_id(which: Which, id: &str) -> Result<(Device, String, String), CaptureError> {
     let enumerator = DeviceEnumerator::new().map_err(|e| err("could not enumerate devices", e))?;
-    let device = enumerator
-        .get_device(id)
-        .map_err(|e| err(&format!("could not open the endpoint {id}"), e))?;
-    let name = device
-        .get_friendlyname()
-        .unwrap_or_else(|_| "unknown".into());
-    Ok((device, name, id.to_string()))
+    let collection = enumerator
+        .get_device_collection(&device_direction(which))
+        .map_err(|e| err("could not list devices", e))?;
+    let count = collection
+        .get_nbr_devices()
+        .map_err(|e| err("could not count devices", e))?;
+
+    for index in 0..count {
+        let Ok(device) = collection.get_device_at_index(index) else {
+            continue; // one unreadable device is not a reason to find none
+        };
+        let Ok(found) = device.get_id() else { continue };
+        if found != id {
+            continue;
+        }
+        let name = device
+            .get_friendlyname()
+            .unwrap_or_else(|_| "unknown".into());
+        return Ok((device, name, found));
+    }
+    Err(CaptureError(format!(
+        "the {} endpoint {id} is not on this machine",
+        which.track()
+    )))
 }
 
 fn default_device(which: Which) -> Result<(Device, String, String), CaptureError> {
@@ -415,7 +457,14 @@ impl CaptureSource for WasapiSource {
         // It is terminal for the session. The endpoint coming back is not
         // something the spec decided about, and re-adopting it silently would
         // leave a hole in the track that nothing reports.
+        //
+        // The wait is not optional. This branch returns without reaching
+        // `wait_for_event` below, which is the only thing pacing the capture
+        // thread — without it a lost track spins a core for the rest of the
+        // meeting, which is the same failure this branch exists to avoid
+        // reaching by a COM enumeration, arrived at from the other side.
         if self.lost {
+            std::thread::sleep(std::time::Duration::from_millis(u64::from(EVENT_WAIT_MS)));
             return Ok(Poll::DeviceLost {
                 device: self.device_name.clone(),
             });
@@ -441,7 +490,7 @@ impl CaptureSource for WasapiSource {
         // Wait briefly for the device to say it has something. A timeout is
         // not an error: loopback signals nothing at all while the machine is
         // silent, which is the normal state for most of a meeting.
-        if stream.event.wait_for_event(20).is_err() {
+        if stream.event.wait_for_event(EVENT_WAIT_MS).is_err() {
             // The stream may have died with the device. Check before giving up.
             if self.endpoint_may_have_moved() {
                 // A failure here is not fatal: `needs_reopen` makes the next

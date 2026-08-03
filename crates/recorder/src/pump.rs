@@ -50,6 +50,12 @@ pub struct ThreadedSource {
 /// needs and still bounded.
 const QUEUE_DEPTH: usize = 2048;
 
+/// How long the capture thread waits after a poll that produced no audio.
+///
+/// Short enough to be invisible against a 500 ms engine buffer, long enough
+/// that a source answering instantly cannot spin a core.
+const IDLE_PAUSE_MS: u64 = 2;
+
 enum Command {
     Start,
     Stop,
@@ -151,6 +157,8 @@ impl ThreadedSource {
                     // of this thread.
                     Ok(poll) => {
                         thread_lost.store(source.discontinuities(), Ordering::Relaxed);
+                        let delivered =
+                            matches!(&poll, Poll::Frames { samples, .. } if !samples.is_empty());
                         // `try_send`, never `send`: a full queue must not block
                         // the drain, because a blocked drain is exactly how
                         // WASAPI comes to overwrite frames nobody collected.
@@ -167,6 +175,22 @@ impl ThreadedSource {
                                 source.stop();
                                 return;
                             }
+                        }
+                        // Nothing arrived, so pause before asking again.
+                        //
+                        // This loop has no pacing of its own on the path that
+                        // succeeds: a real device blocks inside `poll` waiting
+                        // on its event handle, and that wait *is* the cadence.
+                        // A source that answers instantly and has nothing to
+                        // give — a track whose endpoint was lost, above all —
+                        // would otherwise spin this thread at full tilt for the
+                        // rest of the recording.
+                        //
+                        // Only when nothing arrived. While audio is flowing the
+                        // drain stays prompt, which is the whole point of this
+                        // thread existing.
+                        if !delivered {
+                            thread::sleep(std::time::Duration::from_millis(IDLE_PAUSE_MS));
                         }
                     }
                     Err(_) => {
