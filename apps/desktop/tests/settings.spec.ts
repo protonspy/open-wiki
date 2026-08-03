@@ -14,6 +14,7 @@ import {
   currentLanguage,
   defaultProjectsDir,
   deriveProjectName,
+  discoverProjects,
   forgetProject,
   knownProjects,
   InvalidProjectNameError,
@@ -540,6 +541,14 @@ describe("the launcher's two channels (R2.2, R2.4, R3.1, R3.3)", () => {
     expect(await dispatch(api, CHANNELS.chooseDirectory, [])).toBeNull();
   });
 
+  it("answers the list with the discovery already done (R2.6)", async () => {
+    // Its own channel rather than folded into `launcher:projects`: that one is
+    // a read, this one writes to the registry, and a read that quietly writes
+    // is a thing nobody expects twice.
+    const api = createApi({ projectRoot: null });
+    expect(await dispatch(api, CHANNELS.discoverProjects, [])).toEqual(knownProjects());
+  });
+
   it("answers where a new project is proposed (R3.4)", async () => {
     // Over a channel because the home directory is the main process's to know:
     // a sandboxed renderer has no `os` and must not guess one.
@@ -600,6 +609,97 @@ describe("defaultProjectsDir (R3.4)", () => {
     const answer = defaultProjectsDir();
     expect(isAbsolute(answer)).toBe(true);
     expect(answer.endsWith("WikiProjects")).toBe(true);
+  });
+});
+
+describe("discoverProjects (R2.6)", () => {
+  /** A default location holding these projects. */
+  function defaultLocation(...names: string[]): string {
+    const root = mkdtempSync(join(tmpdir(), "ow-default-"));
+    for (const name of names) {
+      for (const part of ["raw", "wiki", ".state"]) {
+        mkdirSync(join(root, name, part), { recursive: true });
+      }
+    }
+    return root;
+  }
+
+  it("takes on the projects already sitting there", () => {
+    const root = defaultLocation("fenix", "mateus");
+    try {
+      const listed = discoverProjects(appData, root);
+      expect(listed.map((p) => p.name).sort()).toEqual(["fenix", "mateus"]);
+      // In the registry, which is what makes it survive the window closing.
+      expect(
+        knownProjects(appData)
+          .map((p) => p.name)
+          .sort(),
+      ).toEqual(["fenix", "mateus"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips a directory that is not a project", () => {
+    const root = defaultLocation("fenix");
+    mkdirSync(join(root, "holiday-photos"), { recursive: true });
+    writeFileSync(join(root, "notes.txt"), "x");
+    try {
+      expect(discoverProjects(appData, root).map((p) => p.name)).toEqual(["fenix"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds nothing the second time", () => {
+    // Through `adoptProject`, so R2.5's dedupe by path is the one already
+    // tested rather than a second copy that drifts.
+    const root = defaultLocation("fenix");
+    try {
+      discoverProjects(appData, root);
+      expect(discoverProjects(appData, root)).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the projects that live somewhere else", () => {
+    // The registry is the record, not the folder. A project outside the default
+    // location is not lesser for being outside it, and must never be dropped
+    // for failing to turn up in a directory listing.
+    const elsewhere = mkdtempSync(join(tmpdir(), "ow-elsewhere-"));
+    for (const part of ["raw", "wiki", ".state"]) {
+      mkdirSync(join(elsewhere, part), { recursive: true });
+    }
+    const root = defaultLocation("fenix");
+    try {
+      adoptProject(elsewhere, appData);
+      expect(discoverProjects(appData, root)).toHaveLength(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it("answers the list it already has when the location is not there", () => {
+    // The ordinary case on a machine that has never made a project this way. A
+    // launcher refusing to render over a missing folder would be absurd.
+    expect(discoverProjects(appData, join(tmpdir(), "ow-no-such-default"))).toEqual([]);
+  });
+
+  it("does not descend past the location's own children", () => {
+    // A project nested deeper is found with Open project…. Walking a home
+    // directory to depth is how a launcher becomes slow on the one machine
+    // nobody can reproduce.
+    const root = mkdtempSync(join(tmpdir(), "ow-default-"));
+    for (const part of ["raw", "wiki", ".state"]) {
+      mkdirSync(join(root, "outer", "inner", part), { recursive: true });
+    }
+    try {
+      expect(discoverProjects(appData, root)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

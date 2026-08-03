@@ -60,6 +60,27 @@ printing success is not a trade R1.1 is worth.
   and offer to make one there, carrying the chosen directory into that form.
 - **R2.5** If a chosen directory is already in the registry, then the application shall open
   it rather than adding a second entry for it.
+- **R2.6** (ADDED) When the launcher opens, the application shall register every project sitting
+  directly inside the default location that it does not already know.
+
+R2.6 narrows R3.4's "nothing enumerates that location", which was written one
+change earlier and is no longer true. What it does **not** narrow is
+`adr:0013-the-project-directory-is-the-unit`, and the boundary is worth stating
+because the next step past it is the container that ADR removed:
+
+- **The registry is still the record.** R2.6 writes into it and reads nothing
+  from the folder afterwards. A project moved out of the default location keeps
+  working, keeps its entry, and is not forgotten for having left.
+- **Nothing has to live there.** A project opened by R2.1 from anywhere else is
+  listed on identical terms, and R3.5 exists so that saying where overrides the
+  default.
+- **The folder is a place to look, not a source of truth.** It is read to fill
+  the registry, once, when the launcher opens — never consulted to answer what a
+  project is or where one lives.
+
+Cross that boundary — the list rendered from the directory, a project defined by
+sitting in it, entries dropped for leaving it — and it is `adr:0002` again, which
+would need an ADR that says so.
 
 R2.1 was modified after the first build of it shipped with exactly this hole.
 `Launcher` shows the four-step first run as soon as the registry is empty, and
@@ -86,17 +107,24 @@ reason it can exist at all.
 container and no directory of projects owned by the application", reversing
 `adr:0002` — and typing an absolute path for every project is the friction that
 decision left behind. A prefilled default removes the friction without bringing
-the container back, provided it stays a _default_: nothing enumerates that
-location, nothing about a project changes because it sits there, and a project
-anywhere else is reached by R2.1 on identical terms. R2.1's **Open project…**
-is what makes this safe now and did not exist when `adr:0013` was written.
+the container back, provided it stays a _default_: nothing about a project
+changes because it sits there, and a project anywhere else is reached by R2.1 on
+identical terms. R2.1's **Open project…** is what makes this safe now and did
+not exist when `adr:0013` was written.
+
+("Nothing enumerates that location" stood here until R2.6, which reads it to
+fill the registry. The rest of the paragraph is unchanged and is what still
+keeps this a default rather than a container.)
 
 ## Out of scope
 
-- Managing the default location: creating it up front, listing what is in it,
-  moving projects into it, or noticing projects that appear there. Any of those
-  is the container `adr:0013` removed. The directory comes into existence
-  because a project was scaffolded inside it, and that is all.
+- Managing the default location: creating it before a project needs it, moving
+  projects into it, rendering the launcher's list from it, or dropping an entry
+  because its project left. Those are the container `adr:0013` removed; R2.6
+  reads the directory to fill the registry and stops there.
+- Looking below the default location's own children. A project nested deeper is
+  found by **Open project…**, and walking a home directory to depth is how a
+  launcher becomes slow on the one machine nobody can reproduce.
 - Making the default location configurable. It is derived from the user's home
   directory; somewhere else is what **Choose…** and **Open project…** are for.
 - Opening a project into the window that asked. Choosing a project opens a window

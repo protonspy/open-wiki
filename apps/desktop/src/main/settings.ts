@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import {
@@ -384,6 +384,57 @@ export function knownProjects(appDataDir?: string): KnownProject[] {
       return { name, path: "", present: false };
     }
   });
+}
+
+/**
+ * Take on whatever is already sitting in the default location
+ * (`specs/opening-an-existing-project`, R2.6).
+ *
+ * A project made on this machine before the registry was moved, restored from a
+ * backup, or cloned straight into `WikiProjects` is on disk and unknown. Making
+ * the user point at each one through **Open project…** is asking them to tell
+ * the application something it is standing on top of.
+ *
+ * **The registry stays the record.** This reads the directory to fill it and
+ * never afterwards: nothing is dropped for leaving the folder, nothing is
+ * listed from the folder, and a project outside it is not lesser for being
+ * outside it. That boundary is the whole of why this is not the container
+ * `adr:0013-the-project-directory-is-the-unit` removed, and R2.6 in the
+ * requirements says where crossing it would begin.
+ *
+ * **Direct children only.** A project nested deeper is found with
+ * **Open project…**; walking a home directory to depth is how a launcher
+ * becomes slow on the one machine nobody can reproduce.
+ *
+ * Every failure is survivable and silent by design — no folder yet, a
+ * permission error, an entry that vanished between the listing and the read.
+ * The answer to "what is here" is then "nothing", which is exactly right, and
+ * refusing to show the launcher over it would be absurd.
+ */
+export function discoverProjects(appDataDir?: string, root = defaultProjectsDir()): KnownProject[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(root, entry.name));
+  } catch {
+    return knownProjects(appDataDir);
+  }
+
+  for (const directory of entries) {
+    try {
+      // Through `adoptProject`, so the dedupe by path (R2.5) and the name
+      // derivation (R2.3) are the ones already tested rather than a second
+      // copy that drifts. A directory that is not a project answers
+      // `not-a-project` and nothing is written.
+      adoptProject(directory, appDataDir);
+    } catch {
+      // One unnameable or unreadable directory does not stop the rest. It is
+      // still openable by hand, which is what `UnnameableProjectError` says.
+      continue;
+    }
+  }
+  return knownProjects(appDataDir);
 }
 
 /** The registry's own rule, applied before anything is written. */

@@ -53,9 +53,27 @@ or arriving from R2.4 with a directory already picked all set `touched`, and
 `touched` is never unset — including when the box is cleared, because a field
 somebody emptied is not an invitation to refill it.
 
+**Taking on what is already there** (R2.6) is `discoverProjects` in
+`settings.ts`, reached by the launcher's own load through `launcher:discover` —
+its own channel, because `launcher:projects` is a read, this one writes to the
+registry, and a read that quietly writes is a thing nobody expects twice. It
+lists the default location's direct children and hands each to `adoptProject`,
+so the dedupe by path (R2.5) and the name derivation (R2.3) are the ones already
+tested rather than a second copy that drifts; a child that is not a project
+answers `not-a-project` and nothing is written. Every failure is survivable and
+silent — no folder yet, a permission error, an entry that vanished between the
+listing and the read — because the honest answer in each case is "nothing is
+here", and a launcher refusing to render over a missing directory would be
+absurd.
+
+What it deliberately does not do is consult that folder for anything else. The
+registry is what the list renders, entries outside the default location are
+untouched, and nothing is dropped for having left. R2.6 in `requirements.md`
+states where crossing that line would begin.
+
 ## Boundaries and contracts
 
-Serves R2.1, R2.4, R3.1, R3.3, R3.4.
+Serves R2.1, R2.4, R2.6, R3.1, R3.3, R3.4.
 
 The launcher needs the system's directory chooser, which lives in the main
 process, and it needs a directory turned into an open window. Those are two acts
@@ -67,6 +85,7 @@ already takes a directory.
 | `launcher:choose-directory`  | the directory chosen, or `null` when cancelled (R3.1, R3.3)                        |
 | `launcher:open-directory`    | `{ kind: "opened", name }`, or `{ kind: "not-a-project", directory }` (R2.2, R2.4) |
 | `launcher:default-directory` | where a new project is proposed — a path, created by nothing (R3.4)                |
+| `launcher:discover`          | the list, with the default location's projects taken on first (R2.6)               |
 
 `showOpenDialog` is injected into `createApi` as `chooseDirectory`, exactly the
 way `saveDialog` and `openWindow` already are: `dialog` lives in `index.ts` with

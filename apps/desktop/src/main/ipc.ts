@@ -50,6 +50,7 @@ import {
   adoptProject,
   createProject,
   defaultProjectsDir,
+  discoverProjects,
   credentialState,
   parseCredentialInput,
   currentLanguage,
@@ -310,6 +311,8 @@ export interface DesktopApi {
   openDirectory(directory: string): AdoptOutcome;
   /** Where a new project is proposed — a suggestion, never a container (R3.4). */
   defaultDirectory(): string;
+  /** The list, having first taken on what sits in the default location (R2.6). */
+  discoverProjects(): KnownProject[];
   saveCredentialFor(name: string, input: unknown): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
 
@@ -495,6 +498,7 @@ export function createApi(deps: Deps): DesktopApi {
       return outcome;
     },
     defaultDirectory: () => defaultProjectsDir(),
+    discoverProjects: () => discoverProjects(),
     saveCredentialFor: async (name, input) => {
       const parsed = parseCredentialInput(input);
       if (!parsed) return { ok: false, reason: "that is not a provider this application knows" };
@@ -633,6 +637,8 @@ export async function dispatch(
       return api.chooseDirectory();
     case CHANNELS.defaultDirectory:
       return api.defaultDirectory();
+    case CHANNELS.discoverProjects:
+      return api.discoverProjects();
     case CHANNELS.openDirectory:
       return api.openDirectory(String(args[0] ?? ""));
     case CHANNELS.saveCredentialFor:
