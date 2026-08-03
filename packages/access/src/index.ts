@@ -92,6 +92,15 @@ export { registerSource, type RegisterInput } from "./sources/register.js";
 export { deriveId, slugify, isIdTaken, EmptyNameError } from "./sources/id.js";
 export { recordingId, baseId, type RecordingIdInput } from "./sources/recording-id.js";
 export {
+  exportProject,
+  surveyProject,
+  defaultExportPath,
+  ExportDestinationError,
+  type ExportOptions,
+  type ExportResult,
+} from "./export/zip.js";
+export { humanBytes } from "./format.js";
+export {
   sourceState,
   listSourceStates,
   type SourceState,

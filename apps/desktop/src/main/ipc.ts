@@ -58,6 +58,13 @@ import {
 } from "./settings.js";
 import type { AgentPrefs } from "./agent/agent-prefs.js";
 import { runTranscription, type TranscribeOutcome } from "./transcribe-run.js";
+import {
+  exportSurvey as surveyExport,
+  runExport as runProjectExport,
+  type ExportOutcome,
+  type SaveDialog,
+} from "./export.js";
+import type { ExportResult } from "@open-wiki/access";
 import type { RecorderSession, RecorderStatus } from "./recorder.js";
 import {
   findings,
@@ -121,6 +128,14 @@ export interface Deps {
    * answer for a build where nothing can open a window.
    */
   openWindow?: (projectRoot: string) => void;
+  /**
+   * The system save dialog, for the export of `specs/wiki-export` (R4.3).
+   *
+   * Injected for the same reason `openWindow` is: `dialog` lives with the
+   * `BrowserWindow` in `index.ts`, and CI has no display. Absent in a test, and
+   * absent is also the honest answer for a process with no window to ask from.
+   */
+  saveDialog?: SaveDialog;
   /** Injected so a test does not depend on today's date. */
   now?: () => Date;
 }
@@ -217,6 +232,11 @@ export interface DesktopApi {
   openProject(name: string): void;
   saveCredentialFor(name: string, input: unknown): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
+
+  /** What an export would carry, for the sentence before one is offered (R2.2). */
+  exportSurvey(): ExportResult;
+  /** Ask where, then write it (R4.3). */
+  exportRun(): Promise<ExportOutcome>;
 
   /** The embedded agent — drive a run (R1.2, R5.2–R5.5, R7.2). */
   chatSend(input: ChatSendInput): ChatRunStarted;
@@ -342,6 +362,14 @@ export function createApi(deps: Deps): DesktopApi {
     },
     transcribe: (id, restart) => runTranscription(root(), id, { restart }),
 
+    exportSurvey: () => surveyExport(root()),
+    // The dialog comes from `deps`, never from `electron` here: CI has no
+    // display, and a window is not what decides whether the archive is right.
+    async exportRun() {
+      if (!deps.saveDialog) throw new Error("exporting needs a window to ask from");
+      return runProjectExport(root(), savePageToday(), deps.saveDialog);
+    },
+
     chatSend: (input) => chatControl(deps).send(input),
     chatResume: (input) => chatControl(deps).resume(input),
     chatCancel: (input) => chatControl(deps).cancel(input),
@@ -447,6 +475,15 @@ export async function dispatch(
       return api.saveCredentialFor(String(args[0] ?? ""), args[1]);
     case CHANNELS.transcribe:
       return api.transcribe(String(args[0] ?? ""), args[1] === true);
+
+    // Neither takes an argument. Where the archive goes is the save dialog's
+    // answer and never the renderer's: a path crossing the bridge would be a
+    // compromised renderer naming anywhere the user can write, which is the
+    // same correction `record:start` already took.
+    case CHANNELS.exportSurvey:
+      return api.exportSurvey();
+    case CHANNELS.exportRun:
+      return api.exportRun();
 
     case CHANNELS.drop:
       // The renderer hands over paths Chromium gave it for a drop. Anything

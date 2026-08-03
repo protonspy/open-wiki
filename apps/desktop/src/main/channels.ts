@@ -58,6 +58,10 @@ export const CHANNELS = {
   saveCredentialFor: "launcher:credential",
   transcribe: "sources:transcribe",
 
+  /** Taking the project away as one zip (`specs/wiki-export`, R4.3). */
+  exportSurvey: "export:survey",
+  exportRun: "export:run",
+
   // The embedded agent (specs/embedded-agent): the renderer drives a run and
   // receives its stream over the push channel — the model and the credential
   // stay in the main process (R2.1, R2.7).

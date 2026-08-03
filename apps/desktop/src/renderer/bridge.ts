@@ -1,4 +1,11 @@
-import type { Finding, Language, Operation, ProjectSettings } from "@open-wiki/access";
+import type {
+  ExportResult,
+  Finding,
+  Language,
+  Operation,
+  ProjectSettings,
+} from "@open-wiki/access";
+import type { ExportOutcome } from "../main/export.js";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type {
   CreateInput,
@@ -88,6 +95,10 @@ export interface OwBridge {
   /** 6.3 — the first run configures the project it just made. */
   saveCredentialFor(name: string, input: SaveCredentialInput): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
+
+  /** `specs/wiki-export` — what an export would carry, and the export itself. */
+  exportSurvey(): Promise<ExportResult>;
+  exportRun(): Promise<ExportOutcome>;
 
   /** The embedded agent — drive a run (specs/embedded-agent, R1.2, R5.2–R5.5). */
   chatSend(input: ChatSendInput): Promise<ChatRunStarted>;
