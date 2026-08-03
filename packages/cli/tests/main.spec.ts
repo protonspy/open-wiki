@@ -361,6 +361,34 @@ describe("ow consult", () => {
     expect(await main(["consult", "add"], root)).toBe(2);
     expect(stderr()).toContain("needs a project name");
   });
+
+  it("reads the project's harnesses and writes each one's file (4.2)", async () => {
+    // The wiring `main.ts` added — `readSettings(...).harnesses` reaching
+    // `runConsultAdd` — which the unit tests exercise only by being handed the
+    // list directly. A review pointed out this integration had no test of its
+    // own, which is exactly where a plumbing mistake hides.
+    writeFileSync(
+      join(root, "ow.json"),
+      JSON.stringify({ language: "en", deleteWavAfterTranscription: true, harnesses: ["codex"] }),
+      "utf8",
+    );
+    expect(await main(["consult", "add", "fenix"], root)).toBe(0);
+    expect(existsSync(join(root, ".codex", "config.toml"))).toBe(true);
+    expect(existsSync(join(root, ".mcp.json"))).toBe(false);
+    expect(stdout()).toContain("config.toml");
+  });
+
+  it("turns a refused config into a sentence on stderr, not a stack", async () => {
+    writeFileSync(join(root, ".mcp.json"), "{ not json", "utf8");
+    expect(await main(["consult", "add", "fenix"], root)).toBe(2);
+    expect(stderr()).toContain("could not be parsed");
+    expect(stderr()).not.toContain("    at ");
+  });
+
+  it("refuses a name that is not a project name", async () => {
+    expect(await main(["consult", "add", "../elsewhere"], root)).toBe(2);
+    expect(stderr()).toContain("invalid project name");
+  });
 });
 
 describe("ow gate", () => {

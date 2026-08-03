@@ -28,6 +28,7 @@ export {
   UnknownNameError,
   MovedProjectError,
   InvalidNameError,
+  isValidProjectName,
 } from "./registry.js";
 export {
   snapshot,

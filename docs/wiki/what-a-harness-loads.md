@@ -145,8 +145,18 @@ other direction.
 — `packages/core/src/config/plugin/skill.ts`, `packages/core/src/skill.ts`
 
 **MCP — an `mcp` key inside that same config**, each server named and individually
-`enabled`.
-— `packages/web/src/content/docs/mcp-servers.mdx`, `packages/web/src/content/docs/config.mdx`
+`enabled`. **A local server is `{ type: "local", command: [...] }`** — a discriminated
+union whose `command` carries the *whole argv* as an array, with **no `args` field at
+all**, and whose v1→v2 migration drops an entry carrying no `type`.
+— `packages/core/src/v1/config/mcp.ts`, `packages/opencode/src/mcp/index.ts`,
+`packages/web/src/content/docs/mcp-servers.mdx`
+
+That last sentence is the one that cost something. This page recorded the file and the
+key and stopped there, and the code then wrote Claude Code's `{ command, args }` into all
+three — a well-formed file, in the right place, that opencode ignores. **The file and the
+key are not the whole of "the shape it reads".** Codex's stdio transport happens to be a
+`command: String` beside `args: Vec<String>` (`codex-rs/config/src/mcp_types.rs`), so only
+opencode differed — which is exactly how one harness of three comes to be forgotten.
 
 **Interception — a plugin, and the hook that can refuse is not the one you would guess.**
 `tool.execute.before(input, output)` returns `Promise<void>` and its `output` carries only
