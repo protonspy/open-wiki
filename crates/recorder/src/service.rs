@@ -1,10 +1,27 @@
 use std::path::{Path, PathBuf};
 
-use crate::capture::CaptureSource;
+use crate::capture::{CaptureSource, Which};
 use crate::clock::Clock;
+use crate::endpoint::Endpoint;
 use crate::manifest::{RecordingManifest, TrackInfo, Tracks};
-use crate::rpc::{error, DeviceInfo, Payload, Request, Response, StatusPayload};
+use crate::rpc::{
+    error, DeviceInfo, Payload, Request, Response, StartParams, StatusPayload, TrackLevel,
+};
 use crate::session::{Session, State};
+
+/// The six methods of 4.5, over a session and two devices.
+///
+/// It is a plain function of a request, so a test drives the whole contract
+/// without a process: `main.rs` is left with real stdin and a real exit code,
+/// which are the only two things a test cannot have.
+/// Opens a capture source for one end of the machine, on a chosen endpoint.
+///
+/// The sidecar opens both devices when it launches, before anybody has said
+/// what to record — so honouring an endpoint named on `start` (R1.2) means
+/// opening a new source then. This is how the service does that without
+/// knowing what WASAPI is.
+pub type OpenSource =
+    Box<dyn Fn(Which, &Endpoint) -> Result<Box<dyn CaptureSource>, String> + Send>;
 
 /// The six methods of 4.5, over a session and two devices.
 ///
@@ -18,6 +35,7 @@ pub struct Service<C: Clock> {
     system: Box<dyn CaptureSource>,
     dir: Option<PathBuf>,
     devices: fn() -> Result<Vec<DeviceInfo>, String>,
+    open: Option<OpenSource>,
 }
 
 impl<C: Clock> Service<C> {
@@ -34,7 +52,62 @@ impl<C: Clock> Service<C> {
             system,
             dir: None,
             devices,
+            open: None,
         }
+    }
+
+    /// Teach the service how to open a source on a named endpoint.
+    ///
+    /// Without this a `start` that names an endpoint is **refused**, never
+    /// quietly served with the device that happens to be open. Recording the
+    /// default in place of a chosen microphone is the failure the whole spec
+    /// exists to prevent, and it would be worst here, where nothing is wrong
+    /// yet and nobody is watching.
+    pub fn reopening_with(mut self, open: OpenSource) -> Self {
+        self.open = Some(open);
+        self
+    }
+
+    /// Put each track on the endpoint that was asked for, opening a new source
+    /// where the one in hand is not it (R1.2, R1.3).
+    fn honour(&mut self, params: &StartParams) -> Result<(), String> {
+        // Open everything first, install nothing until all of it succeeded.
+        //
+        // Assigning as each track resolved meant a microphone that resolved
+        // and a system endpoint that did not left the microphone swapped onto
+        // a source nobody had asked to record with, under a `start` that was
+        // then refused. Nothing observed it, because the mismatch corrects
+        // itself on the next `start` — which is precisely what makes it worth
+        // closing rather than leaving: a refusal has to leave the recorder
+        // exactly as it was, and "exactly" is the whole claim.
+        let mut opened: Vec<(Which, Box<dyn CaptureSource>)> = Vec::new();
+        for which in [Which::Microphone, Which::Loopback] {
+            let choice = params.endpoint(which);
+            let current = match which {
+                Which::Microphone => self.mic.endpoint(),
+                Which::Loopback => self.system.endpoint(),
+            };
+            if current.satisfies(&choice) {
+                continue;
+            }
+            let Some(open) = self.open.as_ref() else {
+                return Err(format!(
+                    "this recorder cannot change the {} endpoint",
+                    which.track()
+                ));
+            };
+            // A failure here is R2.4: the endpoint named is not on this
+            // machine, and `resolve` has already put its identifier in the
+            // message.
+            opened.push((which, open(which, &choice)?));
+        }
+        for (which, fresh) in opened {
+            match which {
+                Which::Microphone => self.mic = fresh,
+                Which::Loopback => self.system = fresh,
+            }
+        }
+        Ok(())
     }
 
     pub fn session(&self) -> Option<&Session<C>> {
@@ -56,6 +129,20 @@ impl<C: Clock> Service<C> {
             Request::Start(params) => {
                 if self.session.is_some() {
                     return error("already recording");
+                }
+                // **First**, before the directory exists and before any device
+                // is touched: a chosen endpoint that is not here refuses the
+                // recording and names it (R2.4). The alternative is an hour
+                // recorded on the wrong microphone, which nothing downstream
+                // can detect or undo.
+                //
+                // The order is the requirement, not tidiness. Creating the
+                // directory first left an empty one under `raw/` for every
+                // refusal, and `raw/` is where sources live — so a refused
+                // recording became a directory somebody has to recognise as
+                // debris rather than as a source that failed to transcribe.
+                if let Err(e) = self.honour(&params) {
+                    return error(e);
                 }
                 let dir = PathBuf::from(&params.dir);
                 if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -158,6 +245,10 @@ impl<C: Clock> Service<C> {
                 pauses: 0,
                 device_changes: 0,
                 lost_tracks: Vec::new(),
+                // Nothing is being captured, so the level is not "quiet" — it
+                // is absent, and zero is how this protocol says that.
+                mic_level: TrackLevel::default(),
+                system_level: TrackLevel::default(),
                 dropped_samples: 0,
                 discontinuities: 0,
                 capture_fault: None,
@@ -178,6 +269,8 @@ impl<C: Clock> Service<C> {
             pauses: session.pauses().len(),
             device_changes: session.device_changes().len(),
             lost_tracks: session.lost_tracks(),
+            mic_level: session.mic_level().reading(),
+            system_level: session.system_level().reading(),
             // What the recording lost, and whether either device has stopped
             // working. Silence that nobody flagged is the failure this whole
             // sidecar has to avoid presenting as a healthy hour.

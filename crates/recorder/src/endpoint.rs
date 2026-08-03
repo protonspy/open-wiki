@@ -30,6 +30,22 @@ pub struct CapturedEndpoint {
     pub pinned: bool,
 }
 
+impl CapturedEndpoint {
+    /// Is the device already open on what this choice asks for?
+    ///
+    /// Decides whether a `start` has to reopen anything. It compares the
+    /// *mode* as well as the identifier, because a track that happens to sit
+    /// on the endpoint somebody pinned is still only following it, and will
+    /// walk off it the moment Windows changes its mind — R2.1 against R2.2, at
+    /// the one moment the difference is cheap to fix.
+    pub fn satisfies(&self, choice: &Endpoint) -> bool {
+        match choice {
+            Endpoint::Default => !self.pinned,
+            Endpoint::Pinned(id) => self.pinned && self.id.as_deref() == Some(id.as_str()),
+        }
+    }
+}
+
 /// Which endpoint a track captures.
 ///
 /// The two are different modes and not two spellings of one (R2.1, R2.2). A

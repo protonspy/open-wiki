@@ -33,6 +33,7 @@ const api = {
   recordResume: () => ipcRenderer.invoke(CHANNELS.recordResume),
   recordStop: () => ipcRenderer.invoke(CHANNELS.recordStop),
   recordStatus: () => ipcRenderer.invoke(CHANNELS.recordStatus),
+  recordDevices: () => ipcRenderer.invoke(CHANNELS.recordDevices),
 
   save: (input: unknown) => ipcRenderer.invoke(CHANNELS.save, input),
   create: (input: unknown) => ipcRenderer.invoke(CHANNELS.create, input),

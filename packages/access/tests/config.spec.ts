@@ -7,6 +7,7 @@ import {
   readSettings,
   writeSettings,
   validateSettings,
+  resolveEndpoint,
   DEFAULT_SETTINGS,
 } from "../src/config/settings.js";
 import {
@@ -97,5 +98,98 @@ describe("secrets (app data dir, keyed by project path, never in the project)", 
 
   it("returns undefined when the project has no secrets yet", () => {
     expect(readSecrets(root, appData)).toBeUndefined();
+  });
+});
+
+describe("the chosen audio endpoints (specs/audio-input-selection, R1.2, R1.5)", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "ow-endpoints-"));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("defaults to following the Windows default for both tracks", () => {
+    // R1.3. A project that has never chosen carries the empty string, and
+    // that is a real answer rather than a missing one.
+    expect(readSettings(root).micEndpoint).toBe("");
+    expect(readSettings(root).systemEndpoint).toBe("");
+  });
+
+  it("keeps the two tracks apart", () => {
+    // R1.2 chooses them independently: pinning the microphone must not say
+    // anything about what the system track captures.
+    writeSettings(root, { micEndpoint: "{mic-headset}" });
+    const settings = readSettings(root);
+    expect(settings.micEndpoint).toBe("{mic-headset}");
+    expect(settings.systemEndpoint).toBe("");
+  });
+
+  it("refuses an endpoint that is not a string", () => {
+    expect(() => validateSettings({ micEndpoint: 7 })).toThrow(/micEndpoint/);
+  });
+
+  it("refuses an endpoint identifier of an implausible length", () => {
+    // `ow.json` is committed, so it arrives from a `git clone` like any other
+    // file. An endpoint id is a GUID-shaped string of about ninety characters,
+    // and this value is carried into a `start` request and into manifest.json.
+    expect(() => validateSettings({ micEndpoint: "x".repeat(513) })).toThrow(/micEndpoint/);
+  });
+
+  it("keeps the schema closed against a near-miss key", () => {
+    expect(() => validateSettings({ micendpoint: "{mic-headset}" })).toThrow(/schema is closed/);
+  });
+
+  it("resolves a chosen endpoint that is on this machine", () => {
+    const resolved = resolveEndpoint("{mic-headset}", [{ id: "{mic-headset}" }]);
+    expect(resolved).toEqual({ endpoint: "{mic-headset}", unresolved: null });
+  });
+
+  it("treats an endpoint that is on no device here as a choice to re-make", () => {
+    // R1.5, and the cost of `ow.json` being committed: a teammate who clones
+    // gets an identifier that means nothing on their machine. Refusing to
+    // record would make the committed file a liability; substituting silently
+    // is what the whole spec forbids. So it falls back *and says it did*.
+    const resolved = resolveEndpoint("{mic-from-another-machine}", [{ id: "{mic-headset}" }]);
+    expect(resolved).toEqual({ endpoint: "", unresolved: "{mic-from-another-machine}" });
+  });
+
+  it("does not report following the default as an unresolved choice", () => {
+    expect(resolveEndpoint("", [])).toEqual({ endpoint: "", unresolved: null });
+  });
+});
+
+describe("an endpoint identifier is not a place to hide a control character", () => {
+  it("refuses a carriage return or an ANSI escape", () => {
+    // `ow.json` is committed, so this value arrives from whoever wrote the
+    // repository. It is carried into a refusal message, into manifest.json,
+    // and — once there is a picker — onto a screen, where a CR or an escape
+    // sequence can forge or erase what a teammate reads. Same reasoning as
+    // `safe()` in the check findings, applied at the point of entry.
+    expect(() => validateSettings({ micEndpoint: "{mic}\r\u001b[2K" })).toThrow(/micEndpoint/);
+    expect(() => validateSettings({ systemEndpoint: "{out}\n" })).toThrow(/systemEndpoint/);
+  });
+
+  it("refuses a bidi override or a zero-width character too", () => {
+    // `\p{Cc}` matches none of these, and they spoof a label just as well as
+    // an ANSI escape does: U+202E reverses what follows it, and the zero-width
+    // characters hide a difference between two identifiers that read alike.
+    // The value crosses IPC as a dropped choice and reaches a screen once
+    // there is a picker.
+    const rtlOverride = "{mic-‮evil}";
+    const zeroWidth = "{mic​-headset}";
+    const bom = "﻿{out-speakers}";
+
+    expect(() => validateSettings({ micEndpoint: rtlOverride })).toThrow(/micEndpoint/);
+    expect(() => validateSettings({ micEndpoint: zeroWidth })).toThrow(/micEndpoint/);
+    expect(() => validateSettings({ systemEndpoint: bom })).toThrow(/systemEndpoint/);
+  });
+
+  it("keeps an ordinary endpoint identifier", () => {
+    const id = "{0.0.1.00000000}.{a1b2c3d4-0000-1111-2222-333344445555}";
+    expect(validateSettings({ micEndpoint: id }).micEndpoint).toBe(id);
   });
 });

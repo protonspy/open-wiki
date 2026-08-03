@@ -17,6 +17,7 @@ export const CHANNELS = {
   recordResume: "record:resume",
   recordStop: "record:stop",
   recordStatus: "record:status",
+  recordDevices: "record:devices",
 
   // Editing (8.7, 8.8, 8.9) and the history behind it (8.11).
   save: "wiki:save",

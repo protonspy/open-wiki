@@ -16,12 +16,109 @@ import { fileURLToPath } from "node:url";
 
 export type RecorderMethod = "start" | "pause" | "resume" | "stop" | "status" | "devices";
 
+/** One endpoint the machine offers (R1.1). */
+export interface RecorderDevice {
+  /** The endpoint's own identifier — stable, and meaningless off this machine. */
+  id: string;
+  /** For a person to read. Not stable: Windows renames endpoints on a driver update. */
+  name: string;
+  /** `capture` for a microphone, `loopback` for what the machine is playing. */
+  kind: "capture" | "loopback";
+  /** Whether Windows currently prefers it for that direction. */
+  default: boolean;
+}
+
+/** What one track is hearing right now (R4.1). */
+export interface TrackLevel {
+  peak: number;
+  rms: number;
+  /** Literal silence, not a threshold — a quiet room is not a dead microphone. */
+  silent: boolean;
+}
+
 export interface RecorderStatus {
   state: string;
   recorded_ms: number;
   mic_frames: number;
   system_frames: number;
   pauses: number;
+  /**
+   * Tracks whose chosen endpoint went away with nothing put in its place
+   * (R2.3). A track named here is recording manufactured silence.
+   */
+  lost_tracks: string[];
+  mic_level: TrackLevel;
+  system_level: TrackLevel;
+}
+
+/** Which endpoint each track should capture, where somebody chose (R1.2). */
+export interface ChosenEndpoints {
+  mic?: string | undefined;
+  system?: string | undefined;
+}
+
+const NO_LEVEL: TrackLevel = { peak: 0, rms: 0, silent: true };
+
+/**
+ * A status reply, with anything the sidecar did not send filled in.
+ *
+ * `recorder.exe` is a separate binary that ships with the installer, so one
+ * older than this window is an ordinary state rather than an error. A missing
+ * level has to read as *no signal* — never as `undefined` reaching a meter,
+ * and never as `false` for `silent`, which would claim a dead track is fine.
+ */
+export function statusFrom(payload: Record<string, unknown>): RecorderStatus {
+  const level = (raw: unknown): TrackLevel => {
+    if (typeof raw !== "object" || raw === null) return NO_LEVEL;
+    const it = raw as Record<string, unknown>;
+    return {
+      peak: typeof it["peak"] === "number" ? it["peak"] : 0,
+      rms: typeof it["rms"] === "number" ? it["rms"] : 0,
+      silent: typeof it["silent"] === "boolean" ? it["silent"] : true,
+    };
+  };
+  const lost = payload["lost_tracks"];
+  return {
+    state: String(payload["state"] ?? "idle"),
+    recorded_ms: Number(payload["recorded_ms"] ?? 0),
+    mic_frames: Number(payload["mic_frames"] ?? 0),
+    system_frames: Number(payload["system_frames"] ?? 0),
+    pauses: Number(payload["pauses"] ?? 0),
+    lost_tracks: Array.isArray(lost) ? lost.map(String) : [],
+    mic_level: level(payload["mic_level"]),
+    system_level: level(payload["system_level"]),
+  };
+}
+
+/**
+ * The endpoints in a `devices` reply, as objects (R1.1).
+ *
+ * This used to flatten each entry to its `name`, which is why nothing above it
+ * could offer a choice: a name is not what an endpoint is opened by, and
+ * Windows renames them on a driver update.
+ */
+export function devicesFrom(payload: Record<string, unknown>): RecorderDevice[] {
+  const raw = payload["devices"];
+  if (!Array.isArray(raw)) return [];
+  const out: RecorderDevice[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const it = item as Record<string, unknown>;
+    const id = it["id"];
+    const kind = it["kind"];
+    // An endpoint with no identifier cannot be chosen, and one of an unknown
+    // direction cannot be offered for either track. Dropping it beats
+    // presenting something nothing can act on.
+    if (typeof id !== "string" || id === "") continue;
+    if (kind !== "capture" && kind !== "loopback") continue;
+    out.push({
+      id,
+      name: typeof it["name"] === "string" && it["name"] !== "" ? it["name"] : id,
+      kind,
+      default: it["default"] === true,
+    });
+  }
+  return out;
 }
 
 export class RecorderError extends Error {
@@ -197,9 +294,19 @@ export class RecorderSession {
     });
   }
 
-  /** `title` is what 4.16 builds the source id from; `dir` is where it writes. */
-  async start(title: string, dir: string): Promise<void> {
-    await this.call("start", { title, dir });
+  /**
+   * `title` is what 4.16 builds the source id from; `dir` is where it writes.
+   *
+   * `endpoints` names which endpoint each track captures (R1.2). Omitting
+   * either follows the Windows default (R1.3) — and a chosen endpoint that is
+   * not on this machine refuses the recording by name (R2.4) rather than
+   * quietly recording the default in its place.
+   */
+  async start(title: string, dir: string, endpoints: ChosenEndpoints = {}): Promise<void> {
+    const params: Record<string, unknown> = { title, dir };
+    if (endpoints.mic) params["mic"] = endpoints.mic;
+    if (endpoints.system) params["system"] = endpoints.system;
+    await this.call("start", params);
   }
 
   async pause(): Promise<void> {
@@ -215,14 +322,12 @@ export class RecorderSession {
   }
 
   async status(): Promise<RecorderStatus> {
-    return (await this.call("status")) as unknown as RecorderStatus;
+    return statusFrom(await this.call("status"));
   }
 
-  async devices(): Promise<string[]> {
-    const payload = await this.call("devices");
-    const devices = payload["devices"];
-    if (!Array.isArray(devices)) return [];
-    return devices.map((d) => String((d as { name?: unknown }).name ?? d));
+  /** Every endpoint the machine offers, as objects rather than names (R1.1). */
+  async devices(): Promise<RecorderDevice[]> {
+    return devicesFrom(await this.call("devices"));
   }
 
   /** True once the sidecar has gone, so a window can drop its reference. */

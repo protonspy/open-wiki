@@ -40,12 +40,34 @@ export interface ProjectSettings {
    * here so that nobody solves it by defaulting.
    */
   harnesses: Harness[];
+  /**
+   * Which audio endpoint each track records, where somebody chose one
+   * (R1.2, R1.5).
+   *
+   * **An empty string means "follow the Windows default"** (R1.3), and it is
+   * the value a project that has never chosen carries. Absent and empty are
+   * deliberately the same thing here, unlike `harnesses` above, because
+   * following the default is a real answer rather than an unanswered question.
+   *
+   * **The identifier is machine-local and this file is committed.** A WASAPI
+   * endpoint id means nothing on anyone else's machine, so a teammate who
+   * clones gets an identifier that resolves to nothing — which is why R1.5
+   * says an unresolvable one is *a choice to re-make rather than an error to
+   * store*. `resolveEndpoint` below is where that is honoured. It is a real
+   * cost of putting this here, accepted in `design.md` rather than discovered:
+   * the alternative was a second per-machine store, and one file the user can
+   * read beat two nobody can find.
+   */
+  micEndpoint: string;
+  systemEndpoint: string;
 }
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   language: "en",
   deleteWavAfterTranscription: true,
   harnesses: [],
+  micEndpoint: "",
+  systemEndpoint: "",
 };
 
 export function settingsPath(projectRoot: string): string {
@@ -56,6 +78,8 @@ const KNOWN_KEYS: ReadonlyArray<keyof ProjectSettings> = [
   "language",
   "deleteWavAfterTranscription",
   "harnesses",
+  "micEndpoint",
+  "systemEndpoint",
 ];
 
 export class InvalidSettingsError extends Error {
@@ -96,7 +120,66 @@ export function validateSettings(raw: unknown): ProjectSettings {
     language: language as Language,
     deleteWavAfterTranscription: deleteWav,
     harnesses: validateHarnesses(obj["harnesses"]),
+    micEndpoint: validateEndpoint("micEndpoint", obj["micEndpoint"]),
+    systemEndpoint: validateEndpoint("systemEndpoint", obj["systemEndpoint"]),
   };
+}
+
+/**
+ * A chosen endpoint identifier, or the empty string for "follow the default".
+ *
+ * Bounded, because this file arrives from a `git clone` like any other and an
+ * endpoint identifier is a GUID-shaped string of about 90 characters — nothing
+ * legitimate is anywhere near this, and the value is carried into a `start`
+ * request and into `manifest.json`.
+ */
+function validateEndpoint(key: string, raw: unknown): string {
+  if (raw === undefined || raw === null) return "";
+  if (typeof raw !== "string") {
+    throw new InvalidSettingsError(key, `${key} must be a string`);
+  }
+  if (raw.length > 512) {
+    throw new InvalidSettingsError(key, `${key} is not an endpoint identifier`);
+  }
+  // Control *and format* characters go. This file is committed, so the value
+  // arrives from whoever wrote the repository, and it is carried into
+  // `manifest.json`, into a refusal message, back across IPC as a dropped
+  // choice, and — once there is a picker — onto a screen.
+  //
+  // `\p{Cc}` alone is not enough, which is the correction a security review
+  // asked for: a carriage return or an ANSI escape forges what a teammate
+  // reads, and `\p{Cf}` — U+202E RIGHT-TO-LEFT OVERRIDE, the zero-width
+  // characters, the BOM — spoofs it just as well while matching no control
+  // class at all. Refused at the point of entry, so every sink downstream is
+  // covered by one check rather than each remembering.
+  //
+  // Nothing legitimate is lost: an endpoint identifier is a GUID-shaped string.
+  if (/[\p{Cc}\p{Cf}]/u.test(raw)) {
+    throw new InvalidSettingsError(key, `${key} is not an endpoint identifier`);
+  }
+  return raw;
+}
+
+/**
+ * What to record with, given what this machine actually has (R1.5).
+ *
+ * An identifier that resolves to nothing is **a choice to re-make, not an
+ * error to keep**: `ow.json` is committed and an endpoint identifier is
+ * machine-local, so a teammate who clones — or the same person on a second
+ * machine — has a setting that names nothing. Refusing to record would make
+ * the committed file a liability; following the default and saying nothing
+ * would be the silent substitution the whole spec forbids. So it falls back
+ * *and says it did*, and the caller decides who to tell.
+ */
+export function resolveEndpoint(
+  chosen: string,
+  available: ReadonlyArray<{ id: string }>,
+): { endpoint: string; unresolved: string | null } {
+  if (chosen === "") return { endpoint: "", unresolved: null };
+  if (available.some((device) => device.id === chosen)) {
+    return { endpoint: chosen, unresolved: null };
+  }
+  return { endpoint: "", unresolved: chosen };
 }
 
 /**

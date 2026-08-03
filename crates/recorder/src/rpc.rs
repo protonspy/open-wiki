@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::capture::Which;
+use crate::endpoint::Endpoint;
 
 /// The sidecar's whole contract (plan 4.5, `adr:0005-wasapi-capture-in-a-minimal-sidecar`).
 ///
@@ -29,6 +30,32 @@ pub struct StartParams {
     pub title: String,
     /// Where to write `mic.wav`, `system.wav` and `manifest.json`.
     pub dir: String,
+    /// Which endpoint the microphone track captures (R1.2). Absent means
+    /// follow the Windows default (R1.3), which is what every caller written
+    /// before this field did and still does.
+    #[serde(default)]
+    pub mic: Option<String>,
+    /// Which endpoint the system track captures (R1.2). Absent means follow
+    /// the Windows default.
+    #[serde(default)]
+    pub system: Option<String>,
+}
+
+impl StartParams {
+    /// The choice for one end of the machine.
+    ///
+    /// An absent identifier is `Default` rather than an error: two tracks are
+    /// chosen independently (R1.2), and pinning one must not force the other.
+    pub fn endpoint(&self, which: Which) -> Endpoint {
+        let chosen = match which {
+            Which::Microphone => self.mic.as_deref(),
+            Which::Loopback => self.system.as_deref(),
+        };
+        match chosen {
+            Some(id) if !id.is_empty() => Endpoint::Pinned(id.to_string()),
+            _ => Endpoint::Default,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -72,6 +99,45 @@ pub struct StatusPayload {
     /// the meeting is still running is the whole point — afterwards the
     /// minutes are already lost.
     pub lost_tracks: Vec<String>,
+    /// What each track is hearing right now (R4.1).
+    ///
+    /// It rides this poll rather than becoming a notification stream: push is
+    /// the better shape for a value that changes twenty times a second, and it
+    /// costs a second framing mode on a line protocol that has exactly one.
+    /// The poll is already here, already tested, and already governed by the
+    /// rule that it must never start the sidecar.
+    pub mic_level: TrackLevel,
+    pub system_level: TrackLevel,
+}
+
+/// One track's level over the last fraction of a second (R4.1, R4.2).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct TrackLevel {
+    /// The loudest sample in the window — what a person sees as a transient.
+    pub peak: f32,
+    /// The root-mean-square of it — what a person hears as loudness.
+    pub rms: f32,
+    /// Whether the window held nothing but literal silence. Not a threshold:
+    /// a quiet room is not a dead microphone, and R4.3 compares the two tracks
+    /// rather than judging either alone.
+    pub silent: bool,
+}
+
+impl Default for TrackLevel {
+    /// What a track that is not capturing reads.
+    ///
+    /// **Written out rather than derived**, because `bool::default()` is
+    /// `false` and that would have an idle recorder report *signal* on both
+    /// tracks. It is the same answer an empty `Meter` gives — nothing has been
+    /// captured, so nothing but silence has been captured — and the two have
+    /// to agree, or the level jumps the instant recording starts.
+    fn default() -> Self {
+        Self {
+            peak: 0.0,
+            rms: 0.0,
+            silent: true,
+        }
+    }
 }
 
 /// One endpoint the machine offers (R1.1).

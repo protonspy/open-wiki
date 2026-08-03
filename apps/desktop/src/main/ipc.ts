@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import {
   recordingId,
+  readSettings,
+  resolveEndpoint,
   type Language,
   type Operation,
   type ProjectSettings,
@@ -74,7 +76,7 @@ import {
   type SaveDialog,
 } from "./export.js";
 import type { ExportResult } from "@open-wiki/access";
-import type { RecorderSession, RecorderStatus } from "./recorder.js";
+import type { RecorderDevice, RecorderSession, RecorderStatus } from "./recorder.js";
 import {
   findings,
   locateCitation,
@@ -179,12 +181,27 @@ export const IDLE_STATUS: RecorderStatus = {
   mic_frames: 0,
   system_frames: 0,
   pauses: 0,
+  lost_tracks: [],
+  // Nothing is being captured, so there is no level — and `silent: true` is
+  // how that is said. `false` would claim signal on a track that is not open.
+  mic_level: { peak: 0, rms: 0, silent: true },
+  system_level: { peak: 0, rms: 0, silent: true },
 };
 
 export interface StartedRecording {
   /** The frozen source id, from 4.16. */
   id: string;
   dir: string;
+  /**
+   * Endpoints this project had chosen that are not on this machine (R1.5).
+   *
+   * The recording started anyway, on the Windows default, because a committed
+   * `ow.json` naming another machine's microphone is the ordinary outcome of a
+   * `git clone` rather than an error. Saying which choice was dropped is what
+   * makes it a choice to re-make instead of a silent substitution — and a
+   * silent substitution is the one thing this spec exists to prevent.
+   */
+  unresolved: Array<{ track: "mic" | "system"; endpoint: string }>;
 }
 
 export interface DesktopApi {
@@ -208,6 +225,17 @@ export interface DesktopApi {
   recordResume(): Promise<void>;
   recordStop(): Promise<void>;
   recordStatus(): Promise<RecorderStatus>;
+  /**
+   * Every endpoint the machine offers, so a track can be pointed at one
+   * (R1.1). `RecorderClient.devices()` has existed since 8.2 and was reachable
+   * from nothing, which is why no picker could be built against it.
+   *
+   * `peek`, never `ensure` — the same rule `record:status` lives under. Asking
+   * what devices exist must not be what turns the microphone on, so where the
+   * sidecar is not already running this answers with the empty list rather
+   * than starting it to find out.
+   */
+  recordDevices(): Promise<RecorderDevice[]>;
 
   save(input: SaveInput): SaveResult;
   create(input: CreateInput): SaveResult;
@@ -313,8 +341,37 @@ export function createApi(deps: Deps): DesktopApi {
       if (!deps.recorder) throw new Error("recording is not available in this window");
       const id = recordingId(root(), { occasion, at: now() });
       const dir = join(root(), "raw", id);
-      await ensure().start(occasion, dir);
-      return { id, dir };
+      const session = ensure();
+
+      const settings = readSettings(root());
+
+      // **Nothing was chosen, so nothing needs checking.** Enumerating the
+      // machine's endpoints is a COM call that can fail on its own — a machine
+      // with no audio device says so rather than answering — and R1.3 says a
+      // project that chose nothing records on the Windows default. Asking
+      // first would make that path depend on a question it never had to ask,
+      // so a recording that used to work would start failing.
+      if (!settings.micEndpoint && !settings.systemEndpoint) {
+        await session.start(occasion, dir);
+        return { id, dir, unresolved: [] };
+      }
+
+      // What this project chose to record with (R1.2), checked against what
+      // this machine actually has (R1.5). `ow.json` is committed and an
+      // endpoint identifier is machine-local, so a teammate who cloned — or
+      // the same person on a second machine — has a setting naming nothing.
+      // That is a choice to re-make, not a reason to refuse: it falls back to
+      // the default and *says so*, and the caller is what tells somebody.
+      const available = await session.devices();
+      const mic = resolveEndpoint(settings.micEndpoint, available);
+      const system = resolveEndpoint(settings.systemEndpoint, available);
+
+      await session.start(occasion, dir, { mic: mic.endpoint, system: system.endpoint });
+      const unresolved = [
+        ...(mic.unresolved ? [{ track: "mic" as const, endpoint: mic.unresolved }] : []),
+        ...(system.unresolved ? [{ track: "system" as const, endpoint: system.unresolved }] : []),
+      ];
+      return { id, dir, unresolved };
     },
     // `async`, so a refusal is a rejected promise rather than a synchronous
     // throw. `ipcMain.handle` turns either into a rejection on the renderer's
@@ -334,6 +391,14 @@ export function createApi(deps: Deps): DesktopApi {
     async recordStatus() {
       const session = deps.recorder?.peek();
       return session ? session.status() : IDLE_STATUS;
+    },
+
+    // `peek`, for the same reason as `recordStatus`: opening a picker must not
+    // be what takes the microphone. A window that has not recorded yet has no
+    // sidecar to ask, and answers with nothing rather than starting one.
+    async recordDevices() {
+      const session = deps.recorder?.peek();
+      return session ? session.devices() : [];
     },
 
     save: (input) => savePage(root(), input, savePageToday),
@@ -439,6 +504,8 @@ export async function dispatch(
       return api.recordStop();
     case CHANNELS.recordStatus:
       return api.recordStatus();
+    case CHANNELS.recordDevices:
+      return api.recordDevices();
 
     case CHANNELS.save:
       return api.save(args[0] as SaveInput);

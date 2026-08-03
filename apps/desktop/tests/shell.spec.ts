@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writeSettings } from "@open-wiki/access";
 import { NoSuchPageError, projectInfo, readPage, wikiIndex } from "../src/main/api.js";
 import { CHANNELS, createApi, dispatch } from "../src/main/ipc.js";
 import { looksLikeProject, resolveProject } from "../src/main/project.js";
@@ -176,18 +177,30 @@ describe("recording over IPC (8.2)", () => {
     const calls: string[] = [];
     let session: { start: unknown; status: unknown } | null = null;
     const fake = {
-      start: (title: string, dir: string) => {
+      start: (title: string, dir: string, endpoints?: unknown) => {
         calls.push(`start ${title} ${dir}`);
+        calls.push(`endpoints ${JSON.stringify(endpoints ?? {})}`);
         return Promise.resolve();
       },
       pause: () => Promise.resolve(),
       resume: () => Promise.resolve(),
       stop: () => Promise.resolve(),
       status: () => Promise.resolve({ state: "recording", recorded_ms: 12 }),
+      devices: () => {
+        calls.push("devices");
+        if (devicesFail) return Promise.reject(new Error("this machine has no audio device"));
+        return Promise.resolve([
+          { id: "{mic-headset}", name: "Headset", kind: "capture", default: false },
+          { id: "{out-speakers}", name: "Speakers", kind: "loopback", default: true },
+        ]);
+      },
     };
+    let devicesFail = false;
     return {
       calls,
       spawned: () => session !== null,
+      /** A machine whose endpoints cannot be enumerated (`service.rs` tests this). */
+      failDevices: () => (devicesFail = true),
       control: {
         ensure: () => {
           calls.push("ensure");
@@ -214,6 +227,75 @@ describe("recording over IPC (8.2)", () => {
   it("reports idle rather than failing when nothing is recording", async () => {
     const api = createApi({ projectRoot: root });
     await expect(api.recordStatus()).resolves.toMatchObject({ state: "idle" });
+  });
+
+  it("never starts the sidecar to answer a device list (R1.1)", async () => {
+    // The same rule the status poll lives under, and the reason `peek` and
+    // `ensure` are two methods. Opening a picker must not be what puts the
+    // microphone into Windows' in-use state while the chrome says nothing is
+    // being recorded.
+    const r = control();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+
+    const devices = await api.recordDevices();
+
+    expect(r.spawned()).toBe(false);
+    expect(r.calls).not.toContain("ensure");
+    expect(devices).toEqual([]);
+  });
+
+  it("lists the endpoints once a recording has made a sidecar to ask", async () => {
+    const r = control();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+    await api.recordStart("Fenix weekly");
+
+    const devices = await api.recordDevices();
+
+    expect(devices.map((d) => d.id)).toEqual(["{mic-headset}", "{out-speakers}"]);
+  });
+
+  it("records with the endpoints the project chose (R1.2)", async () => {
+    writeSettings(root, { micEndpoint: "{mic-headset}" });
+    const r = control();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+
+    const started = await api.recordStart("Fenix weekly");
+
+    expect(r.calls).toContain('endpoints {"mic":"{mic-headset}","system":""}');
+    expect(started.unresolved).toEqual([]);
+  });
+
+  it("records without asking what devices exist when nothing was chosen (R1.3)", async () => {
+    // Enumerating the machine's endpoints is a COM call that can fail on its
+    // own — a machine with no audio device says so rather than answering. A
+    // project that chose nothing records on the Windows default, and making
+    // that path depend on a question it never had to ask turns a recording
+    // that used to work into one that fails.
+    const r = control();
+    r.failDevices();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+
+    const started = await api.recordStart("Fenix weekly");
+
+    expect(started.unresolved).toEqual([]);
+    expect(r.calls).not.toContain("devices");
+  });
+
+  it("records on the default and says so when the chosen endpoint is not here (R1.5)", async () => {
+    // `ow.json` is committed and an endpoint identifier is machine-local, so
+    // this is the ordinary outcome of a `git clone`. Refusing would make the
+    // committed file a liability; substituting in silence is what the spec
+    // forbids. It falls back *and reports which choice was dropped*.
+    writeSettings(root, { micEndpoint: "{mic-from-another-machine}" });
+    const r = control();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+
+    const started = await api.recordStart("Fenix weekly");
+
+    expect(r.calls).toContain('endpoints {"mic":"","system":""}');
+    expect(started.unresolved).toEqual([
+      { track: "mic", endpoint: "{mic-from-another-machine}" },
+    ]);
   });
 
   it("starts the sidecar only when asked to record", async () => {

@@ -436,6 +436,10 @@ describe("settingsView (6.1)", () => {
       language: "en",
       deleteWavAfterTranscription: true,
       harnesses: [],
+      // Empty is "follow the Windows default" (R1.3), and is what a project
+      // that has never chosen an endpoint carries.
+      micEndpoint: "",
+      systemEndpoint: "",
     });
     expect(view.settingsFile).toBe(join(root, "ow.json"));
     expect(view.secretsFile.startsWith(appData)).toBe(true);

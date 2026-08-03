@@ -1,4 +1,6 @@
-use recorder::rpc::{error, parse, render, DeviceInfo, Payload, Request, Response, StatusPayload};
+use recorder::rpc::{
+    error, parse, render, DeviceInfo, Payload, Request, Response, StatusPayload, TrackLevel,
+};
 
 #[test]
 fn every_method_the_contract_names_parses() {
@@ -65,6 +67,8 @@ fn a_status_response_renders_as_one_line_of_json() {
         capture_fault: None,
         device_changes: 0,
         lost_tracks: Vec::new(),
+        mic_level: TrackLevel::default(),
+        system_level: TrackLevel::default(),
     }));
     let line = render(&response);
     assert!(!line.contains('\n'), "the framing is one object per line");
