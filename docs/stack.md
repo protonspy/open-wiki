@@ -86,6 +86,10 @@ ships nor chooses.
 
 - **chokidar** — watches `raw/_inbox/` for material an agent dropped there (plan 3.7), and later the project folder (8.10). `fs.watch` alone reports a file the moment it appears, which on a copy is halfway through being written; `awaitWriteFinish` is the part that stops a half-copied file becoming a permanently wrong source.
 
+## The CLI's own interface
+
+- **@inquirer/checkbox** — the harness picker `ow init` opens when nobody named one and there is a terminal to ask at (`plans/harness-portability.md` 2.4). **Multi-select is why this earns a dependency rather than a `readline` prompt:** a project may carry more than one harness (`adr:0024-the-convention-ships-to-every-harness`), so the question is "which of these" and not "which one" — and a numbered prompt accepting `1,3` is a multi-select with a worse interface and no way to see what is currently ticked. It is one package of the `inquirer` family rather than the family, it is ESM, and it is reached only on the interactive path: naming a harness, or running with no terminal, never loads it. Where there is no terminal the answer is a refusal rather than a fallback prompt, for the reason the plan's third divergence gives.
+
 ## MCP server
 
 - **MCP TypeScript SDK** — how an agent reaches a project's wiki: read-only, over Streamable HTTP by one resident `ow serve` process, the project a tool parameter (`project_id`), per `adr:0018-mcp-over-http-serving-every-project` (which narrows `adr:0013-the-project-directory-is-the-unit` — read-only stays confinement by process, the project stays named and not pathed). The SDK still ships `ow mcp` over stdio today; the HTTP server is accepted but not yet built, so `ow serve` and its JWT are decisions on record rather than a running service.

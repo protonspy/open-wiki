@@ -13,7 +13,7 @@
  * without rendering anything.
  */
 
-export type StepId = "project" | "language" | "transcription" | "done";
+export type StepId = "project" | "harness" | "language" | "transcription" | "done";
 
 export interface Step {
   id: StepId;
@@ -29,6 +29,14 @@ export const STEPS: readonly Step[] = [
     detail:
       "A project is a directory. Its own sources, its own pages, its own history — and the " +
       "wiki lives inside it, which is why your agent can already read it.",
+  },
+  {
+    id: "harness",
+    title: "Which harnesses will read this project?",
+    detail:
+      "The convention is written into the project and committed, so it reaches everyone who " +
+      "clones it. Choose every harness your team uses — one person on Claude Code and one on " +
+      "Codex is the normal case, and you can add another later.",
   },
   {
     id: "language",
@@ -67,13 +75,24 @@ export function stepNumber(id: StepId): number {
 /**
  * Whether a step may be left.
  *
- * **Only the first one refuses.** A project needs a name and a directory or
- * there is nothing to create; a language always has one chosen (`adr:0008`
- * makes English the default rather than an empty state); and the transcription
- * step is skippable on purpose — somebody who is not recording today should not
- * be made to produce an API key to reach a wiki.
+ * **Two of them refuse.** A project needs a name and a directory or there is
+ * nothing to create; and a project needs at least one harness or the convention
+ * has nowhere to live — the same refusal `ow init` makes headless, for the same
+ * reason. A language always has one chosen (`adr:0008` makes English the
+ * default rather than an empty state), and the transcription step is skippable
+ * on purpose: somebody who is not recording today should not be made to produce
+ * an API key to reach a wiki.
+ *
+ * **Nothing is preselected on the harness step**, so leaving it is a choice
+ * rather than a default nobody looked at. That is the plan's third divergence:
+ * the convention is committed, so a wrong answer is discovered by a colleague
+ * next week rather than by the person giving it.
  */
-export function canLeave(id: StepId, project: { name: string; directory: string }): boolean {
-  if (id !== "project") return true;
-  return project.name.trim() !== "" && project.directory.trim() !== "";
+export function canLeave(
+  id: StepId,
+  project: { name: string; directory: string; harnesses?: readonly string[] },
+): boolean {
+  if (id === "project") return project.name.trim() !== "" && project.directory.trim() !== "";
+  if (id === "harness") return (project.harnesses ?? []).length > 0;
+  return true;
 }

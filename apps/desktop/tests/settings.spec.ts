@@ -432,7 +432,11 @@ describe("a window with no project (8.4)", () => {
 describe("settingsView (6.1)", () => {
   it("answers the settings and where they are kept", () => {
     const view = settingsView(root, appData);
-    expect(view.settings).toEqual({ language: "en", deleteWavAfterTranscription: true });
+    expect(view.settings).toEqual({
+      language: "en",
+      deleteWavAfterTranscription: true,
+      harnesses: [],
+    });
     expect(view.settingsFile).toBe(join(root, "ow.json"));
     expect(view.secretsFile.startsWith(appData)).toBe(true);
   });

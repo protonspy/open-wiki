@@ -1,4 +1,5 @@
-import type { Language } from "@open-wiki/access";
+import type { Harness, Language } from "@open-wiki/access";
+import { HARNESS_CHOICES, toggleHarness } from "./harnesses.js";
 import { useCallback, useState } from "react";
 import { bridge } from "./bridge.js";
 import { canLeave, nextStep, STEPS, stepNumber, type StepId } from "./first-run.js";
@@ -25,6 +26,10 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
   const [name, setName] = useState("");
   const [directory, setDirectory] = useState("");
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE);
+  // Nothing preselected — see `canLeave`. A default here would be the silent
+  // guess the plan's third divergence refuses, in the one place where the
+  // person who suffers it is somebody else, later.
+  const [harnesses, setHarnesses] = useState<Harness[]>([]);
   const [provider, setProvider] = useState<"groq" | "whispercpp">("groq");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,14 +45,18 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
     try {
       // Through the scaffolder of 2.1 — the same one `ow init` and the launcher
       // use, so a project is the same project whichever door it came through.
-      await bridge().createProject(name.trim(), directory.trim(), language);
+      await bridge().createProject(name.trim(), directory.trim(), language, harnesses);
       setStep("transcription");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [name, directory, language]);
+  }, [name, directory, language, harnesses]);
+
+  const toggle = useCallback((h: Harness) => {
+    setHarnesses((current) => toggleHarness(current, h));
+  }, []);
 
   const saveCredential = useCallback(async () => {
     setBusy(true);
@@ -114,6 +123,25 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
         </>
       ) : null}
 
+      {step === "harness" ? (
+        <fieldset className="field">
+          <legend>Harnesses</legend>
+          {HARNESS_CHOICES.map((choice) => (
+            <label key={choice.value} className="choice">
+              <input
+                type="checkbox"
+                checked={harnesses.includes(choice.value)}
+                onChange={() => toggle(choice.value)}
+              />
+              <span>{choice.label}</span>
+              {/* What each choice actually puts in the directory, because this
+                  is committed and the person choosing should see it. */}
+              <span className="choice__detail">{choice.detail}</span>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+
       {step === "language" ? (
         <Segmented
           label="Content language"
@@ -161,8 +189,18 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
         {step === "project" ? (
           <Button
             variant="primary"
-            disabled={!canLeave("project", { name, directory })}
+            disabled={!canLeave("project", { name, directory, harnesses })}
             onClick={() => setStep(nextStep("project") ?? "done")}
+          >
+            Next
+          </Button>
+        ) : null}
+
+        {step === "harness" ? (
+          <Button
+            variant="primary"
+            disabled={!canLeave("harness", { name, directory, harnesses })}
+            onClick={() => setStep(nextStep("harness") ?? "done")}
           >
             Next
           </Button>

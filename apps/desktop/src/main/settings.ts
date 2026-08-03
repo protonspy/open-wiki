@@ -7,9 +7,10 @@ import {
   settingsPath,
   scaffold,
   scaffoldSkills,
-  writeClaudeMd,
+  writeEntryFiles,
   writeIgnore,
   writeSettings,
+  type Harness,
   type ProjectSettings,
   type Language,
 } from "@open-wiki/access";
@@ -247,19 +248,31 @@ export function selectAgentModel(
 }
 
 /**
- * Change the content language (plan 8.12).
+ * Change the content language (plan 8.12, and `harness-portability` 2.7).
  *
  * It reaches exactly two places — `adr:0008` is explicit — and one of them has
- * to be rewritten when it changes: `CLAUDE.md` is *generated*, so it carries
+ * to be rewritten when it changes: the entry file is *generated*, so it carries
  * the language and must be regenerated. The skills are not generated and are
  * left alone, which is the distinction 9.4 draws.
+ *
+ * **Regenerated for every harness the project carries**, not for Claude Code
+ * alone (`adr:0024`). A project scaffolded for Codex would otherwise keep an
+ * `AGENTS.md` naming the old language while `ow.json` said another — and
+ * because the entry file is what the agent actually reads, the file would win
+ * and the setting would look broken.
  */
 export function setLanguage(projectRoot: string, language: Language): Language {
   if (!LANGUAGES.includes(language)) {
     throw new Error(`unknown language "${language}" — one of ${LANGUAGES.join(", ")}`);
   }
   const settings = writeSettings(projectRoot, { language });
-  writeClaudeMd(projectRoot, settings.language);
+  writeEntryFiles(
+    projectRoot,
+    settings.language,
+    // An empty list is a project scaffolded before harnesses were recorded, and
+    // what such a project has on disk is a `CLAUDE.md`.
+    settings.harnesses.length > 0 ? settings.harnesses : ["claude"],
+  );
   return settings.language;
 }
 
@@ -388,6 +401,19 @@ export function createProject(
   directory: string,
   language: Language = "en",
   appDataDir?: string,
+  /**
+   * The harnesses this project is for (`harness-portability` 2.6).
+   *
+   * **A form, not a picker, and not a `prompt()` chain.** The desktop has no
+   * terminal, so the CLI's answer does not port — and 8.12 already learned what
+   * happens when that is ignored: a chain of `prompt()` calls answered nothing
+   * at all in a packaged build. The renderer collects this alongside the name
+   * and the language and passes it here, where the same scaffolder runs.
+   *
+   * Defaulted rather than required, because every existing caller means a
+   * Claude Code project and this signature is reached by more than the form.
+   */
+  harnesses: readonly Harness[] = ["claude"],
 ): KnownProject {
   // Absolute, always. A relative directory resolves against whatever the
   // Electron process happens to have as its working directory — which is not a
@@ -403,11 +429,12 @@ export function createProject(
   const registry = new ProjectRegistry(appDataDir ?? defaultAppDataDir());
   if (registry.has(name)) throw new ProjectNameTakenError(name);
 
-  scaffold(directory);
+  const chosen = harnesses.length > 0 ? harnesses : (["claude"] as const);
+  scaffold(directory, { harnesses: chosen });
   writeSettings(directory, { language });
   writeIgnore(directory);
-  scaffoldSkills(directory);
-  writeClaudeMd(directory, language);
+  scaffoldSkills(directory, { harnesses: chosen });
+  writeEntryFiles(directory, language, chosen);
   registry.register(name, directory);
   return { name, path: directory, present: existsSync(directory) };
 }

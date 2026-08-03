@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LANGUAGES } from "@open-wiki/access";
-import { HOOK_MATCHERS, writeClaudeMd, writeHooks } from "../src/install.js";
+import {
+  HOOK_MATCHERS,
+  UnparsableSettingsError,
+  writeClaudeMd,
+  writeHooks,
+} from "../src/install.js";
 import { generateClaudeMd } from "@open-wiki/access";
 
 /**
@@ -25,8 +30,21 @@ function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "ow-install-"));
 }
 
+/**
+ * `.claude/settings.json`, under a `hooks` key.
+ *
+ * **Not `.claude/hooks/hooks.json`**, which `ow init` wrote from plan 9.5 until
+ * a review of the harness work asked for the citation and there was none.
+ * Claude Code reads a project's hooks from its settings file; a standalone
+ * `hooks/hooks.json` is a plugin's own mechanism, resolved inside the plugin's
+ * installed directory. So the gate this product's safety story rests on was
+ * written where nothing loads it, and every `ow init` reported installing it.
+ * Checked 2026-08-03 against <https://code.claude.com/docs/en/hooks>.
+ */
+const SETTINGS = [".claude", "settings.json"] as const;
+
 function readHooks(root: string): { hooks: { PreToolUse: HookEntry[]; PostToolUse: HookEntry[] } } {
-  return JSON.parse(readFileSync(join(root, ".claude", "hooks", "hooks.json"), "utf8")) as {
+  return JSON.parse(readFileSync(join(root, ...SETTINGS), "utf8")) as {
     hooks: { PreToolUse: HookEntry[]; PostToolUse: HookEntry[] };
   };
 }
@@ -42,7 +60,7 @@ describe("writeHooks (9.5)", () => {
 
   it("installs the pre and post gate hooks into a project with none", () => {
     const { written } = writeHooks(root);
-    expect(written).toBe(join(root, ".claude", "hooks", "hooks.json"));
+    expect(written).toBe(join(root, ...SETTINGS));
 
     const doc = readHooks(root);
     expect(commandsFor(doc.hooks.PreToolUse, HOOK_MATCHERS.pre)).toEqual(["ow gate pre"]);
@@ -50,9 +68,9 @@ describe("writeHooks (9.5)", () => {
   });
 
   it("keeps the project's own hooks — installing the gate is not destructive", () => {
-    mkdirSync(join(root, ".claude", "hooks"), { recursive: true });
+    mkdirSync(join(root, ".claude"), { recursive: true });
     writeFileSync(
-      join(root, ".claude", "hooks", "hooks.json"),
+      join(root, ...SETTINGS),
       JSON.stringify({
         hooks: {
           PreToolUse: [
@@ -72,6 +90,27 @@ describe("writeHooks (9.5)", () => {
     expect(commandsFor(doc.hooks.PreToolUse, "Read")).toEqual(["their-auditor"]);
   });
 
+  it("keeps every other setting in the file, which is now the project's own", () => {
+    // The whole reason the malformed case below changed too: this file carries
+    // permissions and environment, not just our hook. Parsing into a shape that
+    // named only `hooks` and writing that back would delete all of it.
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(
+      join(root, ...SETTINGS),
+      JSON.stringify({ permissions: { deny: ["Bash(rm:*)"] }, env: { TZ: "UTC" } }),
+      "utf8",
+    );
+
+    writeHooks(root);
+    const doc = JSON.parse(readFileSync(join(root, ...SETTINGS), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(doc["permissions"]).toEqual({ deny: ["Bash(rm:*)"] });
+    expect(doc["env"]).toEqual({ TZ: "UTC" });
+    expect(doc["hooks"]).toBeDefined();
+  });
+
   it("re-running init refreshes the gate rather than duplicating it", () => {
     writeHooks(root);
     writeHooks(root);
@@ -81,11 +120,28 @@ describe("writeHooks (9.5)", () => {
     expect(commandsFor(doc.hooks.PostToolUse, HOOK_MATCHERS.post)).toEqual(["ow gate post"]);
   });
 
-  it("starts over from a hooks.json that will not parse rather than refusing to install", () => {
-    mkdirSync(join(root, ".claude", "hooks"), { recursive: true });
-    writeFileSync(join(root, ".claude", "hooks", "hooks.json"), "{ not json", "utf8");
-    const doc = readHooks(writeHooksAt(root));
-    expect(commandsFor(doc.hooks.PreToolUse, HOOK_MATCHERS.pre)).toEqual(["ow gate pre"]);
+  it("refuses a settings file that will not parse, rather than starting over from it", () => {
+    // **This assertion is the reverse of what it was**, and deliberately.
+    // While the gate wrote a file only this product owned, resetting it on a
+    // parse error cost nothing. It now writes the project's own
+    // `.claude/settings.json`, and the same behaviour would throw away
+    // somebody's permissions and environment to install a hook they would then
+    // have to be told about. Not installing a gate is the better trade, as long
+    // as it is said out loud.
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(join(root, ...SETTINGS), "{ not json", "utf8");
+
+    expect(() => writeHooks(root)).toThrow(UnparsableSettingsError);
+    expect(readFileSync(join(root, ...SETTINGS), "utf8")).toBe("{ not json");
+  });
+
+  it("refuses valid JSON that is not a settings object", () => {
+    // An array parses fine and is not settings; merging into it would produce
+    // something Claude Code ignores entirely, which is the failure this whole
+    // change is about.
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(join(root, ...SETTINGS), "[1, 2, 3]", "utf8");
+    expect(() => writeHooks(root)).toThrow(UnparsableSettingsError);
   });
 });
 

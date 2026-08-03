@@ -14,7 +14,16 @@ import {
   runSourceSupersede,
 } from "./commands/source.js";
 import { askRunningApp, handleRequest } from "@open-wiki/access/socket";
-import { safe } from "@open-wiki/access";
+import { existsSync } from "node:fs";
+import {
+  HARNESSES,
+  isHarness,
+  readSettings,
+  safe,
+  settingsPath,
+  type Harness,
+} from "@open-wiki/access";
+import { hasTerminal, pickHarnesses } from "./commands/pick.js";
 import { today } from "./date.js";
 
 /**
@@ -30,7 +39,8 @@ export function usage(): string {
   return `ow — open-wiki
 
 Usage:
-  ow init [--language <en|pt-BR|es>] [--name <name>]   scaffold a project and install the gate
+  ow init [--claude] [--codex] [--opencode]            scaffold a project and install the gate
+       [--language <en|pt-BR|es>] [--name <name>]      …name one or more harnesses; a picker asks
        [--refresh-skills]                              …rewriting skills this build has moved past
   ow write <path> [--content <text> | --file <path>]   write a page through the gate (no-hook path)
   ow gate pre|post                                     the hook handlers (read JSON on stdin)
@@ -65,13 +75,26 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
     case "init": {
       const opts = parseInitArgs(argv.slice(1));
       try {
-        const result = runInit({ projectRoot, ...opts });
+        // The three-way contract of the plan's third divergence: a harness
+        // named scaffolds it and asks nothing; none named with a terminal
+        // attached opens the picker; none named and no terminal refuses. A
+        // project that already records its harnesses answers for itself, so an
+        // idempotent re-run (`ow init --language pt-BR`) asks nothing either.
+        let harnesses = opts.harnesses;
+        if (harnesses.length === 0 && needsAnAnswer(projectRoot)) {
+          if (!hasTerminal()) return fail(noHarnessNamed());
+          harnesses = await pickHarnesses();
+          if (harnesses.length === 0) return fail(noHarnessChosen());
+        }
+
+        const result = runInit({ projectRoot, ...opts, harnesses });
         process.stdout.write(
           [
             `scaffolded ${result.projectRoot}`,
+            `  harnesses: ${result.harnesses.join(", ")}`,
             `  skills: written [${result.skills.written.join(", ")}] skipped [${result.skills.skipped.join(", ")}]`,
             `  hooks: ${result.hooks}`,
-            `  claude.md: ${result.claudeMd}`,
+            `  entry: ${result.entryFiles.join(", ")}`,
             result.registeredName ? `  registered as: ${result.registeredName}` : "",
             staleSkillsNotice(result.skills.outdated),
           ]
@@ -221,16 +244,94 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
   }
 }
 
+/**
+ * `ow init`'s arguments, including the harnesses (2.3).
+ *
+ * **A harness is a flag per harness, and more than one is accepted.** Not
+ * `--harness <name>` repeated, because the set is closed and small, and a flag
+ * that spells the answer is the one a person guesses right the first time.
+ * `--claude --codex` scaffolds both, which is the whole point of `adr:0024`'s
+ * plural: a team with one person on each is the normal case.
+ */
 export function parseInitArgs(args: string[]): {
   language?: string;
   name?: string;
   refreshSkills?: boolean;
+  harnesses: Harness[];
 } {
-  const opts: { language?: string; name?: string; refreshSkills?: boolean } = {};
+  const opts: {
+    language?: string;
+    name?: string;
+    refreshSkills?: boolean;
+    harnesses: Harness[];
+  } = { harnesses: [] };
+  const named = new Set<Harness>();
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--language") opts.language = args[++i];
-    else if (args[i] === "--name") opts.name = args[++i];
-    else if (args[i] === "--refresh-skills") opts.refreshSkills = true;
+    const arg = args[i]!;
+    if (arg === "--language") opts.language = args[++i];
+    else if (arg === "--name") opts.name = args[++i];
+    else if (arg === "--refresh-skills") opts.refreshSkills = true;
+    else if (arg.startsWith("--") && isHarness(arg.slice(2))) named.add(arg.slice(2) as Harness);
   }
+  opts.harnesses = HARNESSES.filter((h) => named.has(h));
   return opts;
+}
+
+/**
+ * What to say when nobody named a harness and there is no terminal to ask at.
+ *
+ * **It refuses rather than guessing, and that is a decision with a reason**
+ * (the plan's third divergence). In `scc`, guessing wrong is discovered
+ * immediately by the person who guessed, because they are the only user of that
+ * workspace. Here the convention is *committed* (`adr:0013`), so a project
+ * scaffolded for the wrong harness looks perfect to whoever ran `ow init` and
+ * gives nothing to the colleague who clones it next week — which is precisely
+ * the failure this whole plan exists to end, reproduced one level up.
+ *
+ * A refusal costs one second and one flag. A wrong scaffold costs somebody a
+ * week and looks like the product not working.
+ */
+/**
+ * Whether `ow init` has to ask which harness this project is for.
+ *
+ * **Only a project that does not exist yet is asked.** An `ow.json` on disk
+ * means somebody already scaffolded this directory, and an absent or empty
+ * `harnesses` there means they did it before that key existed — which
+ * `ProjectSettings` is explicit is *not* the same as "none wanted". Asking such
+ * a project would turn an idempotent re-run into a refusal: `ow init --language
+ * pt-BR` in CI, against a project created last month, would exit 2 for want of
+ * an answer nobody needed to give.
+ *
+ * The plan's breaking change is that a *new* project must name a harness. It
+ * was never that an existing one loses its headless re-run, and reading the two
+ * cases off the same `harnesses.length === 0` conflated them.
+ */
+function needsAnAnswer(projectRoot: string): boolean {
+  if (existsSync(settingsPath(projectRoot))) return false;
+  return readSettings(projectRoot).harnesses.length === 0;
+}
+
+/**
+ * What to say when the picker was offered and nothing was ticked.
+ *
+ * Distinct from the refusal above, because the two are different situations
+ * with different fixes: one is a script that has to be edited, the other is a
+ * person who has just been asked and answered "none". Telling the second one to
+ * pass a flag would be answering a question they did not ask.
+ */
+export function noHarnessChosen(): string {
+  return [
+    "No harness chosen, so nothing was scaffolded — the convention would have had nowhere to live.",
+    `Run \`ow init\` again and choose at least one, or name them: ${HARNESSES.map((h) => `--${h}`).join(" ")}.`,
+  ].join("\n");
+}
+
+export function noHarnessNamed(): string {
+  const flags = HARNESSES.map((h) => `--${h}`).join(" ");
+  return [
+    "ow init needs to know which harness this project is for, and there is no terminal to ask at.",
+    `Name one or more: ${flags} — for example \`ow init --claude --codex\`.`,
+    "It is not guessed: the convention is committed, so a project scaffolded for the wrong",
+    "harness looks right to you and gives nothing to whoever clones it.",
+  ].join("\n");
 }

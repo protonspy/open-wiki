@@ -175,7 +175,11 @@ describe("skills age in the project they were written into (5.3)", () => {
     writeFileSync(file, "---\nname: wiki\nopen-wiki-version: 0.1.0\n---\nold text\n", "utf8");
 
     const result = scaffoldSkills(root);
-    expect(result.outdated).toEqual([{ dir: "wiki", found: "0.1.0", expected: SKILLS_VERSION }]);
+    // `harness` is on the report because a project may carry the same skill in
+    // three directories that age independently (`adr:0024`).
+    expect(result.outdated).toEqual([
+      { dir: "wiki", harness: "claude", found: "0.1.0", expected: SKILLS_VERSION },
+    ]);
     expect(result.skipped).toContain("wiki");
     // Reported, not fixed: the file is somebody's, and it may have been edited.
     expect(readFileSync(file, "utf8")).toContain("old text");
@@ -185,7 +189,7 @@ describe("skills age in the project they were written into (5.3)", () => {
     const file = join(root, ".claude", "skills", "codewiki", "SKILL.md");
     writeFileSync(file, "hand-written, no frontmatter\n", "utf8");
     expect(scaffoldSkills(root).outdated).toEqual([
-      { dir: "codewiki", found: null, expected: SKILLS_VERSION },
+      { dir: "codewiki", harness: "claude", found: null, expected: SKILLS_VERSION },
     ]);
   });
 

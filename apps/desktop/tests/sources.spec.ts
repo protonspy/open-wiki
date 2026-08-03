@@ -783,7 +783,14 @@ describe("group 7, after review", () => {
     expect(browse.entries).toHaveLength(MAX_BROWSE_ENTRIES);
     // 1 for the directory itself plus its 500 files.
     expect(browse.truncated).toBe(501);
-  });
+    // 2,500 synchronous file writes: ~800ms on a developer's machine and ~8s on
+    // the Windows CI runner under V8 coverage instrumentation, which crossed the
+    // 5s default and reddened a branch that had changed nothing on this path.
+    // The assertions are untouched — only the clock is, and 15s is the same
+    // allowance `wiring.spec.ts` and `socket.spec.ts` already give their slow
+    // cases. The cost is inherent to what the test is for: the bug it guards
+    // only appears past the cap, so the files have to actually exist.
+  }, 15_000);
 
   it("keeps the original date when a source is marked twice (7.1)", () => {
     // `runSourceMark`'s contract, and this is "the same act through the other

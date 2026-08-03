@@ -60,7 +60,24 @@ export {
   type ScaffoldSkillsOptions,
   type StaleSkill,
 } from "./skills.js";
-export { generateClaudeMd, writeClaudeMd } from "./claude-md.js";
+export { generateClaudeMd, writeClaudeMd, writeEntryFiles } from "./claude-md.js";
+export { renderConvention, renderEntryFiles, renderSkills } from "./render.js";
+
+// What each harness loads, as data (harness-portability 2.1)
+export {
+  HARNESSES,
+  PROFILES,
+  entryFilesFor,
+  harnessesSharingEntryFile,
+  isHarness,
+  managedPaths,
+  profileFor,
+  profilesFor,
+  type GateProfile,
+  type Harness,
+  type HarnessProfile,
+  type McpProfile,
+} from "./harness.js";
 
 // The validated store (group 5)
 export {

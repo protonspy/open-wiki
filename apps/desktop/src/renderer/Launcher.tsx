@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Language } from "@open-wiki/access";
+import type { Harness, Language } from "@open-wiki/access";
+import { HARNESS_CHOICES, toggleHarness } from "./harnesses.js";
 import type { KnownProject } from "../main/settings.js";
 import { bridge } from "./bridge.js";
 import { FirstRun } from "./FirstRun.js";
@@ -132,6 +133,9 @@ function NewProject({
   const [name, setName] = useState("");
   const [directory, setDirectory] = useState("");
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE);
+  // Nothing preselected, as in the first run and the CLI picker: the convention
+  // is committed, so a guess here is paid for by whoever clones the project.
+  const [harnesses, setHarnesses] = useState<Harness[]>([]);
   const [busy, setBusy] = useState(false);
 
   const create = useCallback(async () => {
@@ -141,18 +145,22 @@ function NewProject({
       onError("a project needs a name and a directory");
       return;
     }
+    if (harnesses.length === 0) {
+      onError("choose at least one harness — the convention has to live somewhere a harness reads");
+      return;
+    }
     setBusy(true);
     try {
       // Through the scaffolder of 2.1, the same one `ow init` and the first run
       // use — so a project is the same project whichever door it came through.
-      await bridge().createProject(trimmedName, trimmedDirectory, language);
+      await bridge().createProject(trimmedName, trimmedDirectory, language, harnesses);
       onCreated();
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [name, directory, language, onCreated, onError]);
+  }, [name, directory, language, harnesses, onCreated, onError]);
 
   return (
     <section className="launcher__new">
@@ -183,9 +191,28 @@ function NewProject({
         />
       </label>
       <fieldset className="launcher__languages">
+        <legend>Harnesses</legend>
+        <p className="empty">
+          Where the convention is written, and it is committed — so it reaches everyone who clones
+          this project. Choose every harness your team uses; you can add another later.
+        </p>
+        <div className="editor__bar">
+          {HARNESS_CHOICES.map((choice) => (
+            <label key={choice.value}>
+              <input
+                type="checkbox"
+                checked={harnesses.includes(choice.value)}
+                onChange={() => setHarnesses((current) => toggleHarness(current, choice.value))}
+              />{" "}
+              {choice.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="launcher__languages">
         <legend>Content language</legend>
         <p className="empty">
-          What transcription is told to expect, and what the generated CLAUDE.md tells the agent to
+          What transcription is told to expect, and what the generated entry file tells the agent to
           write pages in. The schema itself stays English, and this is changeable later.
         </p>
         <div className="editor__bar">

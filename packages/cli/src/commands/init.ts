@@ -7,11 +7,12 @@ import {
   readSettings,
   scaffold,
   writeSettings,
+  type Harness,
   type Language,
   type ScaffoldSkillsResult,
   type StaleSkill,
 } from "@open-wiki/access";
-import { writeClaudeMd, writeHooks } from "../install.js";
+import { writeEntryFiles, writeHooks } from "../install.js";
 
 export interface InitOptions {
   projectRoot?: string;
@@ -19,13 +20,23 @@ export interface InitOptions {
   name?: string;
   /** Rewrite skills this build has moved on from — see `--refresh-skills`. */
   refreshSkills?: boolean;
+  /**
+   * The harnesses to scaffold for (2.3). Empty means "whatever this project
+   * already records", which is what an idempotent re-run means. Deciding what
+   * an *unanswered* one means — picker, or refusal — is `main.ts`'s, because
+   * that is where it is known whether anyone is at the terminal.
+   */
+  harnesses?: readonly Harness[];
 }
 
 export interface InitResult {
   projectRoot: string;
   skills: ScaffoldSkillsResult;
   hooks: string;
-  claudeMd: string;
+  /** The entry files written, one per distinct filename these harnesses need. */
+  entryFiles: string[];
+  /** What the project records after this run. */
+  harnesses: Harness[];
   registeredName?: string;
 }
 
@@ -60,14 +71,21 @@ export function staleSkillsNotice(outdated: readonly StaleSkill[]): string {
  * `ow init` — scaffold a project and install the gate (plan 9.3, 9.4, 9.5).
  * The scaffolder of 2.1 creates the directories, the settings, the ignore
  * entries and the skills; this command adds the two things it does not: the
- * hook configuration that makes writes go through the gate, and the short
- * `CLAUDE.md` that points at the skills and carries the content language.
+ * hook configuration that makes writes go through the gate, and the generated
+ * entry file that points at the skills and carries the content language.
+ *
+ * **The entry file is no longer `CLAUDE.md` alone** — it is whatever the
+ * harnesses this project carries actually read (`adr:0024`), which is one file
+ * for Codex and opencode together and a second for Claude Code.
  */
 export function runInit(opts: InitOptions): InitResult {
   const projectRoot = resolve(opts.projectRoot ?? process.cwd());
-  let skills;
+  let scaffolded;
   try {
-    skills = scaffold(projectRoot, { refreshSkills: opts.refreshSkills === true }).skills;
+    scaffolded = scaffold(projectRoot, {
+      refreshSkills: opts.refreshSkills === true,
+      ...(opts.harnesses ? { harnesses: opts.harnesses } : {}),
+    });
   } catch (err) {
     if (err instanceof DirectoryOccupiedError) {
       throw new Error(
@@ -76,6 +94,12 @@ export function runInit(opts: InitOptions): InitResult {
     }
     throw err;
   }
+
+  const skills = scaffolded.skills;
+  // What the project records after the scaffold, which is the caller's answer
+  // merged into what was already there — not the caller's answer alone.
+  const harnesses =
+    scaffolded.settings.harnesses.length > 0 ? scaffolded.settings.harnesses : ["claude" as const];
 
   let language: Language = readSettings(projectRoot).language;
   if (opts.language) {
@@ -86,7 +110,7 @@ export function runInit(opts: InitOptions): InitResult {
     const current = readSettings(projectRoot);
     writeSettings(projectRoot, { ...current, language });
   }
-  const claudeMd = writeClaudeMd(projectRoot, language);
+  const entryFiles = writeEntryFiles(projectRoot, language, harnesses);
   const hooks = writeHooks(projectRoot).written;
 
   let registeredName: string | undefined;
@@ -102,5 +126,5 @@ export function runInit(opts: InitOptions): InitResult {
     }
   }
 
-  return { projectRoot, skills, hooks, claudeMd, registeredName };
+  return { projectRoot, skills, hooks, entryFiles, harnesses: [...harnesses], registeredName };
 }

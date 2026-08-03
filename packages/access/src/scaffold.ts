@@ -1,9 +1,10 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { writeSettings, type ProjectSettings } from "./config/settings.js";
+import { readSettings, writeSettings, type ProjectSettings } from "./config/settings.js";
 import { writeIgnore } from "./ignore.js";
 import { assertWithin } from "./paths.js";
 import { scaffoldSkills, type ScaffoldSkillsResult } from "./skills.js";
+import type { Harness } from "./harness.js";
 import { INBOX } from "./sources/manifest.js";
 import { CHANGELOG_SEED, INDEX_SEED } from "./store/index.js";
 
@@ -62,7 +63,7 @@ function isEmptyOrProject(dir: string): boolean {
  */
 export function scaffold(
   projectRoot: string,
-  options: { refreshSkills?: boolean } = {},
+  options: { refreshSkills?: boolean; harnesses?: readonly Harness[] } = {},
 ): ScaffoldResult {
   if (existsSync(projectRoot) && !isEmptyOrProject(projectRoot)) {
     throw new DirectoryOccupiedError(projectRoot);
@@ -76,9 +77,26 @@ export function scaffold(
     createdDirs.push(dir);
   }
 
-  const settings = writeSettings(projectRoot, {});
+  // **Naming a harness adds it; naming none keeps what the project already is.**
+  // Re-running `ow init` has always meant "make this project current", and a
+  // caller that says nothing about harnesses must not be read as saying "none"
+  // — that would strip a project of its convention on an idempotent re-run.
+  // Adding rather than replacing is also what makes 5.4 a change to this list
+  // instead of a re-scaffold.
+  const current = existsSync(projectRoot) ? readSettings(projectRoot).harnesses : [];
+  const harnesses =
+    options.harnesses && options.harnesses.length > 0
+      ? [...new Set([...current, ...options.harnesses])]
+      : current;
+
+  const settings = writeSettings(projectRoot, { harnesses });
   writeIgnore(projectRoot);
-  const skills = scaffoldSkills(projectRoot, { refresh: options.refreshSkills === true });
+  // A project that records no harness is one scaffolded before `adr:0024`, and
+  // Claude Code is what it already has on disk — see `ScaffoldSkillsOptions`.
+  const skills = scaffoldSkills(projectRoot, {
+    refresh: options.refreshSkills === true,
+    harnesses: settings.harnesses.length > 0 ? settings.harnesses : ["claude"],
+  });
   return { createdDirs, settings, skills, wiki: seedWiki(projectRoot) };
 }
 
