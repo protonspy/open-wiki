@@ -4,7 +4,8 @@ import { listPages, readIndex, isIndexed, CODEWIKI_DIR, type PageRef } from "../
 import { readFrontmatter, validatePage } from "../store/page.js";
 import { linkableSlugs, resolveWikilinks } from "../store/wikilinks.js";
 import { extractProvenanceLinks, resolveProvenance } from "../store/provenance.js";
-import { listSources } from "../sources/manifest.js";
+import { listSources, readManifest } from "../sources/manifest.js";
+import { isDerivedId } from "../sources/id.js";
 import { assertWithin } from "../paths.js";
 import type { Finding } from "./findings.js";
 import { safe, sortFindings } from "./findings.js";
@@ -199,20 +200,77 @@ export function checkRecords(
     });
   }
 
-  // A source in raw/ that no page rests on. This is the case that disappears
-  // from view on its own: nothing links to it, so nobody trips over it.
+  // A source nobody has finished with. This is the case that disappears from
+  // view on its own: nothing links to it, so nobody trips over it.
+  //
+  // It takes **two** facts, not one (`specs/source-status`, R4.1). "No page
+  // cites this" on its own reported every source somebody read and deliberately
+  // discarded — which leaves no trace on the filesystem at all — as a permanent
+  // finding, and a check that cries wolf is a check people stop reading. So a
+  // declared source is out, whether or not anything cites it.
   for (const id of listSources(projectRoot)) {
     if (citedSources.has(id)) continue;
+    if (declaredProcessed(projectRoot, id)) continue;
     findings.push({
       code: "source.uncited",
       severity: "warning",
       source: id,
-      message: `raw/${id} is a source no page cites`,
-      fix: "Distil it into a page, or accept that it is not yet used — it stays in raw/ either way; sources are never deleted to tidy a report.",
+      message: `raw/${id} is a source no page cites and nobody has marked read`,
+      // Both ways out, because the reader who discarded this deliberately needs
+      // to be told they may record that — not told again to distil it. The verb
+      // is named now that plan task 4.2 has built it; while it did not exist
+      // this said the judgement instead, since a `fix` naming a command nobody
+      // can run is the noise a `fix` exists to avoid.
+      //
+      // **The command is offered only for an id that could have been derived.**
+      // `listSources` reads directory names verbatim and a directory under
+      // `raw/` is not necessarily one this application created, so an id can
+      // hold `;` or a backtick — and this text is written to be *acted on*, by
+      // an agent that has a shell. `safe` is not the guard for that: it strips
+      // control characters to stop a forged report line, and shell
+      // metacharacters are neither control characters nor a forgery. An id that
+      // is not a plain slug is named as data instead, which is the same advice
+      // without a command to paste.
+      fix: markFix(id),
     });
   }
 
   return findings;
+}
+
+/** The tail every `source.uncited` fix ends with. */
+const KEEPS_IT = "It stays in raw/ either way; sources are never deleted to tidy a report.";
+
+/**
+ * The correction path for an uncited source, offering the verb as something to
+ * run only when the id is one this application could have derived.
+ */
+function markFix(id: string): string {
+  const record = isDerivedId(id)
+    ? `run \`ow source mark ${id}\` to record that judgement`
+    : `mark the source named in this finding as processed to record that judgement ` +
+      `(its directory name is not a plain id, so it is named here rather than as a command to run)`;
+  return (
+    `Distil it into a page, or — if it was read and there was nothing in it worth writing — ` +
+    `${record}, and it stops being reported. ${KEEPS_IT}`
+  );
+}
+
+/**
+ * Whether somebody declared they had finished reading this source.
+ *
+ * A manifest that will not parse answers `false` rather than taking the report
+ * down: `listSources` only checks that the file exists, and one bad directory
+ * must not cost the other nineteen their findings. `false` is also the safe
+ * answer — it reports a source that may already have been read, which costs a
+ * glance, where `true` would hide one nobody has opened.
+ */
+function declaredProcessed(projectRoot: string, id: string): boolean {
+  try {
+    return readManifest(projectRoot, id).processed !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 /** 7.3 — provenance links that resolve to no source, or to no instant in one. */

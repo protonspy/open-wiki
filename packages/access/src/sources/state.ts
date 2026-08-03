@@ -35,6 +35,21 @@ export interface SourceState {
   title: string;
   kind: SourceKind;
   stage: SourceStage;
+  /**
+   * The date somebody declared they had finished reading this source, absent
+   * when nobody has (`specs/source-status`, R1.1).
+   *
+   * **Beside `stage`, deliberately not inside it.** Every member of
+   * `SourceStage` is observed on disk; this one is a judgement somebody made,
+   * and it is the only thing here that is. Folding it in would put one declared
+   * value among four derived ones in a single field, and every reader would
+   * then have to know which of its members it may not trust the filesystem for.
+   *
+   * The two are also independent: a source can be processed and uncited — read
+   * and found not worth writing about, which is the case this exists for — or
+   * cited and never declared.
+   */
+  processed?: string;
   /** True once `text.md` exists, whatever the stage says. */
   textReady: boolean;
   /** The pages citing this source, as project-relative paths. */
@@ -91,6 +106,9 @@ export function sourceState(
     id,
     title: manifest.title,
     kind: manifest.kind,
+    // Carried on every stage, because the question it answers — has anybody
+    // finished with this — is orthogonal to how far the pipeline got.
+    ...(manifest.processed !== undefined ? { processed: manifest.processed } : {}),
     textReady,
     citedBy: [...citedBy],
   };

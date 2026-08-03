@@ -1,6 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { readManifest, readSettings, transcriptionInputs } from "@open-wiki/access";
+import {
+  readManifest,
+  readSettings,
+  transcriptionInputs,
+  withdrawProcessed,
+} from "@open-wiki/access";
 import { defaultAppDataDir, readSecrets } from "@open-wiki/access/secrets";
 import {
   createProvider,
@@ -119,6 +124,15 @@ export async function runTranscription(
       title: manifest.title,
       deleteWav: readSettings(projectRoot).deleteWavAfterTranscription,
     });
+    // The transcript is new material about this source, so a declaration made
+    // before it landed was made about a recording that did not yet say any of
+    // this (`specs/source-status`, R3.1). `writeSourceText` withdraws on the
+    // upload door; this is the other door, because `finishRecording` writes
+    // `text.md` through `@open-wiki/audio` and that package deliberately does
+    // not depend on `@open-wiki/access`. Same function, called from the side
+    // that already imports both.
+    if (finished.textReady) withdrawProcessed(projectRoot, id);
+
     const done = journal.chunks.filter((c) => c.done).length;
     return { ok: true, done, total: journal.chunks.length, sealed: finished.seal.sealed };
   } catch (e) {

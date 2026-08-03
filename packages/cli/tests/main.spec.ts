@@ -73,7 +73,7 @@ describe("ow — usage and unknown verbs", () => {
   });
 
   it("names every verb it dispatches in the usage text", () => {
-    for (const verb of ["init", "write", "gate", "graph", "search", "consult", "mcp"]) {
+    for (const verb of ["init", "write", "gate", "graph", "search", "source", "consult", "mcp"]) {
       expect(usage()).toContain(`ow ${verb}`);
     }
   });
@@ -236,6 +236,68 @@ describe("ow graph and ow search", () => {
   it("needs a query to search for", async () => {
     expect(await main(["search"], root)).toBe(2);
     expect(stderr()).toContain("needs a query");
+  });
+});
+
+describe("ow source (4.2, 4.3, 4.4)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = tempProject();
+    uploadTextSource(root, "notes.md", "# Notes\n");
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("lists the sources as JSON on stdout", async () => {
+    expect(await main(["source", "list"], root)).toBe(0);
+    expect((JSON.parse(stdout()) as Array<{ id: string }>).map((s) => s.id)).toEqual(["notes.md"]);
+  });
+
+  it("marks a source and then leaves it out of the queue", async () => {
+    expect(await main(["source", "mark", "notes.md"], root)).toBe(0);
+    expect(stdout()).toContain("marked");
+    out = [];
+    expect(await main(["source", "list", "--unprocessed"], root)).toBe(0);
+    expect(JSON.parse(stdout())).toEqual([]);
+  });
+
+  it("says `already` rather than `marked` when nothing changed", async () => {
+    await main(["source", "mark", "notes.md"], root);
+    out = [];
+    expect(await main(["source", "mark", "notes.md"], root)).toBe(0);
+    // Reporting a write it did not make would train a loop to trust one.
+    expect(stdout()).toContain("already");
+    expect(stdout()).not.toContain("marked");
+  });
+
+  it("unmarks, putting the source back in the queue", async () => {
+    await main(["source", "mark", "notes.md"], root);
+    expect(await main(["source", "unmark", "notes.md"], root)).toBe(0);
+    out = [];
+    await main(["source", "list", "--unprocessed"], root);
+    expect((JSON.parse(stdout()) as Array<{ id: string }>).map((s) => s.id)).toEqual(["notes.md"]);
+  });
+
+  it("dates the declaration the day it was made", async () => {
+    await main(["source", "mark", "notes.md"], root);
+    expect(stdout()).toContain(today());
+  });
+
+  it("is a sentence and exit 2 for an id that names no source", async () => {
+    expect(await main(["source", "mark", "ghost"], root)).toBe(2);
+    expect(stderr()).toContain("ghost");
+    expect(stderr()).toContain("ow source list");
+    expect(stderr()).not.toContain("Error:");
+  });
+
+  it("names what it takes when the subcommand is missing or wrong", async () => {
+    expect(await main(["source"], root)).toBe(2);
+    expect(await main(["source", "sideways"], root)).toBe(2);
+    expect(stderr()).toContain("ow source list");
+  });
+
+  it("needs an id to mark or unmark", async () => {
+    expect(await main(["source", "mark"], root)).toBe(2);
+    expect(await main(["source", "unmark"], root)).toBe(2);
   });
 });
 

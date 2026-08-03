@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { registerSource } from "./register.js";
+import { withdrawProcessed } from "./update.js";
 import { assertWithin } from "../paths.js";
 
 /**
@@ -10,8 +11,9 @@ import { assertWithin } from "../paths.js";
  * extraction step — only normalisation: LF line endings and a single trailing
  * newline, matching the project's `eol=lf` and prettier's `endOfLine: lf`.
  *
- * PDF and DOCX take a different path (3.3, 3.4): their `text.md` is extracted,
- * not copied. Both reach `text.md` through `writeSourceText`.
+ * Nothing else is extracted on the way in any more
+ * (`adr:0021-sources-are-stored-not-parsed`): the original is preserved and the
+ * agent reads it.
  */
 
 /**
@@ -28,6 +30,17 @@ export function normaliseText(text: string): string {
 /** Write `text.md` into an existing source directory, normalised. */
 export function writeSourceText(projectRoot: string, id: string, text: string): void {
   const file = assertWithin(projectRoot, join(projectRoot, "raw", id, "text.md"));
+  // The bytes of a source never change, so `text.md` landing is the only way
+  // readable content arrives at a source somebody has already finished with
+  // (`specs/source-status`, R3.1). Withdrawn *first*, so an interrupted run
+  // errs the safe way: a declaration gone with no `text.md` yet reads as
+  // unprocessed and costs a re-read, where `text.md` present under a standing
+  // declaration reads as finished material nobody has read.
+  //
+  // This is one of the two doors `text.md` comes through. The other is the
+  // transcription pipeline, which writes through `@open-wiki/audio` and calls
+  // `withdrawProcessed` itself — see `apps/desktop/src/main/transcribe-run.ts`.
+  withdrawProcessed(projectRoot, id);
   writeFileSync(file, normaliseText(text), "utf8");
 }
 

@@ -7,7 +7,9 @@ import { runSearch } from "./commands/search.js";
 import { runConsultAdd } from "./commands/consult.js";
 import { parseCheckArgs, runCheck, CHECK_FAILED_TO_RUN } from "./commands/check.js";
 import { parseExportArgs, runExport } from "./commands/export.js";
+import { runSourceList, runSourceMark } from "./commands/source.js";
 import { askRunningApp, handleRequest } from "@open-wiki/access/socket";
+import { safe } from "@open-wiki/access";
 import { today } from "./date.js";
 
 /**
@@ -30,6 +32,9 @@ Usage:
   ow check [--json] [--errors-only]                    the integrity checks; exit 2 means errors
   ow graph [superseded|orphans|index]                  structural queries, as JSON
   ow search <query>                                    lexical search over the wiki, as JSON
+  ow source list [--unprocessed]                       the sources, as JSON; --unprocessed is the queue
+  ow source mark <id>                                  record that this source has been read
+  ow source unmark <id>                                withdraw that record
   ow export [--out <path>] [--no-sources] [--survey]   write the project as one zip, outside it
   ow consult add <name>                                add a read-only consult of another project
   ow mcp --project <name> --read-only                  run the read-only MCP server`;
@@ -137,6 +142,27 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
       if (!result.ok) return fail(result.reason);
       process.stdout.write(result.stdout);
       return 0;
+    }
+
+    case "source": {
+      const sub = argv[1];
+      if (sub === "list") {
+        process.stdout.write(runSourceList(projectRoot, argv.includes("--unprocessed")) + "\n");
+        return 0;
+      }
+      if (sub === "mark" || sub === "unmark") {
+        const id = argv[2];
+        if (!id) return fail(`ow source ${sub} needs a source id`);
+        const outcome = runSourceMark(projectRoot, id, sub === "mark", today());
+        if (!outcome.ok) return fail(outcome.reason);
+        // It says which of the two happened. "Already marked" reported as
+        // "marked" would train a loop to trust a write it did not make.
+        const { changed, processed } = outcome.result;
+        const what = processed ? `processed on ${processed}` : "unprocessed";
+        process.stdout.write(`${changed ? "marked" : "already"} "${safe(id)}" ${what}\n`);
+        return 0;
+      }
+      return fail("ow source list [--unprocessed] | ow source mark <id> | ow source unmark <id>");
     }
 
     case "consult": {
