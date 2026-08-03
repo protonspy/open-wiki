@@ -102,6 +102,19 @@ export { replaceWordInPage, type ReplaceResult } from "./write/replace-word.js";
 export { blankLiterals, literalSpans, withinSpans, termPattern } from "./store/prose.js";
 export { isConfigWrite, configWriteReason } from "./gate/guard.js";
 export { looksLikePatch, patchPaths, patchTargets, type PatchTarget } from "./gate/patch.js";
+
+// `ow update` — what this build ships against what the project has (group 5)
+export {
+  planUpdate,
+  readManagedManifest,
+  recordManaged,
+  hashOf,
+  type ManagedManifest,
+  type UpdateOutcome,
+  type UpdatePlan,
+  type UpdatePlanFile,
+} from "./update/managed.js";
+export { applyUpdate, type ApplyResult } from "./update/apply.js";
 export { formatDenial } from "./gate/errors.js";
 
 // Sources (group 3)

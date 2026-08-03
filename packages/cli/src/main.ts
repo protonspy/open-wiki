@@ -23,7 +23,8 @@ import {
   settingsPath,
   type Harness,
 } from "@open-wiki/access";
-import { hasTerminal, pickHarnesses } from "./commands/pick.js";
+import { confirm, hasTerminal, pickHarnesses } from "./commands/pick.js";
+import { formatPlan, needsConfirmation, parseUpdateArgs, runUpdate } from "./commands/update.js";
 import { today } from "./date.js";
 
 /**
@@ -42,6 +43,8 @@ Usage:
   ow init [--claude] [--codex] [--opencode]            scaffold a project and install the gate
        [--language <en|pt-BR|es>] [--name <name>]      …name one or more harnesses; a picker asks
        [--refresh-skills]                              …rewriting skills this build has moved past
+  ow update [--claude] [--codex] [--opencode]          bring the convention up to what this build ships
+       [--yes] [--dry-run] [--adopt]                   …--adopt takes over files predating the record
   ow write <path> [--content <text> | --file <path>]   write a page through the gate (no-hook path)
   ow gate pre|post                                     the hook handlers (read JSON on stdin)
   ow read <slug>                                       print a page, through the running app when there is one
@@ -97,6 +100,56 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
             `  entry: ${result.entryFiles.join(", ")}`,
             result.registeredName ? `  registered as: ${result.registeredName}` : "",
             staleSkillsNotice(result.skills.outdated),
+          ]
+            .filter(Boolean)
+            .join("\n") + "\n",
+        );
+        return 0;
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    case "update": {
+      const opts = parseUpdateArgs(argv.slice(1));
+      try {
+        // The plan first, always — including on the path that then applies it.
+        // A verb that rewrites files in somebody's project and reports only
+        // afterwards is one they have to `git diff` to understand.
+        const preview = runUpdate({
+          projectRoot,
+          harnesses: opts.harnesses,
+          adopt: opts.adopt,
+          dryRun: true,
+        });
+        process.stdout.write(`ow update — ${preview.harnesses.join(", ")}\n`);
+        process.stdout.write(formatPlan(preview.plan) + "\n");
+
+        if (!preview.plan.hasWork) return 0;
+        if (opts.dryRun) return 0;
+        // Confirmation given up front, or a terminal to ask at. Neither is a
+        // refusal that names both ways forward, rather than a silent write.
+        if (!opts.yes) {
+          // **The ask that 5.3 asks for.** Refusing only when there is no
+          // terminal left the terminal case applying immediately, which is the
+          // half of "show me, then ask" that was missing.
+          if (!hasTerminal()) return fail(needsConfirmation());
+          if (!(await confirm("Apply these changes?"))) {
+            process.stdout.write("nothing was changed\n");
+            return 0;
+          }
+        }
+
+        const result = runUpdate({
+          projectRoot,
+          harnesses: opts.harnesses,
+          yes: true,
+          adopt: opts.adopt,
+        });
+        process.stdout.write(
+          [
+            `updated ${result.written.length} file${result.written.length === 1 ? "" : "s"}`,
+            result.kept.length > 0 ? `  kept yours: ${result.kept.join(", ")}` : "",
           ]
             .filter(Boolean)
             .join("\n") + "\n",

@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertWithin, refuseSymlink } from "./paths.js";
+import { recordManaged } from "./update/managed.js";
 import { profilesFor, type Harness } from "./harness.js";
 import { renderEntryFiles } from "./render.js";
 import type { Language } from "./config/settings.js";
@@ -48,9 +49,8 @@ export function writeEntryFiles(
   harnesses: readonly Harness[],
 ): string[] {
   const written: string[] = [];
-  for (const [name, content] of Object.entries(
-    renderEntryFiles(profilesFor(harnesses), language),
-  )) {
+  const rendered = renderEntryFiles(profilesFor(harnesses), language);
+  for (const [name, content] of Object.entries(rendered)) {
     const file = assertWithin(projectRoot, join(projectRoot, name));
     // These files are *generated*, so they are overwritten by design — which is
     // exactly why the link check has to be here rather than implied by "we only
@@ -62,6 +62,11 @@ export function writeEntryFiles(
     writeFileSync(file, content, "utf8");
     written.push(file);
   }
+  // Recorded unconditionally, unlike the skills: these are *generated* and
+  // overwritten every run, so what is on disk afterwards is exactly what was
+  // rendered. A skill this product skipped is somebody else's content, which is
+  // why `scaffold.ts` compares before it records and this does not need to.
+  recordManaged(projectRoot, rendered);
   return written;
 }
 
