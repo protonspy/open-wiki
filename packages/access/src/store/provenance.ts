@@ -98,6 +98,11 @@ export function resolveProvenance(
           reason:
             `"${link}" — that instant is past the end of the recording, ` +
             `which runs to ${formatInstant(map.compressedDurationNs)}`,
+          // The end, carried rather than left in the sentence: a caller that
+          // offers to open the recording there needs the instant, and parsing
+          // it back out is how a viewer comes to seek to the wrong moment.
+          endsAt: formatInstant(map.compressedDurationNs),
+          sourceId: parsed.id,
         });
       }
     }

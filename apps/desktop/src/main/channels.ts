@@ -39,6 +39,8 @@ export const CHANNELS = {
   /** Show a source's file in the system file manager (7.4). */
   revealSource: "sources:reveal",
   findings: "check:findings",
+  /** Rewriting an avoided synonym as the project's term (desktop-ui 5.6). */
+  replaceWord: "check:replace",
   locate: "sources:locate",
   drop: "sources:drop",
   /** What is sitting in `raw/_inbox/` (3.7), and taking it when asked. */

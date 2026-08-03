@@ -9,16 +9,17 @@ import type { Finding } from "@open-wiki/access";
  * names, the instant a citation overran, or the pair of words a synonym finding
  * is about: those exist only inside the prose of `message`.
  *
- * So three of the draft's five buttons are not built, and are not faked by
- * cutting the value back out of the sentence. `checks.ts` already learned that
- * lesson once and says so at the `wikilink.broken` site: *the target comes off
- * the issue rather than being cut back out of the sentence, which produced
- * garbage the moment the wording changed*. A fix button built that way would
- * create the page named `Cutover window, which is not a page` the first time
- * somebody reworded a check.
+ * **That was true until 5.6.** The three values now come off the finding —
+ * `target`, `endsAt` and `replace` — because `adr:0023` decided a check
+ * carries what it found instead of formatting it into a sentence and dropping
+ * it. Nothing here parses `message`, and nothing here ever will: `checks.ts`
+ * learned that lesson once and says so at the `wikilink.broken` site, where
+ * cutting the target back out of the prose *produced garbage the moment the
+ * wording changed*. A button built that way creates the page named
+ * "Cutover window, which is not a page" the first time somebody rewords a check.
  *
- * What is here is what is honest: reach the thing the finding names, and the
- * one true one-click fix that already exists as an operation.
+ * So a fix is offered exactly when the finding carries what it needs, and never
+ * when it does not.
  */
 export type FixKind =
   /** Go to the page the finding is about. */
@@ -26,7 +27,13 @@ export type FixKind =
   /** Open the source the finding is about, at its start. */
   | "open-source"
   /** Link an orphan from `wiki/index.md` — `registerInIndex`, on its own. */
-  | "add-to-index";
+  | "add-to-index"
+  /** Write the page a broken wikilink names (5.6, from `target`). */
+  | "create-page"
+  /** Open the recording at the last instant it contains (5.6, from `endsAt`). */
+  | "open-at"
+  /** Rewrite an avoided synonym as the project's term (5.6, from `replace`). */
+  | "replace";
 
 export interface Fix {
   kind: FixKind;
@@ -34,6 +41,15 @@ export interface Fix {
   label: string;
   /** The page slug or the source id it acts on. */
   target: string;
+  /**
+   * The instant an `open-at` opens, and the words a `replace` rewrites.
+   *
+   * Carried on the fix rather than looked up again from the finding, so the
+   * button and what it does cannot come to disagree about which value it was
+   * offered for.
+   */
+  at?: string;
+  replace?: { avoid: string; use: string };
 }
 
 /**
@@ -68,6 +84,28 @@ export function fixesFor(finding: Finding, knownSlugs: ReadonlySet<string>): Fix
 
   if (finding.code === "page.orphan" && openable) {
     fixes.push({ kind: "add-to-index", label: "Add to index", target: slug });
+  }
+  // 5.6 — the three the draft drew and 5.3 could not build. Each is offered
+  // only where the check carried the value it needs, which is the whole of what
+  // `adr:0023` changed.
+  if (finding.code === "wikilink.broken" && finding.target !== undefined) {
+    fixes.push({ kind: "create-page", label: "Create the page", target: finding.target });
+  }
+  if (finding.endsAt !== undefined && finding.source !== undefined) {
+    fixes.push({
+      kind: "open-at",
+      label: `Open at ${finding.endsAt}`,
+      target: finding.source,
+      at: finding.endsAt,
+    });
+  }
+  if (finding.replace !== undefined && finding.page !== undefined) {
+    fixes.push({
+      kind: "replace",
+      label: `Replace with "${finding.replace.use}"`,
+      target: finding.page,
+      replace: finding.replace,
+    });
   }
   if (finding.source !== undefined) {
     fixes.push({ kind: "open-source", label: "Open the source", target: finding.source });

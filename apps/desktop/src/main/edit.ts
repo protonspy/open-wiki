@@ -15,13 +15,18 @@ import {
   snapshot,
   undo,
   readManifest,
+  replaceWordInPage,
   updateManifest,
+  type ReplaceResult,
   writePage,
   type GateDecision,
   type Operation,
   type PageRef,
 } from "@open-wiki/access";
 import { NoSuchPageError } from "./api.js";
+
+// Re-exported so the renderer types the result without importing the store.
+export type { ReplaceResult };
 
 /**
  * Writing from the editor (plan 8.7, 8.8, 8.9, 8.11 and 6.7).
@@ -533,6 +538,25 @@ export function retitleSource(projectRoot: string, id: string, title: string): v
  * the divergence was masked by its one caller rather than absent. A review
  * caught it. Two doors onto one act must not disagree about what the act is.
  */
+/**
+ * Rewrite an avoided synonym as this project's term — desktop-ui 5.6, the write
+ * behind the *Replace* button on a `glossary.synonym` finding.
+ *
+ * It is `@open-wiki/access`'s `replaceWordInPage`, which shares one definition
+ * of what counts as prose with the check that reported it. Here for the reason
+ * every other write is: this module is the one that may write, and the editor,
+ * the agent and this button all go through the same gate.
+ */
+export function replaceWord(
+  projectRoot: string,
+  pagePath: string,
+  avoid: string,
+  use: string,
+  today: Clock,
+): ReplaceResult {
+  return replaceWordInPage(projectRoot, pagePath, avoid, use, today(), "editor");
+}
+
 export function markSourceProcessed(
   projectRoot: string,
   id: string,

@@ -64,6 +64,19 @@ export interface PageIssue {
    * silently produces garbage the first time the wording changes.
    */
   target?: string;
+  /**
+   * The last instant a recording contains, when the issue is a citation past
+   * it. Carried for the reason `target` is: the alternative is cutting a time
+   * back out of a sentence, and a viewer opened at a misparsed instant is
+   * exactly the confidently-wrong answer provenance exists to prevent.
+   */
+  endsAt?: string;
+  /**
+   * The source a provenance issue is about. Carried for the same reason the
+   * other two are: a caller offering to open the recording needs its id, and
+   * the alternative is parsing `rec://…` back out of the sentence.
+   */
+  sourceId?: string;
 }
 
 export type PageValidation =

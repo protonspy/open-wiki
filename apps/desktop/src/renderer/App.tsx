@@ -494,6 +494,7 @@ export function App(): React.JSX.Element {
                   fixes={fixesFor(finding, knownSlugs)}
                   onOpenPage={(slug) => visit({ pane: "wiki", selection: slug })}
                   onOpenSource={(id) => void openSourceAt(id, show)}
+                  onOpenAt={(id, fragment) => show({ kind: "provenance", source: id, fragment })}
                   onFixed={() => setReloadKey((n) => n + 1)}
                   say={say}
                 />
@@ -803,12 +804,14 @@ function Fixes({
   fixes,
   onOpenPage,
   onOpenSource,
+  onOpenAt,
   onFixed,
   say,
 }: {
   fixes: Fix[];
   onOpenPage: (slug: string) => void;
   onOpenSource: (id: string) => void;
+  onOpenAt: (id: string, fragment: string) => void;
   onFixed: () => void;
   say: (notice: Notice) => void;
 }): React.JSX.Element | null {
@@ -818,8 +821,56 @@ function Fixes({
   const take = async (fix: Fix): Promise<void> => {
     if (fix.kind === "open-page") return onOpenPage(fix.target);
     if (fix.kind === "open-source") return onOpenSource(fix.target);
+    // 5.6 — the recording opens at the last instant it actually contains, which
+    // the finding carried rather than the button parsing it out of a sentence.
+    if (fix.kind === "open-at") return onOpenAt(fix.target, fix.at ?? "0:00");
+
     setBusy(true);
     try {
+      // 5.6 — write the page a broken wikilink names. It goes through the same
+      // create the editor uses, so the page arrives valid, indexed and undoable
+      // rather than as an empty file somebody has to finish.
+      if (fix.kind === "create-page") {
+        // `topic` is the type a page gets when nobody chose one, which is what
+        // a broken link tells us: somebody meant to write this and has not yet.
+        // The page opens straight away, because naming it is the easy half.
+        const result = await bridge().create({
+          slug: fix.target,
+          markdown: pageTemplate(fix.target, "topic", new Date().toISOString().slice(0, 10)),
+        });
+        if (!result.saved) {
+          say(
+            note(
+              "checks",
+              result.reason === "stale" ? "that page moved" : result.problems.join("; "),
+            ),
+          );
+        } else {
+          onOpenPage(fix.target);
+        }
+        onFixed();
+        return;
+      }
+
+      // 5.6 — rewrite the avoided synonym. `replaced` is reported because a
+      // button that says nothing about how much it changed is a button nobody
+      // trusts twice.
+      if (fix.kind === "replace" && fix.replace) {
+        const result = await bridge().replaceWord(fix.target, fix.replace.avoid, fix.replace.use);
+        if (!result.ok) {
+          say(note("checks", "problems" in result ? result.problems.join(" ") : result.reason));
+        } else {
+          say(
+            note(
+              "checks",
+              `Replaced ${result.replaced} ${result.replaced === 1 ? "use" : "uses"} of "${fix.replace.avoid}".`,
+            ),
+          );
+        }
+        onFixed();
+        return;
+      }
+
       const result = await bridge().addToIndex(fix.target);
       // Already linked is not a failure and not a success either: the finding
       // was stale, and saying so is better than a button that appears to do
@@ -841,7 +892,7 @@ function Fixes({
         <Button
           key={fix.kind}
           size="sm"
-          variant={fix.kind === "add-to-index" ? "default" : "ghost"}
+          variant={fix.kind === "add-to-index" || fix.kind === "replace" ? "default" : "ghost"}
           disabled={busy}
           onClick={() => void take(fix)}
         >

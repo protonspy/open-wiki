@@ -190,3 +190,76 @@ describe("fixesFor (5.3)", () => {
     expect(fixes.map((f) => f.kind)).not.toContain("create-page");
   });
 });
+
+describe("fixesFor — the three the draft drew and 5.3 could not build (5.6)", () => {
+  const known = new Set(["fenix", "totals"]);
+
+  it("offers to write the page a broken wikilink names", () => {
+    // From `target`, which the check carries since `adr:0023`. Nothing here
+    // parses `message`: a button built that way creates a page called
+    // "Cutover window, which is not a page" the first time somebody rewords it.
+    const fixes = fixesFor(
+      finding("wikilink.broken", { page: "wiki/fenix.md", target: "cutover-window" }),
+      known,
+    );
+    const create = fixes.find((f) => f.kind === "create-page");
+    expect(create).toBeDefined();
+    expect(create!.target).toBe("cutover-window");
+    expect(create!.label).toBe("Create the page");
+  });
+
+  it("offers nothing to create when the check could not say what was named", () => {
+    const fixes = fixesFor(finding("wikilink.broken", { page: "wiki/fenix.md" }), known);
+    expect(fixes.some((f) => f.kind === "create-page")).toBe(false);
+  });
+
+  it("offers to open the recording at the last instant it contains", () => {
+    const fixes = fixesFor(
+      finding("provenance.unresolved", {
+        page: "wiki/fenix.md",
+        source: "weekly-2026-07-31",
+        endsAt: "58:04",
+      }),
+      known,
+    );
+    const at = fixes.find((f) => f.kind === "open-at");
+    expect(at).toBeDefined();
+    expect(at!.label).toBe("Open at 58:04");
+    expect(at!.target).toBe("weekly-2026-07-31");
+    // Carried on the fix, so the button and what it does cannot disagree.
+    expect(at!.at).toBe("58:04");
+  });
+
+  it("offers no instant for a citation that failed for another reason", () => {
+    const fixes = fixesFor(
+      finding("provenance.unresolved", { page: "wiki/fenix.md", source: "ghost" }),
+      known,
+    );
+    expect(fixes.some((f) => f.kind === "open-at")).toBe(false);
+  });
+
+  it("offers to replace an avoided synonym, naming the term it will use", () => {
+    const fixes = fixesFor(
+      finding("glossary.synonym", {
+        severity: "warning",
+        page: "wiki/fenix.md",
+        replace: { avoid: "grand total", use: "order total" },
+      }),
+      known,
+    );
+    const replace = fixes.find((f) => f.kind === "replace");
+    expect(replace).toBeDefined();
+    expect(replace!.label).toBe('Replace with "order total"');
+    // The page path, not the slug: the rewrite writes a file.
+    expect(replace!.target).toBe("wiki/fenix.md");
+    expect(replace!.replace).toEqual({ avoid: "grand total", use: "order total" });
+  });
+
+  it("offers no replacement when the check did not carry the pair", () => {
+    const fixes = fixesFor(
+      finding("glossary.synonym", { severity: "warning", page: "wiki/fenix.md" }),
+      known,
+    );
+    expect(fixes.some((f) => f.kind === "replace")).toBe(false);
+  });
+});
