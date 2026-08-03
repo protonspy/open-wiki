@@ -51,3 +51,22 @@ export function titleOfPage(frontmatter: Record<string, unknown> | null, slug: s
   const trimmed = title.trim();
   return trimmed === "" ? slug : trimmed;
 }
+
+/**
+ * What a page name may be — the store's own id shape.
+ *
+ * **One rule, both sides of the process boundary.** `assertSlug` in
+ * `main/edit.ts` refuses anything else before a path is built from it, after
+ * `../CLAUDE` once renamed a page over the project's `CLAUDE.md`. The renderer
+ * needs the same answer to decide whether to *offer* a button at all — a fix
+ * nobody can take is worse than none — and it may not import `main/edit.js`,
+ * whose value graph reaches `node:fs` and would break the bundle.
+ *
+ * So it lives here, where both may read it, rather than as a second regex that
+ * would drift from the one that actually refuses.
+ */
+const SLUG = /^[a-z0-9]+(?:[-.][a-z0-9]+)*$/;
+
+export function isPageSlug(slug: string): boolean {
+  return SLUG.test(slug);
+}

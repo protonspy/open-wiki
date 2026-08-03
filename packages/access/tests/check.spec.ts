@@ -793,3 +793,59 @@ describe("what a finding carries is scrubbed like what it says (adr:0023)", () =
     }
   });
 });
+
+describe("the values adr:0023 added, against what the checks really produce", () => {
+  it("carries the slug a broken wikilink actually names", () => {
+    const root = tempProject();
+    try {
+      index(root, []);
+      changelog(root, []);
+      page(root, "fenix.md", "See [[nowhere]].");
+      const found = checkProject(root).findings.find((f) => f.code === "wikilink.broken");
+      expect(found?.target).toBe("nowhere");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("carries the recording and the last instant it contains", () => {
+    // The two `checkProvenance` adds. Without `source` the *Open at 58:04*
+    // button had nothing to open and would never have fired.
+    const root = tempProject();
+    try {
+      const dir = join(root, "raw", "weekly");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "manifest.json"),
+        JSON.stringify({ id: "weekly", title: "Weekly", kind: "recording", original: "" }),
+        "utf8",
+      );
+      writeFileSync(
+        join(dir, "timemap.json"),
+        JSON.stringify({
+          version: 1,
+          compressedDurationNs: 20 * 60 * 1_000_000_000,
+          segments: [
+            {
+              compressedStartNs: 0,
+              durationNs: 20 * 60 * 1_000_000_000,
+              recordedStartNs: 0,
+              wallStartMs: 1_000_000,
+            },
+          ],
+          chunks: [],
+        }),
+        "utf8",
+      );
+      index(root, ["fenix"]);
+      changelog(root, ["fenix"]);
+      page(root, "fenix.md", "As rec://weekly#44:32 says.");
+
+      const found = checkProject(root).findings.find((f) => f.code === "provenance.unresolved");
+      expect(found?.endsAt).toBe("20:00");
+      expect(found?.source).toBe("weekly");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

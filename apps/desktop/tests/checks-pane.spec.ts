@@ -263,3 +263,40 @@ describe("fixesFor — the three the draft drew and 5.3 could not build (5.6)", 
     expect(fixes.some((f) => f.kind === "replace")).toBe(false);
   });
 });
+
+describe("create-page is offered only when it can be taken (5.6, code review)", () => {
+  const known = new Set(["fenix", "totals"]);
+
+  it("does not offer to create a page that already exists", () => {
+    // The stale-finding case: two pages link one missing target, the first is
+    // fixed, and the pane has not reloaded. Clicking the second threw
+    // `PageExistsError` — which is the button that cannot work that
+    // `knownSlugs` exists to prevent.
+    const fixes = fixesFor(
+      finding("wikilink.broken", { page: "wiki/fenix.md", target: "totals" }),
+      known,
+    );
+    expect(fixes.some((f) => f.kind === "create-page")).toBe(false);
+  });
+
+  it("does not offer to create a target that is not a page name", () => {
+    // A broken wikilink's target is prose. `assertSlug` refuses anything that
+    // is not the store's own id shape before a path is built from it, so a
+    // button offering it would fail on click.
+    for (const target of ["Cutover window, which is not a page", "../CLAUDE", "Has Capitals"]) {
+      const fixes = fixesFor(finding("wikilink.broken", { page: "wiki/fenix.md", target }), known);
+      expect(
+        fixes.some((f) => f.kind === "create-page"),
+        target,
+      ).toBe(false);
+    }
+  });
+
+  it("still offers it for a name nobody has written yet", () => {
+    const fixes = fixesFor(
+      finding("wikilink.broken", { page: "wiki/fenix.md", target: "cutover-window" }),
+      known,
+    );
+    expect(fixes.some((f) => f.kind === "create-page")).toBe(true);
+  });
+});

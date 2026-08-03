@@ -24,6 +24,7 @@ import {
   type PageRef,
 } from "@open-wiki/access";
 import { NoSuchPageError } from "./api.js";
+import { isPageSlug } from "../shared/pages.js";
 
 // Re-exported so the renderer types the result without importing the store.
 export type { ReplaceResult };
@@ -86,7 +87,6 @@ function pageRef(projectRoot: string, slug: string): PageRef | undefined {
  * accepts. Refusing anything else here means the path built from it cannot
  * contain a separator, a `..`, or a drive letter, whatever the caller sent.
  */
-const SLUG = /^[a-z0-9]+(?:[-.][a-z0-9]+)*$/;
 
 export class InvalidSlugError extends Error {
   constructor(slug: string) {
@@ -99,7 +99,7 @@ export class InvalidSlugError extends Error {
 }
 
 export function assertSlug(slug: string): string {
-  if (!SLUG.test(slug)) throw new InvalidSlugError(slug);
+  if (!isPageSlug(slug)) throw new InvalidSlugError(slug);
   return slug;
 }
 

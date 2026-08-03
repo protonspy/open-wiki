@@ -1,4 +1,5 @@
 import type { Finding } from "@open-wiki/access";
+import { isPageSlug } from "../shared/pages.js";
 
 /**
  * What a finding can be acted on with (desktop-ui 5.3).
@@ -88,7 +89,19 @@ export function fixesFor(finding: Finding, knownSlugs: ReadonlySet<string>): Fix
   // 5.6 — the three the draft drew and 5.3 could not build. Each is offered
   // only where the check carried the value it needs, which is the whole of what
   // `adr:0023` changed.
-  if (finding.code === "wikilink.broken" && finding.target !== undefined) {
+  // Offered only when it can be taken, which is what `knownSlugs` is for and
+  // what every other kind here already does. Two ways it cannot: the page was
+  // written since the check ran — two pages linking one missing target, the
+  // first fixed before the pane reloaded — and a target that is not a name at
+  // all, which `assertSlug` refuses before a path is built from it. A button
+  // that throws on click is worse than no button, because the reader spends a
+  // click finding out.
+  if (
+    finding.code === "wikilink.broken" &&
+    finding.target !== undefined &&
+    isPageSlug(finding.target) &&
+    !knownSlugs.has(finding.target)
+  ) {
     fixes.push({ kind: "create-page", label: "Create the page", target: finding.target });
   }
   if (finding.endsAt !== undefined && finding.source !== undefined) {
