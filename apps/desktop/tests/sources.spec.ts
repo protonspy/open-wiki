@@ -18,6 +18,8 @@ import {
   findings,
   revealPath,
   MAX_BROWSE_ENTRIES,
+  MAX_BROWSE_VISIT,
+  MAX_BROWSE_DEPTH,
   MAX_INLINE_IMAGE_BYTES,
   locateCitation,
   sourceDetail,
@@ -836,5 +838,74 @@ describe("group 7, after review", () => {
     expect(revealPath(root, "model.step")).toContain(join("raw", "model.step"));
     expect(() => revealPath(root, "../../elsewhere")).toThrow();
     expect(() => revealPath(root, "ghost")).toThrow(/no file to show/i);
+  });
+});
+
+describe("the browse walk is bounded (7.5, second review)", () => {
+  it("has bounds that are the product's, not the tests'", () => {
+    // The tests below pass their own so the suite does not write forty thousand
+    // files to prove arithmetic. What the product enforces is pinned here, so
+    // loosening it by accident is a failing test rather than a frozen window.
+    expect(MAX_BROWSE_ENTRIES).toBe(2000);
+    expect(MAX_BROWSE_VISIT).toBe(40000);
+    expect(MAX_BROWSE_DEPTH).toBe(32);
+  });
+
+  it("stops counting past the visit bound, and says the number is a floor", () => {
+    // Making `truncated` exact removed the early exit, and nothing upstream
+    // bounds the tree: `unpackArchive` caps total bytes and the expansion
+    // ratio, and an archive of a million empty files passes both. This runs
+    // synchronously in the Electron main process, so an unbounded walk is a
+    // frozen window.
+    source("many.zip", { text: false });
+    const contents = join(root, "raw", "many.zip", "contents");
+    mkdirSync(contents, { recursive: true });
+    for (let i = 0; i < 40; i++) {
+      writeFileSync(join(contents, `f${String(i).padStart(3, "0")}.txt`), "");
+    }
+    const browse = browseSource(root, "many.zip", { entries: 5, visit: 20 });
+    expect(browse.entries).toHaveLength(5);
+    expect(browse.atLeast).toBe(true);
+    // A floor, not a count: 20 seen, 5 shown, and it stopped looking.
+    expect(browse.truncated).toBe(15);
+  });
+
+  it("stops descending past the depth bound rather than blowing the stack", () => {
+    // `walk` recurses, so a tree of a thousand single-child directories is an
+    // uncaught RangeError rather than a slow answer.
+    source("deep.zip", { text: false });
+    let at = join(root, "raw", "deep.zip", "contents");
+    mkdirSync(at, { recursive: true });
+    for (let i = 0; i <= 8; i++) {
+      at = join(at, `d${i}`);
+      mkdirSync(at, { recursive: true });
+    }
+    writeFileSync(join(at, "buried.txt"), "x");
+
+    const browse = browseSource(root, "deep.zip", { depth: 4 });
+    expect(browse.atLeast).toBe(true);
+    expect(browse.entries.some((e) => e.path.endsWith("buried.txt"))).toBe(false);
+  });
+
+  it("says nothing about a floor for a tree it counted whole", () => {
+    source("small.zip", { text: false });
+    const contents = join(root, "raw", "small.zip", "contents");
+    mkdirSync(contents, { recursive: true });
+    writeFileSync(join(contents, "a.txt"), "x");
+    const browse = browseSource(root, "small.zip");
+    expect(browse.atLeast).toBeUndefined();
+    expect(browse.truncated).toBe(0);
+  });
+
+  it("reveals a real source through the channel, not only through the function", () => {
+    // The `deps.reveal` branch was wired and never exercised for a valid id:
+    // the channel test used one that throws before reaching it.
+    source("model.step", { text: false });
+    writeFileSync(join(root, "raw", "model.step", "source.step"), "solid");
+    const revealed: string[] = [];
+    const api = createApi({ projectRoot: root, reveal: (file) => revealed.push(file) });
+    api.revealSource("model.step");
+    expect(revealed).toHaveLength(1);
+    expect(revealed[0]).toContain(join("raw", "model.step"));
   });
 });

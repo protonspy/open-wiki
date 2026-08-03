@@ -13,8 +13,9 @@ import {
   sourceState,
   type Finding,
   type SourceState,
+  isWithin,
+  resolveReal,
 } from "@open-wiki/access/read";
-import { isWithin, resolveReal } from "@open-wiki/access/read";
 import { parseInstant, toWallMs, type TimeMap } from "@open-wiki/audio/timemap";
 // From `shared/`: the sources pane opens a source at its start too, and the two
 // must not disagree about what "the start" is spelled as.
@@ -234,6 +235,15 @@ export interface SourceBrowse {
   incomplete: boolean;
   /** Entries past the cap, when the tree is larger than one screen can be. */
   truncated: number;
+  /**
+   * True when the walk stopped before it had seen everything, so `truncated`
+   * is a floor rather than a count.
+   *
+   * It is said rather than folded into `truncated` because "1,438 more" and
+   * "at least 38,000 more" are different answers, and a number that silently
+   * means the second is the kind of quiet wrong this plan spends its notes on.
+   */
+  atLeast?: true;
 }
 
 /**
@@ -245,6 +255,30 @@ export interface SourceBrowse {
  * much was not shown rather than letting the list quietly end.
  */
 export const MAX_BROWSE_ENTRIES = 2000;
+
+/**
+ * How many entries the walk will *look at* before it stops counting.
+ *
+ * A separate bound from the listing cap, because they answer different
+ * questions: the cap is how much the renderer is asked to lay out, and this is
+ * how much work the main process will do to say what it did not show. Making
+ * `truncated` exact removed the early exit, and nothing upstream bounds the
+ * tree — `unpackArchive` caps total bytes and the expansion ratio, and an
+ * archive of a million empty files passes both.
+ *
+ * Twenty times the cap: generous enough that a real repository is counted
+ * exactly, small enough that the window does not freeze on a hostile one.
+ */
+export const MAX_BROWSE_VISIT = 20 * MAX_BROWSE_ENTRIES;
+
+/**
+ * How deep the walk will go.
+ *
+ * `walk` recurses, so a tree of a thousand single-child directories is an
+ * uncaught `RangeError` rather than a slow answer. Deeper than any repository
+ * anybody nests by hand, and far short of the stack.
+ */
+export const MAX_BROWSE_DEPTH = 32;
 
 /**
  * Browse into a source — the files it holds, and an unpacked archive as a tree
@@ -259,7 +293,26 @@ export const MAX_BROWSE_ENTRIES = 2000;
  * than the two files beside it: `source.zip` and `contents/` is a listing
  * nobody came to see.
  */
-export function browseSource(projectRoot: string, id: string): SourceBrowse {
+export interface BrowseBounds {
+  /** Entries returned. Defaults to `MAX_BROWSE_ENTRIES`. */
+  entries?: number;
+  /** Entries the walk will look at. Defaults to `MAX_BROWSE_VISIT`. */
+  visit?: number;
+  /** How deep it will go. Defaults to `MAX_BROWSE_DEPTH`. */
+  depth?: number;
+}
+
+export function browseSource(
+  projectRoot: string,
+  id: string,
+  // Injectable so the suite does not write forty thousand files to prove
+  // arithmetic — the same escape `unpackArchive` takes for its own bounds, and
+  // one test pins what the product actually enforces.
+  bounds: BrowseBounds = {},
+): SourceBrowse {
+  const maxEntries = bounds.entries ?? MAX_BROWSE_ENTRIES;
+  const maxVisit = bounds.visit ?? MAX_BROWSE_VISIT;
+  const maxDepth = bounds.depth ?? MAX_BROWSE_DEPTH;
   // Confined and found, never joined — a source filed into a folder is not at
   // the path its id spells (task 8.3), and an id reaches here out of a page's
   // prose.
@@ -280,38 +333,55 @@ export function browseSource(projectRoot: string, id: string): SourceBrowse {
 
   const entries: SourceEntry[] = [];
   let seen = 0;
-  const walk = (at: string, prefix: string): void => {
+  let stopped = false;
+  const walk = (at: string, prefix: string, depth: number): void => {
+    // **Both bounds are on the walk, not on the listing.** Removing the early
+    // exit to make `truncated` exact left the walk itself unbounded, and a
+    // review was right that nothing upstream closes that: `unpackArchive` caps
+    // total bytes and the expansion ratio, and an archive of a million
+    // empty files or a thousand nested directories passes both. This runs
+    // synchronously in the Electron main process, so an unbounded walk is a
+    // frozen window, and an unbounded recursion is an uncaught RangeError.
+    if (depth > maxDepth) {
+      stopped = true;
+      return;
+    }
     for (const entry of readdirSync(at, { withFileTypes: true }).sort((a, b) =>
       a.name.localeCompare(b.name),
     )) {
+      if (seen >= maxVisit) {
+        stopped = true;
+        return;
+      }
       // Links are not followed, for the reason `listSourceRefs` does not follow
       // them: one pointing out of `raw/` would list somebody else's disk as
       // this source's contents.
       if (entry.isSymbolicLink()) continue;
       const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
       seen += 1;
-      // **Counting does not stop at the cap; only pushing does.** Skipping an
-      // over-cap directory outright meant none of its descendants were ever
-      // counted, so `truncated` said 1 where the answer was 501 — a number
-      // whose only job is to be right about what was not shown.
-      if (seen <= MAX_BROWSE_ENTRIES) {
+      // **Counting does not stop at the listing cap; only pushing does.**
+      // Skipping an over-cap directory outright meant none of its descendants
+      // were ever counted, so `truncated` said 1 where the answer was 501 — a
+      // number whose only job is to be right about what was not shown.
+      if (seen <= maxEntries) {
         if (entry.isDirectory()) entries.push({ path: rel, kind: "dir" });
         else {
           const stat = statSync(join(at, entry.name), { throwIfNoEntry: false });
           entries.push({ path: rel, kind: "file", bytes: stat?.size ?? 0 });
         }
       }
-      if (entry.isDirectory()) walk(join(at, entry.name), rel);
+      if (entry.isDirectory()) walk(join(at, entry.name), rel, depth + 1);
     }
   };
-  walk(root, "");
+  walk(root, "", 0);
 
   return {
     id,
     entries,
     tree,
     incomplete: existsSync(join(dir, UNPACKING)),
-    truncated: Math.max(0, seen - MAX_BROWSE_ENTRIES),
+    truncated: Math.max(0, seen - maxEntries),
+    ...(stopped ? { atLeast: true as const } : {}),
   };
 }
 
