@@ -173,6 +173,21 @@ describe("an endpoint identifier is not a place to hide a control character", ()
     expect(() => validateSettings({ systemEndpoint: "{out}\n" })).toThrow(/systemEndpoint/);
   });
 
+  it("refuses a bidi override or a zero-width character too", () => {
+    // `\p{Cc}` matches none of these, and they spoof a label just as well as
+    // an ANSI escape does: U+202E reverses what follows it, and the zero-width
+    // characters hide a difference between two identifiers that read alike.
+    // The value crosses IPC as a dropped choice and reaches a screen once
+    // there is a picker.
+    const rtlOverride = "{mic-‮evil}";
+    const zeroWidth = "{mic​-headset}";
+    const bom = "﻿{out-speakers}";
+
+    expect(() => validateSettings({ micEndpoint: rtlOverride })).toThrow(/micEndpoint/);
+    expect(() => validateSettings({ micEndpoint: zeroWidth })).toThrow(/micEndpoint/);
+    expect(() => validateSettings({ systemEndpoint: bom })).toThrow(/systemEndpoint/);
+  });
+
   it("keeps an ordinary endpoint identifier", () => {
     const id = "{0.0.1.00000000}.{a1b2c3d4-0000-1111-2222-333344445555}";
     expect(validateSettings({ micEndpoint: id }).micEndpoint).toBe(id);

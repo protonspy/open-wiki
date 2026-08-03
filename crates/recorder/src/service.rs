@@ -71,6 +71,16 @@ impl<C: Clock> Service<C> {
     /// Put each track on the endpoint that was asked for, opening a new source
     /// where the one in hand is not it (R1.2, R1.3).
     fn honour(&mut self, params: &StartParams) -> Result<(), String> {
+        // Open everything first, install nothing until all of it succeeded.
+        //
+        // Assigning as each track resolved meant a microphone that resolved
+        // and a system endpoint that did not left the microphone swapped onto
+        // a source nobody had asked to record with, under a `start` that was
+        // then refused. Nothing observed it, because the mismatch corrects
+        // itself on the next `start` — which is precisely what makes it worth
+        // closing rather than leaving: a refusal has to leave the recorder
+        // exactly as it was, and "exactly" is the whole claim.
+        let mut opened: Vec<(Which, Box<dyn CaptureSource>)> = Vec::new();
         for which in [Which::Microphone, Which::Loopback] {
             let choice = params.endpoint(which);
             let current = match which {
@@ -88,9 +98,10 @@ impl<C: Clock> Service<C> {
             };
             // A failure here is R2.4: the endpoint named is not on this
             // machine, and `resolve` has already put its identifier in the
-            // message. The old source is dropped only once the new one is in
-            // hand, so a refusal leaves the recorder exactly as it was.
-            let fresh = open(which, &choice)?;
+            // message.
+            opened.push((which, open(which, &choice)?));
+        }
+        for (which, fresh) in opened {
             match which {
                 Which::Microphone => self.mic = fresh,
                 Which::Loopback => self.system = fresh,

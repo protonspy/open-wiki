@@ -457,3 +457,45 @@ fn a_control_character_in_an_identifier_does_not_reach_the_line_raw() {
     assert!(!line.contains('\u{1b}'));
     let _: serde_json::Value = serde_json::from_str(&line).expect("valid json");
 }
+
+#[test]
+fn one_track_resolving_and_the_other_not_leaves_neither_swapped() {
+    // A refusal has to leave the recorder exactly as it was, and "exactly" is
+    // the whole claim. Installing each track as it resolved put the microphone
+    // on a source nobody had asked to record with, under a `start` that was
+    // then refused — invisible, because the next `start` corrects it.
+    let asked = Arc::new(AtomicUsize::new(0));
+    let mut service = service_with_factory(Arc::clone(&asked), vec!["{mic-headset}".into()]);
+    let dir = tempdir("half");
+
+    // The microphone resolves; the system endpoint is not on this machine.
+    let response = service.handle(start(&dir, Some("{mic-headset}"), Some("{out-gone}")));
+
+    assert!(
+        matches!(response, Response::Err { .. }),
+        "the start is refused"
+    );
+    assert!(service.session().is_none());
+    assert!(!dir.exists());
+
+    // Both tracks were asked for during the refused start: the microphone
+    // resolved, the system endpoint did not.
+    let after_refusal = asked.load(Ordering::Relaxed);
+    assert_eq!(after_refusal, 2);
+
+    // Now ask for the default on both. A track still *following* satisfies
+    // that and is not reopened — so if nothing more is opened, nothing was
+    // swapped. If the microphone had been left pinned by the refused start it
+    // would fail `satisfies(Default)` and be reopened here, which is the
+    // defect stated as something observable rather than as a field nobody can
+    // reach.
+    let second = tempdir("half-again");
+    let response = service.handle(start(&second, None, None));
+
+    assert!(is_ok(&response), "got {}", message(&response));
+    assert_eq!(
+        asked.load(Ordering::Relaxed),
+        after_refusal,
+        "the refused start left a track swapped, and the next start had to undo it"
+    );
+}

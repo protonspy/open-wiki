@@ -188,15 +188,19 @@ describe("recording over IPC (8.2)", () => {
       status: () => Promise.resolve({ state: "recording", recorded_ms: 12 }),
       devices: () => {
         calls.push("devices");
+        if (devicesFail) return Promise.reject(new Error("this machine has no audio device"));
         return Promise.resolve([
           { id: "{mic-headset}", name: "Headset", kind: "capture", default: false },
           { id: "{out-speakers}", name: "Speakers", kind: "loopback", default: true },
         ]);
       },
     };
+    let devicesFail = false;
     return {
       calls,
       spawned: () => session !== null,
+      /** A machine whose endpoints cannot be enumerated (`service.rs` tests this). */
+      failDevices: () => (devicesFail = true),
       control: {
         ensure: () => {
           calls.push("ensure");
@@ -259,6 +263,22 @@ describe("recording over IPC (8.2)", () => {
 
     expect(r.calls).toContain('endpoints {"mic":"{mic-headset}","system":""}');
     expect(started.unresolved).toEqual([]);
+  });
+
+  it("records without asking what devices exist when nothing was chosen (R1.3)", async () => {
+    // Enumerating the machine's endpoints is a COM call that can fail on its
+    // own — a machine with no audio device says so rather than answering. A
+    // project that chose nothing records on the Windows default, and making
+    // that path depend on a question it never had to ask turns a recording
+    // that used to work into one that fails.
+    const r = control();
+    r.failDevices();
+    const api = createApi({ projectRoot: root, recorder: r.control });
+
+    const started = await api.recordStart("Fenix weekly");
+
+    expect(started.unresolved).toEqual([]);
+    expect(r.calls).not.toContain("devices");
   });
 
   it("records on the default and says so when the chosen endpoint is not here (R1.5)", async () => {

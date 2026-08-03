@@ -343,13 +343,25 @@ export function createApi(deps: Deps): DesktopApi {
       const dir = join(root(), "raw", id);
       const session = ensure();
 
+      const settings = readSettings(root());
+
+      // **Nothing was chosen, so nothing needs checking.** Enumerating the
+      // machine's endpoints is a COM call that can fail on its own — a machine
+      // with no audio device says so rather than answering — and R1.3 says a
+      // project that chose nothing records on the Windows default. Asking
+      // first would make that path depend on a question it never had to ask,
+      // so a recording that used to work would start failing.
+      if (!settings.micEndpoint && !settings.systemEndpoint) {
+        await session.start(occasion, dir);
+        return { id, dir, unresolved: [] };
+      }
+
       // What this project chose to record with (R1.2), checked against what
       // this machine actually has (R1.5). `ow.json` is committed and an
       // endpoint identifier is machine-local, so a teammate who cloned — or
       // the same person on a second machine — has a setting naming nothing.
       // That is a choice to re-make, not a reason to refuse: it falls back to
       // the default and *says so*, and the caller is what tells somebody.
-      const settings = readSettings(root());
       const available = await session.devices();
       const mic = resolveEndpoint(settings.micEndpoint, available);
       const system = resolveEndpoint(settings.systemEndpoint, available);
