@@ -1,6 +1,8 @@
 ---
 autonomy: auto
 ci: wait
+worktree: per-group
+merge: auto
 ---
 
 # Open Wiki in Claude Code, Codex and opencode
