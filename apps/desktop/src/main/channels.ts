@@ -77,6 +77,13 @@ export const CHANNELS = {
    * `os` and must not guess one from a user agent.
    */
   defaultDirectory: "launcher:default-directory",
+  /**
+   * The list, with whatever is sitting in the default location taken on first
+   * (R2.6). Its own channel rather than folded into `launcher:projects`,
+   * because that one is a read and this one writes to the registry — and a
+   * read that quietly writes is a thing nobody expects twice.
+   */
+  discoverProjects: "launcher:discover",
   saveCredentialFor: "launcher:credential",
   transcribe: "sources:transcribe",
 

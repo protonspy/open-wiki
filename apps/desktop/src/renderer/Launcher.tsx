@@ -32,9 +32,20 @@ export function Launcher(): React.JSX.Element {
   const [creatingAt, setCreatingAt] = useState("");
   const [busy, setBusy] = useState(false);
 
+  /**
+   * The list, with whatever is already sitting in the default location taken on
+   * first (R2.6).
+   *
+   * `discoverProjects` rather than `knownProjects`: a project restored from a
+   * backup or cloned straight into `WikiProjects` is on disk and unknown, and
+   * making somebody point at it through **Open project…** is asking them to
+   * tell the application something it is standing on top of. The registry is
+   * still what this renders — the folder is read to fill it, never to answer
+   * from.
+   */
   const load = useCallback(() => {
     void bridge()
-      .knownProjects()
+      .discoverProjects()
       .then(setProjects)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
@@ -99,6 +110,46 @@ export function Launcher(): React.JSX.Element {
     <div className="launcher">
       <h2>Projects on this machine</h2>
       {error ? <p className="error">{error}</p> : null}
+
+      {/* Above the list, because these are what somebody came here to do — the
+          list is what they came here to pick from. Below it, the two doors sat
+          past however many projects this machine has. */}
+      {creating ? null : (
+        <div className="editor__bar">
+          <button
+            onClick={() => {
+              setCreatingAt("");
+              setCreating(true);
+            }}
+          >
+            New project
+          </button>
+          {/* R2.1 — the other half. Without it the only way into a project the
+              registry does not list is to go and run `ow` in its directory,
+              which is what the note below used to be the whole answer. */}
+          <button onClick={() => void openExistingProject()} disabled={busy}>
+            {busy ? "Opening…" : "Open project…"}
+          </button>
+        </div>
+      )}
+
+      {creating ? (
+        <NewProject
+          startingDirectory={creatingAt}
+          onCancel={() => {
+            setCreating(false);
+            setCreatingAt("");
+          }}
+          onCreated={() => {
+            setCreating(false);
+            setCreatingAt("");
+            setError(null);
+            load();
+          }}
+          onError={setError}
+        />
+      ) : null}
+
       {projects && projects.length > 0 ? (
         <ul className="list">
           {projects.map((project) => (
@@ -120,40 +171,6 @@ export function Launcher(): React.JSX.Element {
         </ul>
       ) : (
         <p className="empty">Nothing here yet.</p>
-      )}
-
-      {creating ? (
-        <NewProject
-          startingDirectory={creatingAt}
-          onCancel={() => {
-            setCreating(false);
-            setCreatingAt("");
-          }}
-          onCreated={() => {
-            setCreating(false);
-            setCreatingAt("");
-            setError(null);
-            load();
-          }}
-          onError={setError}
-        />
-      ) : (
-        <div className="editor__bar">
-          <button
-            onClick={() => {
-              setCreatingAt("");
-              setCreating(true);
-            }}
-          >
-            New project
-          </button>
-          {/* R2.1 — the other half. Without it the only way into a project the
-              registry does not list is to go and run `ow` in its directory,
-              which is what the note below used to be the whole answer. */}
-          <button onClick={() => void openExistingProject()} disabled={busy}>
-            {busy ? "Opening…" : "Open project…"}
-          </button>
-        </div>
       )}
 
       <p className="empty">

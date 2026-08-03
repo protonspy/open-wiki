@@ -177,6 +177,24 @@ describe("the launcher offers both doors (R2.1, R3.1)", () => {
     }
   });
 
+  it("takes on what is already in the default location before listing (R2.6)", () => {
+    // `knownProjects` renders the registry as it stands; `discoverProjects`
+    // fills it from the default location first. A project cloned straight into
+    // WikiProjects is on disk and unknown until that runs.
+    expect(launcher).toMatch(/discoverProjects\(\)/);
+    expect(launcher).not.toMatch(/\.knownProjects\(\)/);
+  });
+
+  it("puts the two doors above the list they act on", () => {
+    // Below it, they sat past however many projects this machine has — and the
+    // list is what somebody came here to pick from, not what they came to do.
+    const doors = launcher.indexOf("New project");
+    const list = launcher.indexOf('<ul className="list">');
+    expect(doors).toBeGreaterThan(-1);
+    expect(list).toBeGreaterThan(-1);
+    expect(doors).toBeLessThan(list);
+  });
+
   it("keeps the first run's escape hatch on the step that can use it", () => {
     // Rendered inside the `project` step, not after it: the directory a refused
     // choice carries back (R2.4) is the field on that step, and an offer that

@@ -26,3 +26,9 @@
 - [x] 5.1 (Unit) Answer where new projects go by default, derived from the user's home directory and owning nothing — R3.4
 - [x] 5.2 (Unit) Derive `<default>/<name>` while the directory field is untouched, and stop deriving once it is — R3.4, R3.5
 - [x] 5.3 (Unit) Use the proposal on both doors — the launcher's create form and the first run — R3.4, R3.5
+
+## 6 · Finding what is already in the default location
+
+- [x] 6.1 (Unit) Register every project sitting directly inside the default location, skipping what is not one and what is already known — R2.6
+- [x] 6.2 (Unit) Answer the launcher's list with the discovery already done, over one channel — R2.6
+- [x] 6.3 (Unit) Put **New project** and **Open project…** above the list they act on — R2.1
