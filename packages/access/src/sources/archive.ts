@@ -451,6 +451,17 @@ export async function unpackArchive(
         // The bound is not an entry's problem and must still stop everything,
         // so it is rethrown: a bomb is a fact about the archive.
         if (err instanceof ExpansionError) throw err;
+        // **Whatever it half-wrote goes with it.** A failure part-way through
+        // the pipeline — a disk that filled, a path past `MAX_PATH`, a lock
+        // held elsewhere — has already flushed bytes to this path, and the
+        // first version of this catch left them: a truncated file standing
+        // under a name the caller was just told was refused, uncounted by
+        // `result.bytes`, and enough to make a later entry aimed at the same
+        // path read as a collision with something that never landed. A review
+        // found it. `contents/` is meant to be an exact reflection of the
+        // archive, and a half-written file is neither a landed entry nor an
+        // absent one.
+        rmSync(placed.path, { force: true });
         result.refused.push({
           entry: name,
           reason: `"${name}" could not be written: ${err instanceof Error ? err.message : String(err)}`,
