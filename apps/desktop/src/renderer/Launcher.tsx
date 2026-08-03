@@ -5,6 +5,7 @@ import type { KnownProject } from "../main/settings.js";
 import { bridge } from "./bridge.js";
 import { FirstRun } from "./FirstRun.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
+import { directoryAfterChoosing, openExisting } from "./open-existing.js";
 
 /**
  * The launcher (plan 8.4) — what `ow` run outside a project opens instead of
@@ -19,6 +20,17 @@ export function Launcher(): React.JSX.Element {
   const [projects, setProjects] = useState<KnownProject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  /**
+   * The directory the create form opens on
+   * (`specs/opening-an-existing-project`, R2.4).
+   *
+   * A directory that turned out not to be a project is carried into the form
+   * rather than dropped. The user already said where; asking again, right after
+   * being told it was not a project, is the moment this would read as a refusal
+   * instead of a step forward.
+   */
+  const [creatingAt, setCreatingAt] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     void bridge()
@@ -47,6 +59,35 @@ export function Launcher(): React.JSX.Element {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
+
+  /**
+   * Open a project this machine has never been told about (R2.1, R2.2, R2.4).
+   *
+   * The list above can only open what the registry already holds, and a project
+   * that was cloned, restored, or made before this application was on the
+   * machine is in none of them.
+   */
+  const openExistingProject = useCallback(async () => {
+    setBusy(true);
+    try {
+      const attempt = await openExisting(bridge());
+      if (attempt.kind === "cancelled") return;
+      if (attempt.kind === "opened") {
+        // Registered on the way through (R2.3), so the list is stale the moment
+        // the window opens.
+        setError(null);
+        load();
+        return;
+      }
+      setError(`${attempt.directory} is not a project yet — name it and it will be one.`);
+      setCreatingAt(attempt.directory);
+      setCreating(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [load]);
 
   // 6.3 — the genuine first run: nothing known, so nothing to list. The four
   // steps stand in for an empty list and a button.
@@ -83,9 +124,14 @@ export function Launcher(): React.JSX.Element {
 
       {creating ? (
         <NewProject
-          onCancel={() => setCreating(false)}
+          startingDirectory={creatingAt}
+          onCancel={() => {
+            setCreating(false);
+            setCreatingAt("");
+          }}
           onCreated={() => {
             setCreating(false);
+            setCreatingAt("");
             setError(null);
             load();
           }}
@@ -93,7 +139,20 @@ export function Launcher(): React.JSX.Element {
         />
       ) : (
         <div className="editor__bar">
-          <button onClick={() => setCreating(true)}>New project</button>
+          <button
+            onClick={() => {
+              setCreatingAt("");
+              setCreating(true);
+            }}
+          >
+            New project
+          </button>
+          {/* R2.1 — the other half. Without it the only way into a project the
+              registry does not list is to go and run `ow` in its directory,
+              which is what the note below used to be the whole answer. */}
+          <button onClick={() => void openExistingProject()} disabled={busy}>
+            {busy ? "Opening…" : "Open project…"}
+          </button>
         </div>
       )}
 
@@ -122,21 +181,34 @@ export function Launcher(): React.JSX.Element {
  * and regenerates `CLAUDE.md` when it does.
  */
 function NewProject({
+  startingDirectory,
   onCancel,
   onCreated,
   onError,
 }: {
+  /** Where R2.4 already sent the user — empty when they came here directly. */
+  startingDirectory: string;
   onCancel: () => void;
   onCreated: () => void;
   onError: (message: string) => void;
 }): React.JSX.Element {
   const [name, setName] = useState("");
-  const [directory, setDirectory] = useState("");
+  const [directory, setDirectory] = useState(startingDirectory);
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE);
   // Nothing preselected, as in the first run and the CLI picker: the convention
   // is committed, so a guess here is paid for by whoever clones the project.
   const [harnesses, setHarnesses] = useState<Harness[]>([]);
   const [busy, setBusy] = useState(false);
+
+  /** R3.1 — and R3.3: a cancelled chooser leaves what is in the box alone. */
+  const choose = useCallback(async () => {
+    try {
+      const chosen = await bridge().chooseDirectory();
+      setDirectory((current) => directoryAfterChoosing(current, chosen));
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    }
+  }, [onError]);
 
   const create = useCallback(async () => {
     const trimmedName = name.trim();
@@ -183,12 +255,19 @@ function NewProject({
       </label>
       <label>
         Directory
-        <input
-          className="editor__source"
-          value={directory}
-          placeholder="C:\projects\fenix"
-          onChange={(event) => setDirectory(event.target.value)}
-        />
+        {/* R3.1 and R3.2 together: the chooser for the ordinary case, the box
+            still typeable for a path somebody already has in hand. */}
+        <div className="editor__bar">
+          <input
+            className="editor__source"
+            value={directory}
+            placeholder="C:\projects\fenix"
+            onChange={(event) => setDirectory(event.target.value)}
+          />
+          <button type="button" onClick={() => void choose()} disabled={busy}>
+            Choose…
+          </button>
+        </div>
       </label>
       <fieldset className="launcher__languages">
         <legend>Harnesses</legend>

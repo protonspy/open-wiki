@@ -36,6 +36,12 @@ export interface InitResult {
   hooks: string[];
   /** The entry files written, one per distinct filename these harnesses need. */
   entryFiles: string[];
+  /**
+   * The entry files left exactly as found, because this product did not write
+   * what was there (`specs/opening-an-existing-project`, R1.4) — a hand-written
+   * `CLAUDE.md` in the repository `ow init` was just run inside.
+   */
+  keptEntryFiles: string[];
   /** What the project records after this run. */
   harnesses: Harness[];
   registeredName?: string;
@@ -118,7 +124,7 @@ export function runInit(opts: InitOptions): InitResult {
     const current = readSettings(projectRoot);
     writeSettings(projectRoot, { ...current, language });
   }
-  const entryFiles = writeEntryFiles(projectRoot, language, harnesses);
+  const entry = writeEntryFiles(projectRoot, language, harnesses);
   // Only the harnesses this project carries (3.1). This was `writeHooks`
   // unconditionally, so a Codex-only project got a `.claude/settings.json`
   // written into it — a file for a harness nobody asked for, which is the
@@ -138,5 +144,15 @@ export function runInit(opts: InitOptions): InitResult {
     }
   }
 
-  return { projectRoot, skills, hooks, entryFiles, harnesses: [...harnesses], registeredName };
+  return {
+    projectRoot,
+    skills,
+    hooks,
+    entryFiles: entry.written,
+    // R1.4 — an entry file this product did not write is kept, and saying so is
+    // the whole point: silently not writing is as confusing as overwriting.
+    keptEntryFiles: entry.kept,
+    harnesses: [...harnesses],
+    registeredName,
+  };
 }

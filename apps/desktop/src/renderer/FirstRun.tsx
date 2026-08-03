@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { bridge } from "./bridge.js";
 import { canLeave, nextStep, STEPS, stepNumber, type StepId } from "./first-run.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
+import { directoryAfterChoosing } from "./open-existing.js";
 import { Button } from "./ui/Button.js";
 import { Segmented } from "./ui/Segmented.js";
 
@@ -53,6 +54,16 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
       setBusy(false);
     }
   }, [name, directory, language, harnesses]);
+
+  /** R3.1, and R3.3: a cancelled chooser leaves what is in the box alone. */
+  const chooseDirectory = useCallback(async () => {
+    try {
+      const chosen = await bridge().chooseDirectory();
+      setDirectory((current) => directoryAfterChoosing(current, chosen));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
 
   const toggle = useCallback((h: Harness) => {
     setHarnesses((current) => toggleHarness(current, h));
@@ -114,11 +125,18 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
           </label>
           <label className="field">
             Directory
-            <input
-              value={directory}
-              placeholder="C:\projects\fenix"
-              onChange={(e) => setDirectory(e.target.value)}
-            />
+            {/* `specs/opening-an-existing-project`, R3.1 — wherever a directory
+                is asked for, and this is the first one anybody ever sees. */}
+            <div className="editor__bar">
+              <input
+                value={directory}
+                placeholder="C:\projects\fenix"
+                onChange={(e) => setDirectory(e.target.value)}
+              />
+              <button type="button" onClick={() => void chooseDirectory()}>
+                Choose…
+              </button>
+            </div>
           </label>
         </>
       ) : null}

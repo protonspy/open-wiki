@@ -50,6 +50,46 @@ describe("scaffold (2.1)", () => {
     expect(() => scaffold(root)).toThrow(DirectoryOccupiedError);
   });
 
+  // R1.3 — adopting a project that already exists must not cost it anything.
+  // The idempotency test above covers the skills and the settings; this covers
+  // what the user actually wrote.
+  it("leaves the pages a project already holds alone", () => {
+    scaffold(root);
+    writeFileSync(join(root, "wiki", "fenix.md"), "---\nid: fenix\n---\n\nmine\n", "utf8");
+    writeFileSync(join(root, "wiki", "index.md"), "# my own index\n", "utf8");
+    scaffold(root);
+    expect(readFileSync(join(root, "wiki", "fenix.md"), "utf8")).toContain("mine");
+    expect(readFileSync(join(root, "wiki", "index.md"), "utf8")).toBe("# my own index\n");
+  });
+
+  // `specs/opening-an-existing-project`, R1.1 — the case the refusal has always
+  // told the user to use, and which nothing here read until now.
+  it("accepts a git repository that is already being worked in", () => {
+    mkdirSync(join(root, ".git"), { recursive: true });
+    writeFileSync(join(root, "README.md"), "somebody's project\n", "utf8");
+    mkdirSync(join(root, "src"), { recursive: true });
+    scaffold(root);
+    expect(existsSync(join(root, "wiki"))).toBe(true);
+    expect(existsSync(join(root, "ow.json"))).toBe(true);
+    // Its own files are untouched: a wiki is added to the repository, not
+    // instead of it.
+    expect(readFileSync(join(root, "README.md"), "utf8")).toBe("somebody's project\n");
+  });
+
+  it("accepts a worktree, where .git is a file rather than a directory", () => {
+    writeFileSync(join(root, ".git"), "gitdir: ../.git/worktrees/feature\n", "utf8");
+    writeFileSync(join(root, "unrelated.txt"), "x");
+    expect(() => scaffold(root)).not.toThrow();
+  });
+
+  it("still refuses a populated directory that is not under version control", () => {
+    // R1.2. The guard's whole point: scaffolding prints success, so a mistyped
+    // path must not quietly become a project somewhere nobody looks again.
+    mkdirSync(join(root, "holiday-photos"), { recursive: true });
+    writeFileSync(join(root, "notes.txt"), "x");
+    expect(() => scaffold(root)).toThrow(DirectoryOccupiedError);
+  });
+
   it("scaffolds into a brand-new directory that does not yet exist", () => {
     const fresh = join(root, "nested", "new-project");
     scaffold(fresh);

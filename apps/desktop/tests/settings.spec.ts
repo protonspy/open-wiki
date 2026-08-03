@@ -1,16 +1,18 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readSecrets } from "@open-wiki/access/secrets";
 import { readSettings as currentSettings } from "@open-wiki/access";
-import { createApi, NoProjectError } from "../src/main/ipc.js";
+import { CHANNELS, createApi, dispatch, NoProjectError } from "../src/main/ipc.js";
 import type { FetchLike } from "@open-wiki/audio";
 import {
+  adoptProject,
   checkCredential,
   createProject,
   credentialState,
   currentLanguage,
+  deriveProjectName,
   forgetProject,
   knownProjects,
   InvalidProjectNameError,
@@ -488,5 +490,176 @@ describe("setDeleteWav (6.1)", () => {
     setLanguage(root, "pt-BR");
     setDeleteWav(root, false);
     expect(currentLanguage(root)).toBe("pt-BR");
+  });
+});
+
+/**
+ * Naming a project nobody named (`specs/opening-an-existing-project`, R2.3).
+ *
+ * Opening an existing project asks for no name (R2.2), and the registry is keyed
+ * by one — so the name is derived from the directory, and the derivation has to
+ * survive whatever a directory is actually called. The registry's rule is
+ * `/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/`, and a folder called `Meu Projeto (2024)` is
+ * an ordinary thing to have.
+ */
+describe("the launcher's two channels (R2.2, R2.4, R3.1, R3.3)", () => {
+  // The API reaches the registry through the default application data
+  // directory, so the environment it resolves from is pointed at a temp one —
+  // the same redirect `ow init`'s suite uses. Without it these tests would
+  // register projects in the real registry on the machine running them.
+  let savedEnv: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    savedEnv = { APPDATA: process.env["APPDATA"], HOME: process.env["HOME"] };
+    process.env["APPDATA"] = appData;
+    process.env["HOME"] = appData;
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("answers the directory the chooser gave back", async () => {
+    const api = createApi({ projectRoot: null, chooseDirectory: async () => root });
+    expect(await dispatch(api, CHANNELS.chooseDirectory, [])).toBe(root);
+  });
+
+  it("answers null when the chooser was cancelled", async () => {
+    // R3.3 — cancelling is an answer, not a failure: the caller keeps whatever
+    // directory it already had.
+    const api = createApi({ projectRoot: null, chooseDirectory: async () => null });
+    expect(await dispatch(api, CHANNELS.chooseDirectory, [])).toBeNull();
+  });
+
+  it("answers null in a build with no window to ask from", async () => {
+    const api = createApi({ projectRoot: null });
+    expect(await dispatch(api, CHANNELS.chooseDirectory, [])).toBeNull();
+  });
+
+  it("opens a window on a chosen directory that is a project", async () => {
+    const opened: string[] = [];
+    const api = createApi({ projectRoot: null, openWindow: (r) => opened.push(r) });
+    const outcome = await dispatch(api, CHANNELS.openDirectory, [root]);
+    expect(outcome).toMatchObject({ kind: "adopted", project: { path: root } });
+    expect(opened).toEqual([root]);
+  });
+
+  it("answers not-a-project, and opens nothing, for a directory that is not one", async () => {
+    // R2.4's input. The launcher turns this into the create form on the same
+    // directory — so nothing may be scaffolded, and no window may open.
+    const empty = mkdtempSync(join(tmpdir(), "ow-not-a-project-"));
+    const opened: string[] = [];
+    const api = createApi({ projectRoot: null, openWindow: (r) => opened.push(r) });
+    try {
+      expect(await dispatch(api, CHANNELS.openDirectory, [empty])).toEqual({
+        kind: "not-a-project",
+        directory: empty,
+      });
+      expect(opened).toEqual([]);
+      expect(existsSync(join(empty, "wiki"))).toBe(false);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("adoptProject (R2.2, R2.3, R2.5)", () => {
+  /** A directory that already holds a project, the way a clone would. */
+  function existingProject(name: string): string {
+    const dir = join(mkdtempSync(join(tmpdir(), "ow-adopt-")), name);
+    for (const part of ["raw", "wiki", ".state"]) mkdirSync(join(dir, part), { recursive: true });
+    return dir;
+  }
+
+  it("takes on a project this machine has never been told about", () => {
+    const dir = existingProject("fenix");
+    const outcome = adoptProject(dir, appData);
+    expect(outcome).toMatchObject({ kind: "adopted", project: { name: "fenix", path: dir } });
+    // R2.3 — and it is listed next time, which is the point of recording it.
+    expect(knownProjects(appData).map((p) => p.name)).toContain("fenix");
+  });
+
+  it("says a directory is not a project rather than making one there", () => {
+    // R2.4's input. Nothing is written: the answer is what the launcher turns
+    // into an offer to create one.
+    const dir = mkdtempSync(join(tmpdir(), "ow-empty-"));
+    const outcome = adoptProject(dir, appData);
+    expect(outcome).toEqual({ kind: "not-a-project", directory: dir });
+    expect(existsSync(join(dir, "wiki"))).toBe(false);
+    expect(knownProjects(appData)).toEqual([]);
+  });
+
+  it("answers with the entry it already has, rather than adding a second", () => {
+    // R2.5. Twice through the same directory is one project, not two.
+    const dir = existingProject("fenix");
+    const first = adoptProject(dir, appData);
+    const second = adoptProject(dir, appData);
+    expect(second).toEqual(first);
+    expect(knownProjects(appData)).toHaveLength(1);
+  });
+
+  it("gives a second project of the same name its own entry", () => {
+    // Two clones of two different projects that happen to sit in directories
+    // with the same base name. Repointing the first entry would lose it.
+    const one = existingProject("fenix");
+    const two = existingProject("fenix");
+    const first = adoptProject(one, appData);
+    const second = adoptProject(two, appData);
+    expect(first).toMatchObject({ project: { name: "fenix" } });
+    expect(second).toMatchObject({ project: { name: "fenix-2", path: two } });
+    expect(
+      knownProjects(appData)
+        .map((p) => p.path)
+        .sort(),
+    ).toEqual([one, two].sort());
+  });
+
+  it("refuses a relative directory rather than resolving it against nothing", () => {
+    expect(() => adoptProject("fenix", appData)).toThrow(RelativeProjectPathError);
+  });
+});
+
+describe("deriveProjectName (R2.3)", () => {
+  const nothingTaken = new Set<string>();
+  /**
+   * Built with `join` rather than written out: a literal `C:\dev\fenix` is a
+   * Windows path, and `basename` is the platform's — so a hand-written path
+   * would assert the separator this suite happens to run on rather than the
+   * derivation. The desktop suite runs on both.
+   */
+  const at = (name: string): string => join(tmpdir(), "ow-derive", name);
+
+  it("takes the directory's own name when the registry would accept it", () => {
+    expect(deriveProjectName(at("sprite-sheet-generator"), nothingTaken)).toBe(
+      "sprite-sheet-generator",
+    );
+  });
+
+  it("replaces what the registry rejects, and collapses the run it leaves", () => {
+    expect(deriveProjectName(at("Meu Projeto (2024)"), nothingTaken)).toBe("Meu-Projeto-2024");
+  });
+
+  it("trims what may not lead or trail a name", () => {
+    expect(deriveProjectName(at(".hidden"), nothingTaken)).toBe("hidden");
+    expect(deriveProjectName(at("fenix-"), nothingTaken)).toBe("fenix");
+  });
+
+  it("suffixes a name another directory already holds, rather than repointing it", () => {
+    // The one way this feature could lose somebody's other project.
+    expect(deriveProjectName(at("fenix"), new Set(["fenix"]))).toBe("fenix-2");
+    expect(deriveProjectName(at("fenix"), new Set(["fenix", "fenix-2"]))).toBe("fenix-3");
+  });
+
+  it("answers null for a directory whose name survives none of it", () => {
+    // Refused rather than invented: R2.2 says opening asks for no name, and
+    // this is the one directory that cannot be named without asking.
+    expect(deriveProjectName(at("..."), nothingTaken)).toBeNull();
+  });
+
+  it("ignores a trailing separator rather than deriving from an empty segment", () => {
+    expect(deriveProjectName(at("fenix") + sep, nothingTaken)).toBe("fenix");
   });
 });

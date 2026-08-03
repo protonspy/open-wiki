@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 import {
   LANGUAGES,
   ProjectRegistry,
@@ -27,6 +27,9 @@ import {
   type SttSecret,
 } from "@open-wiki/access/secrets";
 import { GROQ_URL, type FetchLike } from "@open-wiki/audio";
+// The one definition of "this directory holds a project", shared with the
+// launch path rather than written a second time here.
+import { looksLikeProject } from "./project.js";
 import {
   DEFAULT_MODEL,
   parseModelList,
@@ -389,6 +392,47 @@ export class ProjectNameTakenError extends Error {
 }
 
 /**
+ * A registry name for a project nobody named
+ * (`specs/opening-an-existing-project`, R2.3).
+ *
+ * Opening an existing project asks for no name — R2.2 — and the registry is
+ * keyed by one, so it comes from the directory. The registry's rule is
+ * `PROJECT_NAME` above, and a folder called `Meu Projeto (2024)` is an ordinary
+ * thing to have: everything it rejects becomes `-`, the run that leaves is
+ * collapsed, and what may not lead or trail a name is trimmed.
+ *
+ * **A taken name is suffixed, never reused.** `register` overwrites the entry
+ * for a name it already has (`packages/access/src/registry.ts:82`), so returning
+ * a name another directory holds would silently repoint that entry — this
+ * feature quietly losing somebody's other project, which is the worst thing it
+ * could do.
+ *
+ * @param taken every name the registry already holds for a *different*
+ *   directory. A directory already registered is answered before this is
+ *   reached, by `adoptProject`.
+ * @returns null for a directory whose name survives none of the above (`...`).
+ *   That is the one case that cannot be named without asking, and asking is what
+ *   **New project** is for.
+ */
+export function deriveProjectName(directory: string, taken: ReadonlySet<string>): string | null {
+  // `basename` on a path with a trailing separator answers the last real
+  // segment, which is what a directory chooser can hand back.
+  const base = basename(directory.replace(/[\\/]+$/, ""));
+  const stem = base
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[^a-zA-Z0-9]+/, "")
+    .replace(/[^a-zA-Z0-9]+$/, "");
+  if (stem === "") return null;
+  if (!taken.has(stem)) return stem;
+  // From 2: the unsuffixed name is the first one, so the next is the second.
+  for (let n = 2; ; n += 1) {
+    const candidate = `${stem}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/**
  * Create a project from the launcher (plan 8.4).
  *
  * It goes through the scaffolder of 2.1 — the same one `ow init` and the first
@@ -437,6 +481,82 @@ export function createProject(
   writeEntryFiles(directory, language, chosen);
   registry.register(name, directory);
   return { name, path: directory, present: existsSync(directory) };
+}
+
+/**
+ * What adopting a directory came to (`specs/opening-an-existing-project`).
+ *
+ * `not-a-project` is an answer rather than a throw: R2.4 turns it into the
+ * create form with that directory already filled in, which is a step forward
+ * and not a failure.
+ */
+export type AdoptOutcome =
+  { kind: "adopted"; project: KnownProject } | { kind: "not-a-project"; directory: string };
+
+/**
+ * Take on a project that already exists on disk (R2.2, R2.3, R2.5).
+ *
+ * The counterpart of `createProject`, and deliberately not a variant of it:
+ * nothing is scaffolded, nothing is written into the directory, and no name,
+ * language or harness is asked for. A project that already exists has all four
+ * already, and asking again is how the answers on disk get overwritten with
+ * whatever a form defaulted to.
+ *
+ * A directory this machine already knows is answered with the entry it already
+ * has (R2.5). That check is by path rather than by name, because the same
+ * project registered twice under two names is exactly the duplicate R2.5 exists
+ * to prevent.
+ */
+export function adoptProject(directory: string, appDataDir?: string): AdoptOutcome {
+  // Absolute, for `createProject`'s reason: a relative directory resolves
+  // against whatever working directory the Electron process happens to have.
+  if (!isAbsolute(directory)) throw new RelativeProjectPathError(directory);
+  const resolved = resolve(directory);
+  if (!looksLikeProject(resolved)) return { kind: "not-a-project", directory: resolved };
+
+  const registry = new ProjectRegistry(appDataDir ?? defaultAppDataDir());
+  const known = registry.known();
+  for (const name of known) {
+    let path: string;
+    try {
+      path = registry.resolve(name);
+    } catch {
+      // An entry whose directory moved. It resolves to nothing, so it is not
+      // this one, and it is not this function's business to tidy it.
+      continue;
+    }
+    if (samePath(path, resolved)) {
+      return { kind: "adopted", project: { name, path: resolved, present: true } };
+    }
+  }
+
+  const name = deriveProjectName(resolved, new Set(known));
+  if (name === null) throw new UnnameableProjectError(resolved);
+  registry.register(name, resolved);
+  return { kind: "adopted", project: { name, path: resolved, present: true } };
+}
+
+export class UnnameableProjectError extends Error {
+  constructor(directory: string) {
+    super(
+      `no project name can be made from "${directory}" — open it with New project and type one`,
+    );
+    this.name = "UnnameableProjectError";
+  }
+}
+
+/**
+ * One directory, or two.
+ *
+ * Case-insensitively on Windows only: `C:\Projects\Fenix` and `c:\projects\fenix`
+ * are one directory there and two on Linux, and lowercasing everywhere would
+ * merge two projects that genuinely differ.
+ */
+function samePath(a: string, b: string): boolean {
+  const left = resolve(a);
+  const right = resolve(b);
+  if (process.platform !== "win32") return left === right;
+  return left.toLowerCase() === right.toLowerCase();
 }
 
 /**
