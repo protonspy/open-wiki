@@ -111,6 +111,19 @@ without ever being offered transcription is a worse trade than one extra screen.
   kebab-case.
 - **R3.5** (ADDED) When the user has named a directory themselves, the application shall keep
   what they named and stop proposing one.
+- **R3.6** (ADDED) When a project is created from a typed name, the application shall use that
+  name in kebab-case as the project's name, and shall show which name it will use.
+
+R3.6 closes the half of R3.4 that was left open and immediately bit: the folder
+became `test-123` while the name stayed `test 123`, which the registry refuses —
+letters, digits, dot, dash and underscore. So the form proposed a path and then
+declined to create it, which is a form saying one thing and doing another.
+
+The name is an **identifier**, not a label: it keys the registry, it is what
+`.mcp.json` names, and it is what every `ow` resolving a project by name looks
+up. There is nowhere for prose to live alongside it, so the name takes the shape
+the folder takes — and R3.6's second half is what keeps that from being a
+surprise, by saying which name will be used while it can still be changed.
 
 R3.4 is a **suggestion, not a container**, and the distinction is the whole
 reason it can exist at all.
