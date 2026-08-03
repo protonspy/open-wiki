@@ -45,6 +45,7 @@ import { Drawer } from "./ui/Drawer.js";
 import { Sheet } from "./ui/Sheet.js";
 import { Chat } from "./Chat.js";
 import { Launcher } from "./Launcher.js";
+import { mayAskForProject, windowView } from "./window-view.js";
 import { Settings } from "./Settings.js";
 import { Sources } from "./Sources.js";
 import { Button } from "./ui/Button.js";
@@ -160,6 +161,9 @@ export function App(): React.JSX.Element {
     setOverlay(null);
   }, []);
 
+  const view = windowView(hasProject);
+  const mayAsk = mayAskForProject(view);
+
   useEffect(() => {
     // The two failures that really are the window's, and the only two: without
     // a bridge or a project nothing on any pane would work either.
@@ -167,14 +171,17 @@ export function App(): React.JSX.Element {
       say(failure("shell", new NoBridgeError()));
       return;
     }
+    // The index waits for the answer. Asking alongside `project()` is asking
+    // before knowing whether this window has one, and a launcher window that
+    // asked was refused — a failure painted on a window with nothing wrong.
     void bridge()
       .project()
       .then((info) => {
         setProject(info);
         setHasProject(info !== null);
+        if (info !== null) void refreshIndex();
       })
       .catch((e: unknown) => say(failure("shell", e)));
-    void refreshIndex();
   }, [refreshIndex, say]);
 
   // 8.10 — the folder changed, whoever wrote it. Coalesced: an agent writing
@@ -220,12 +227,12 @@ export function App(): React.JSX.Element {
   // rest, and a copy of it in the status bar would be a second record of one
   // fact, which is the one that goes stale.
   useEffect(() => {
-    if (!hasBridge()) return;
+    if (!hasBridge() || !mayAsk) return;
     void bridge()
       .history()
       .then((operations) => setLastWrite(operations[0]?.id ?? null))
       .catch(() => setLastWrite(null));
-  }, [reloadKey]);
+  }, [reloadKey, mayAsk]);
 
   useEffect(() => {
     if (location.pane !== "wiki" || !location.selection) {
@@ -348,14 +355,23 @@ export function App(): React.JSX.Element {
 
   // 8.4 — a window opened outside a project shows the launcher. Nothing else
   // on screen would work: every other channel refuses without a project.
-  if (hasProject === false) {
+  //
+  // And until the answer arrives it shows neither, because the project shell
+  // fetches on mount: rendering it while `project()` is in flight is how a
+  // launcher window came to ask for a wiki index, a history and an inbox it had
+  // no project for. The notices stay, so a `project()` that *failed* still says
+  // so rather than leaving a window that is blank forever.
+  if (view !== "project") {
     return (
       <div className="app">
         <header className="chrome">
           <span className="chrome__project">open-wiki</span>
         </header>
         <main className="main">
-          <Launcher />
+          <div className="main__notices">
+            <Reported notices={notices} place="shell" />
+          </div>
+          {view === "launcher" ? <Launcher /> : null}
         </main>
       </div>
     );

@@ -644,3 +644,52 @@ export async function dispatch(
       throw new Error(`unknown channel "${channel}"`);
   }
 }
+
+/**
+ * Which window asked.
+ *
+ * **`ipcMain.handle` is registered on the app, not on a window**, and it refuses
+ * a second handler for a channel it already has. So the channel table is armed
+ * once and every invocation carries its sender's id here, which is the only
+ * thing that says whose project the answer is about.
+ *
+ * Registering per window was the original wiring, and it failed twice over: the
+ * second window threw on the first channel it tried to re-register, and until it
+ * threw, every window was answered by whichever one registered first — a project
+ * window opened from a launcher would have been told it has no project.
+ */
+export interface WindowRouter {
+  /** A window is open and this is its API. */
+  attach(windowId: number, api: DesktopApi): void;
+  /** Its window is gone. Handlers stay armed for the windows that remain. */
+  detach(windowId: number): void;
+  /** Route one invocation to the window that sent it. */
+  route(windowId: number, channel: string, args: readonly unknown[]): Promise<unknown>;
+  /** How many windows are attached. */
+  readonly size: number;
+}
+
+export function createRouter(): WindowRouter {
+  const windows = new Map<number, DesktopApi>();
+  return {
+    attach: (windowId, api) => {
+      windows.set(windowId, api);
+    },
+    detach: (windowId) => {
+      windows.delete(windowId);
+    },
+    // `async`, so an unknown sender is a rejected promise like every other
+    // refusal on this path rather than a synchronous throw.
+    async route(windowId, channel, args) {
+      const api = windows.get(windowId);
+      // Refused, never guessed. Answering from another window's API is how a
+      // launcher would edit a project it is not looking at, and a window still
+      // asking after it detached is a bug worth being able to read in the log.
+      if (!api) throw new Error(`no window ${windowId} to answer "${channel}"`);
+      return dispatch(api, channel, args);
+    },
+    get size() {
+      return windows.size;
+    },
+  };
+}
