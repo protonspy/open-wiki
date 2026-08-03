@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import {
   recordingId,
+  readSettings,
+  resolveEndpoint,
   type Language,
   type Operation,
   type ProjectSettings,
@@ -190,6 +192,16 @@ export interface StartedRecording {
   /** The frozen source id, from 4.16. */
   id: string;
   dir: string;
+  /**
+   * Endpoints this project had chosen that are not on this machine (R1.5).
+   *
+   * The recording started anyway, on the Windows default, because a committed
+   * `ow.json` naming another machine's microphone is the ordinary outcome of a
+   * `git clone` rather than an error. Saying which choice was dropped is what
+   * makes it a choice to re-make instead of a silent substitution — and a
+   * silent substitution is the one thing this spec exists to prevent.
+   */
+  unresolved: Array<{ track: "mic" | "system"; endpoint: string }>;
 }
 
 export interface DesktopApi {
@@ -329,8 +341,25 @@ export function createApi(deps: Deps): DesktopApi {
       if (!deps.recorder) throw new Error("recording is not available in this window");
       const id = recordingId(root(), { occasion, at: now() });
       const dir = join(root(), "raw", id);
-      await ensure().start(occasion, dir);
-      return { id, dir };
+      const session = ensure();
+
+      // What this project chose to record with (R1.2), checked against what
+      // this machine actually has (R1.5). `ow.json` is committed and an
+      // endpoint identifier is machine-local, so a teammate who cloned — or
+      // the same person on a second machine — has a setting naming nothing.
+      // That is a choice to re-make, not a reason to refuse: it falls back to
+      // the default and *says so*, and the caller is what tells somebody.
+      const settings = readSettings(root());
+      const available = await session.devices();
+      const mic = resolveEndpoint(settings.micEndpoint, available);
+      const system = resolveEndpoint(settings.systemEndpoint, available);
+
+      await session.start(occasion, dir, { mic: mic.endpoint, system: system.endpoint });
+      const unresolved = [
+        ...(mic.unresolved ? [{ track: "mic" as const, endpoint: mic.unresolved }] : []),
+        ...(system.unresolved ? [{ track: "system" as const, endpoint: system.unresolved }] : []),
+      ];
+      return { id, dir, unresolved };
     },
     // `async`, so a refusal is a rejected promise rather than a synchronous
     // throw. `ipcMain.handle` turns either into a rejection on the renderer's

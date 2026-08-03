@@ -119,16 +119,23 @@ impl<C: Clock> Service<C> {
                 if self.session.is_some() {
                     return error("already recording");
                 }
+                // **First**, before the directory exists and before any device
+                // is touched: a chosen endpoint that is not here refuses the
+                // recording and names it (R2.4). The alternative is an hour
+                // recorded on the wrong microphone, which nothing downstream
+                // can detect or undo.
+                //
+                // The order is the requirement, not tidiness. Creating the
+                // directory first left an empty one under `raw/` for every
+                // refusal, and `raw/` is where sources live — so a refused
+                // recording became a directory somebody has to recognise as
+                // debris rather than as a source that failed to transcribe.
+                if let Err(e) = self.honour(&params) {
+                    return error(e);
+                }
                 let dir = PathBuf::from(&params.dir);
                 if let Err(e) = std::fs::create_dir_all(&dir) {
                     return error(format!("could not create {}: {e}", dir.display()));
-                }
-                // Before anything is opened or written: a chosen endpoint that
-                // is not here refuses the recording and names it (R2.4). The
-                // alternative is an hour recorded on the wrong microphone,
-                // which nothing downstream can detect or undo.
-                if let Err(e) = self.honour(&params) {
-                    return error(e);
                 }
                 let mic_format = self.mic.format();
                 let sys_format = self.system.format();

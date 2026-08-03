@@ -141,6 +141,15 @@ function validateEndpoint(key: string, raw: unknown): string {
   if (raw.length > 512) {
     throw new InvalidSettingsError(key, `${key} is not an endpoint identifier`);
   }
+  // Control characters go, for the reason `safe()` in the check findings gives:
+  // this file is committed, so the value arrives from whoever wrote the
+  // repository, and it is carried into `manifest.json`, into a refusal message
+  // and — once there is a picker — onto a screen. A carriage return or an ANSI
+  // escape in it can forge or erase what a teammate reads. Nothing legitimate
+  // is lost: an endpoint identifier is a GUID-shaped string.
+  if (/\p{Cc}/u.test(raw)) {
+    throw new InvalidSettingsError(key, `${key} is not an endpoint identifier`);
+  }
   return raw;
 }
 

@@ -161,3 +161,20 @@ describe("the chosen audio endpoints (specs/audio-input-selection, R1.2, R1.5)",
     expect(resolveEndpoint("", [])).toEqual({ endpoint: "", unresolved: null });
   });
 });
+
+describe("an endpoint identifier is not a place to hide a control character", () => {
+  it("refuses a carriage return or an ANSI escape", () => {
+    // `ow.json` is committed, so this value arrives from whoever wrote the
+    // repository. It is carried into a refusal message, into manifest.json,
+    // and — once there is a picker — onto a screen, where a CR or an escape
+    // sequence can forge or erase what a teammate reads. Same reasoning as
+    // `safe()` in the check findings, applied at the point of entry.
+    expect(() => validateSettings({ micEndpoint: "{mic}\r\u001b[2K" })).toThrow(/micEndpoint/);
+    expect(() => validateSettings({ systemEndpoint: "{out}\n" })).toThrow(/systemEndpoint/);
+  });
+
+  it("keeps an ordinary endpoint identifier", () => {
+    const id = "{0.0.1.00000000}.{a1b2c3d4-0000-1111-2222-333344445555}";
+    expect(validateSettings({ micEndpoint: id }).micEndpoint).toBe(id);
+  });
+});

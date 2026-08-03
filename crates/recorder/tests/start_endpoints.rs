@@ -60,9 +60,18 @@ fn following(name: &str) -> Box<dyn CaptureSource> {
     })
 }
 
+/// A directory that does not exist yet, unique to this process.
+///
+/// The process id is in the path deliberately. A fixed name under the system
+/// temp directory is shared with every other run on the machine, so a previous
+/// run that legitimately created one leaves this one asserting about somebody
+/// else's leftovers — which is exactly how the directory-absence check below
+/// fails for a reason that has nothing to do with the code.
 fn tempdir(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("ow-start-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = std::env::temp_dir().join(format!("ow-start-{}-{name}", std::process::id()));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).expect("the previous directory goes");
+    }
     dir
 }
 
@@ -203,6 +212,14 @@ fn a_refused_start_leaves_nothing_recording() {
     let _ = service.handle(start(&dir, Some("{gone}"), None));
 
     assert!(service.session().is_none(), "no session was left behind");
+    // And nothing on disk. `raw/` is where sources live, so an empty directory
+    // per refused recording is debris somebody has to learn to recognise — and
+    // it looks exactly like a recording that failed to transcribe.
+    assert!(
+        !dir.exists(),
+        "a refused start created {} anyway",
+        dir.display()
+    );
     let status = service.status();
     match status {
         Response::Ok(_) => {}
@@ -404,4 +421,39 @@ fn an_empty_endpoint_string_means_follow_the_default() {
 
     assert!(is_ok(&response), "got {}", message(&response));
     assert_eq!(asked.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn a_hostile_identifier_cannot_break_the_line_framing() {
+    // The identifier is interpolated into the refusal, and the refusal is a
+    // line on stdout. A newline in it would let a caller forge a second reply
+    // — `{"ok":"true"}` — that the parent would read as a different answer to
+    // a different request.
+    //
+    // `serde_json` escapes it, and this asserts that rather than trusting it:
+    // the property is the whole framing contract of `adr:0005`.
+    let asked = Arc::new(AtomicUsize::new(0));
+    let mut service = service_with_factory(Arc::clone(&asked), Vec::new());
+    let dir = tempdir("hostile");
+
+    let response = service.handle(start(&dir, Some("{evil}\n{\"ok\":\"true\"}"), None));
+    let line = recorder::rpc::render(&response);
+
+    assert!(!line.contains('\n'), "one object per line, got: {line}");
+    let parsed: serde_json::Value = serde_json::from_str(&line).expect("still valid json");
+    assert_eq!(parsed["ok"], "false", "and it is still the refusal");
+}
+
+#[test]
+fn a_control_character_in_an_identifier_does_not_reach_the_line_raw() {
+    let asked = Arc::new(AtomicUsize::new(0));
+    let mut service = service_with_factory(Arc::clone(&asked), Vec::new());
+    let dir = tempdir("control");
+
+    let response = service.handle(start(&dir, Some("{evil}\r\u{1b}[2K"), None));
+    let line = recorder::rpc::render(&response);
+
+    assert!(!line.contains('\r'));
+    assert!(!line.contains('\u{1b}'));
+    let _: serde_json::Value = serde_json::from_str(&line).expect("valid json");
 }
