@@ -14,6 +14,24 @@ import { defaultAppDataDir } from "./config/secrets.js";
  */
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
+/**
+ * Whether a string is a project name at all.
+ *
+ * Exported because the registry stopped being the only thing a name reaches:
+ * `ow consult add` writes one into `.mcp.json`, into `opencode.json`, and into
+ * a TOML table heading in `.codex/config.toml`. A security review found the
+ * last of those taking a name with a control character in it and writing a file
+ * Codex then refuses to load — because that path registers nothing, and so had
+ * never passed this rule.
+ *
+ * One rule, in one place, applied wherever a name is taken. A second character
+ * set for "names allowed in a configuration file" would be a second thing to
+ * keep in step, and the two would drift the first time either moved.
+ */
+export function isValidProjectName(name: string): boolean {
+  return NAME_RE.test(name) && !name.includes("/") && !name.includes("\\");
+}
+
 export class UnknownNameError extends Error {
   constructor(public readonly projectName: string) {
     super(`unknown project "${projectName}": the registry is a cache, not a guess`);
@@ -58,9 +76,7 @@ export class ProjectRegistry {
   }
 
   private validateName(name: string): void {
-    if (!NAME_RE.test(name) || name.includes("/") || name.includes("\\")) {
-      throw new InvalidNameError(name);
-    }
+    if (!isValidProjectName(name)) throw new InvalidNameError(name);
   }
 
   register(name: string, absPath: string): void {

@@ -228,9 +228,16 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
       if (argv[1] !== "add") return fail("ow consult add <name>");
       const name = argv[2];
       if (!name) return fail("ow consult add needs a project name");
-      const key = runConsultAdd(projectRoot, name);
-      process.stdout.write(`added consult "${key}" to .mcp.json\n`);
-      return 0;
+      // Into every harness this project carries, from one act (4.2). A user who
+      // had to remember two configuration files would eventually update one,
+      // and a half-configured project is the silent failure this plan is about.
+      try {
+        const result = runConsultAdd(projectRoot, name, readSettings(projectRoot).harnesses);
+        process.stdout.write(`added consult "${result.key}" to ${result.written.join(", ")}\n`);
+        return 0;
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
     }
 
     case "mcp": {
