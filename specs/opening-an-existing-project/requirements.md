@@ -75,9 +75,30 @@ reinstall, or anyone who cloned a project a colleague made.
 - **R3.2** The application shall keep accepting a directory typed by hand.
 - **R3.3** When the user cancels the chooser, the application shall leave the
   directory it already had.
+- **R3.4** (ADDED) The application shall propose, for a new project, a directory named for
+  that project inside a default location under the user's home directory.
+- **R3.5** (ADDED) When the user has named a directory themselves, the application shall keep
+  what they named and stop proposing one.
+
+R3.4 is a **suggestion, not a container**, and the distinction is the whole
+reason it can exist at all.
+`adr:0013-the-project-directory-is-the-unit` decided that "there is no workspace
+container and no directory of projects owned by the application", reversing
+`adr:0002` — and typing an absolute path for every project is the friction that
+decision left behind. A prefilled default removes the friction without bringing
+the container back, provided it stays a _default_: nothing enumerates that
+location, nothing about a project changes because it sits there, and a project
+anywhere else is reached by R2.1 on identical terms. R2.1's **Open project…**
+is what makes this safe now and did not exist when `adr:0013` was written.
 
 ## Out of scope
 
+- Managing the default location: creating it up front, listing what is in it,
+  moving projects into it, or noticing projects that appear there. Any of those
+  is the container `adr:0013` removed. The directory comes into existence
+  because a project was scaffolded inside it, and that is all.
+- Making the default location configurable. It is derived from the user's home
+  directory; somewhere else is what **Choose…** and **Open project…** are for.
 - Opening a project into the window that asked. Choosing a project opens a window
   on it, which is what `launcher:open` already does.
 - Watching the registry for projects that appeared on disk on their own. A project

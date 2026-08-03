@@ -49,6 +49,7 @@ import {
 import {
   adoptProject,
   createProject,
+  defaultProjectsDir,
   credentialState,
   parseCredentialInput,
   currentLanguage,
@@ -307,6 +308,8 @@ export interface DesktopApi {
    * failure.
    */
   openDirectory(directory: string): AdoptOutcome;
+  /** Where a new project is proposed — a suggestion, never a container (R3.4). */
+  defaultDirectory(): string;
   saveCredentialFor(name: string, input: unknown): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
 
@@ -491,6 +494,7 @@ export function createApi(deps: Deps): DesktopApi {
       deps.openWindow(projectPath(outcome.project.name));
       return outcome;
     },
+    defaultDirectory: () => defaultProjectsDir(),
     saveCredentialFor: async (name, input) => {
       const parsed = parseCredentialInput(input);
       if (!parsed) return { ok: false, reason: "that is not a provider this application knows" };
@@ -627,6 +631,8 @@ export async function dispatch(
       return api.openProject(String(args[0] ?? ""));
     case CHANNELS.chooseDirectory:
       return api.chooseDirectory();
+    case CHANNELS.defaultDirectory:
+      return api.defaultDirectory();
     case CHANNELS.openDirectory:
       return api.openDirectory(String(args[0] ?? ""));
     case CHANNELS.saveCredentialFor:

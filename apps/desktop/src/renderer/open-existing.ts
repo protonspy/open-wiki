@@ -49,3 +49,43 @@ export async function openExisting(ow: OpenExistingBridge): Promise<OpenAttempt>
 export function directoryAfterChoosing(current: string, chosen: string | null): string {
   return chosen ?? current;
 }
+
+/**
+ * Where a new project is proposed to go (R3.4).
+ *
+ * `<default location>/<project name>`, so naming the project is the whole of
+ * saying where it lives — which is the friction
+ * `adr:0013-the-project-directory-is-the-unit` left behind when it removed the
+ * container folder and left an absolute path to be typed for every project.
+ *
+ * **The separator is read off the root rather than assumed**, because the root
+ * comes from the main process and this code runs in a sandboxed renderer with
+ * no `path` module to ask. A Windows root gives `\`; anything else gives `/`.
+ *
+ * An empty name proposes nothing: `WikiProjects\` on its own is not a place to
+ * put a project, and offering it would make the Create button look ready.
+ */
+export function proposedDirectory(defaultRoot: string, name: string): string {
+  const project = name.trim();
+  if (defaultRoot === "" || project === "") return "";
+  const separator = defaultRoot.includes("\\") ? "\\" : "/";
+  const root = defaultRoot.replace(/[\\/]+$/, "");
+  return `${root}${separator}${project}`;
+}
+
+/**
+ * What the directory field should hold, given everything known about it (R3.5).
+ *
+ * **Once the user has said where, this stops having an opinion.** A proposal
+ * that keeps rewriting itself under a hand-typed path is not a convenience;
+ * it is the field fighting whoever is using it. So `touched` — set by an edit
+ * or by the chooser — ends the proposing for good, and the name may then change
+ * freely without moving the project.
+ */
+export function directoryFor(
+  current: string,
+  { defaultRoot, name, touched }: { defaultRoot: string; name: string; touched: boolean },
+): string {
+  if (touched) return current;
+  return proposedDirectory(defaultRoot, name);
+}

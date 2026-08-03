@@ -115,6 +115,8 @@ export interface OwBridge {
    */
   chooseDirectory(): Promise<string | null>;
   openDirectory(directory: string): Promise<AdoptOutcome>;
+  /** Where a new project is proposed (R3.4) — a suggestion, never a container. */
+  defaultDirectory(): Promise<string>;
   /** 6.3 — the first run configures the project it just made. */
   saveCredentialFor(name: string, input: SaveCredentialInput): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;

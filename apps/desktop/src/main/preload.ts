@@ -76,6 +76,7 @@ const api = {
   openProject: (name: string) => ipcRenderer.invoke(CHANNELS.openProject, name),
   chooseDirectory: () => ipcRenderer.invoke(CHANNELS.chooseDirectory),
   openDirectory: (directory: string) => ipcRenderer.invoke(CHANNELS.openDirectory, directory),
+  defaultDirectory: () => ipcRenderer.invoke(CHANNELS.defaultDirectory),
   saveCredentialFor: (name: string, input: unknown) =>
     ipcRenderer.invoke(CHANNELS.saveCredentialFor, name, input),
   transcribe: (id: string, restart?: boolean) =>

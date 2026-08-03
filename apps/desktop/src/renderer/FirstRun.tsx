@@ -1,10 +1,10 @@
 import type { Harness, Language } from "@open-wiki/access";
 import { HARNESS_CHOICES, toggleHarness } from "./harnesses.js";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { bridge } from "./bridge.js";
 import { canLeave, nextStep, STEPS, stepNumber, type StepId } from "./first-run.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
-import { directoryAfterChoosing, openExisting } from "./open-existing.js";
+import { directoryAfterChoosing, directoryFor, openExisting } from "./open-existing.js";
 import { Button } from "./ui/Button.js";
 import { Segmented } from "./ui/Segmented.js";
 
@@ -38,8 +38,29 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
   const [note, setNote] = useState<string | null>(null);
   /** What the project step says after a directory turned out not to be one. */
   const [openNote, setOpenNote] = useState<string | null>(null);
+  /** Where new projects go unless somebody says otherwise (R3.4, R3.5). */
+  const [defaultRoot, setDefaultRoot] = useState("");
+  const [touched, setTouched] = useState(false);
 
   const current = STEPS.find((s) => s.id === step) ?? STEPS[0]!;
+
+  useEffect(() => {
+    void bridge()
+      .defaultDirectory()
+      .then(setDefaultRoot)
+      // Survivable: the field stays typeable and Choose… still works (R3.2).
+      // Failing the first screen anybody sees over a suggestion is not.
+      .catch(() => setDefaultRoot(""));
+  }, []);
+
+  /**
+   * R3.4 — on the first screen this product shows, naming the project is the
+   * whole of saying where it goes. Nobody's first act here should be composing
+   * an absolute path by hand.
+   */
+  useEffect(() => {
+    setDirectory((current) => directoryFor(current, { defaultRoot, name, touched }));
+  }, [defaultRoot, name, touched]);
 
   /** Step 2 → the project exists. Everything after it configures that project. */
   const create = useCallback(async () => {
@@ -80,7 +101,9 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
         return;
       }
       // Not a project. Keep them here, on the step that makes one, with the
-      // directory they already chose (R2.4).
+      // directory they already chose (R2.4) — and that choice is theirs, so the
+      // proposal of R3.4 stops overriding it (R3.5).
+      setTouched(true);
       setDirectory(attempt.directory);
       setOpenNote(`${attempt.directory} is not a project yet — name it and it will be one.`);
     } catch (e) {
@@ -94,6 +117,8 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
   const chooseDirectory = useCallback(async () => {
     try {
       const chosen = await bridge().chooseDirectory();
+      if (chosen === null) return;
+      setTouched(true);
       setDirectory((current) => directoryAfterChoosing(current, chosen));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -165,14 +190,26 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
             <div className="editor__bar">
               <input
                 value={directory}
-                placeholder="C:\projects\fenix"
-                onChange={(e) => setDirectory(e.target.value)}
+                placeholder={defaultRoot || "C:\\projects\\fenix"}
+                onChange={(e) => {
+                  // Typing is the user saying where (R3.5), clearing included.
+                  setTouched(true);
+                  setDirectory(e.target.value);
+                }}
               />
               <button type="button" onClick={() => void chooseDirectory()}>
                 Choose…
               </button>
             </div>
           </label>
+          {/* R3.4 — said out loud, because a path that fills itself in is only
+              reassuring if you can see where it came from. */}
+          {!touched && defaultRoot ? (
+            <p className="empty">
+              New projects go in <code>{defaultRoot}</code> unless you say otherwise — type a path
+              or use Choose….
+            </p>
+          ) : null}
           {/* R2.1 — the other door, on the screen that only ever offered one.
               An empty registry is not the same as no project: it is a new
               machine, a reinstall, or a project a colleague made and you
