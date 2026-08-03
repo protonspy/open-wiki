@@ -847,7 +847,7 @@ describe("the browse walk is bounded (7.5, second review)", () => {
     // files to prove arithmetic. What the product enforces is pinned here, so
     // loosening it by accident is a failing test rather than a frozen window.
     expect(MAX_BROWSE_ENTRIES).toBe(2000);
-    expect(MAX_BROWSE_VISIT).toBe(40000);
+    expect(MAX_BROWSE_VISIT).toBe(10000);
     expect(MAX_BROWSE_DEPTH).toBe(32);
   });
 
@@ -907,5 +907,95 @@ describe("the browse walk is bounded (7.5, second review)", () => {
     api.revealSource("model.step");
     expect(revealed).toHaveLength(1);
     expect(revealed[0]).toContain(join("raw", "model.step"));
+  });
+});
+
+describe("a source's own file cannot be a link out (7.4, security review)", () => {
+  /**
+   * Whether this machine can make a file symlink at all.
+   *
+   * Windows needs Developer Mode or an elevated shell, so the three cases below
+   * are **skipped rather than passed** where it cannot: a security test that
+   * quietly returns early reads as coverage it does not have, which is the
+   * failure this repository names in its own archive tests. The case that needs
+   * no privilege is asserted unconditionally at the end.
+   */
+  const canSymlink = ((): boolean => {
+    const probe = mkdtempSync(join(tmpdir(), "ow-sl-"));
+    try {
+      writeFileSync(join(probe, "t"), "x");
+      symlinkSync(join(probe, "t"), join(probe, "l"), "file");
+      return true;
+    } catch {
+      return false;
+    } finally {
+      rmSync(probe, { recursive: true, force: true });
+    }
+  })();
+
+  /** A source whose `source.<ext>` is a link to `target`. */
+  function linkedOriginal(id: string, target: string): boolean {
+    source(id, { text: false });
+    symlinkSync(target, join(root, "raw", id, `source${id.slice(id.lastIndexOf("."))}`), "file");
+    return true;
+  }
+
+  it.skipIf(!canSymlink)("does not read a symlinked original into a data URL", () => {
+    // The directory being confined was not enough. A repository shipping
+    // `raw/leak.png/source.png` as a symlink to a key read that file's bytes
+    // into a `data:` URL and across IPC into the renderer, on one click of what
+    // looks like an ordinary citation.
+    const outside = mkdtempSync(join(tmpdir(), "ow-secret-"));
+    const secret = join(outside, "id_rsa");
+    writeFileSync(secret, "PRIVATE KEY MATERIAL");
+    try {
+      linkedOriginal("leak.png", secret);
+      const at = locateCitation(root, "leak.png", "p1");
+      expect(at.kind).not.toBe("image");
+      expect(JSON.stringify(at)).not.toContain("PRIVATE KEY");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!canSymlink)("does not hand a symlinked original to the system", () => {
+    const outside = mkdtempSync(join(tmpdir(), "ow-secret-"));
+    writeFileSync(join(outside, "creds.txt"), "secret");
+    try {
+      linkedOriginal("leak.step", join(outside, "creds.txt"));
+      expect(() => revealPath(root, "leak.step")).toThrow(/no file to show/i);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!canSymlink)("does not open a symlinked recording as audio", () => {
+    const outside = mkdtempSync(join(tmpdir(), "ow-secret-"));
+    writeFileSync(join(outside, "anything.bin"), "bytes");
+    try {
+      source("weekly", { kind: "recording", text: false });
+      symlinkSync(join(outside, "anything.bin"), join(root, "raw", "weekly", "mic.opus"), "file");
+      const at = locateCitation(root, "weekly", "0:01");
+      expect(at.kind).toBe("missing");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a source.<ext> that is not a regular file, on any machine", () => {
+    // The half of `fileIn` that needs no privilege to exercise: a directory
+    // standing where the preserved original should be. It is the same rule —
+    // what is opened has to be the file this application wrote — and it runs
+    // everywhere, including where a symlink cannot be made.
+    source("odd.pdf", { text: false });
+    mkdirSync(join(root, "raw", "odd.pdf", "source.pdf"), { recursive: true });
+    expect(locateCitation(root, "odd.pdf", "p1").kind).toBe("missing");
+    expect(() => revealPath(root, "odd.pdf")).toThrow(/no file to show/i);
+  });
+
+  it("still opens an ordinary file that is really there", () => {
+    source("report.pdf", { text: false });
+    writeFileSync(join(root, "raw", "report.pdf", "source.pdf"), "%PDF-1.4");
+    expect(locateCitation(root, "report.pdf", "p3").kind).toBe("document");
   });
 });

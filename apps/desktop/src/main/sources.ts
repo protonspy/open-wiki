@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   checkProject,
@@ -266,10 +266,12 @@ export const MAX_BROWSE_ENTRIES = 2000;
  * tree — `unpackArchive` caps total bytes and the expansion ratio, and an
  * archive of a million empty files passes both.
  *
- * Twenty times the cap: generous enough that a real repository is counted
- * exactly, small enough that the window does not freeze on a hostile one.
+ * Five times the cap. A review measured the first attempt at twenty: a tree of
+ * 65,000 directories took three seconds of synchronous walking, and this runs on
+ * the thread that answers every other IPC channel — so the bound is set by how
+ * long the window may stop responding, not by how exact the count would be.
  */
-export const MAX_BROWSE_VISIT = 20 * MAX_BROWSE_ENTRIES;
+export const MAX_BROWSE_VISIT = 5 * MAX_BROWSE_ENTRIES;
 
 /**
  * How deep the walk will go.
@@ -497,8 +499,8 @@ export function locateCitation(projectRoot: string, id: string, fragment: string
 
   const instantNs = parseInstant(fragment);
   if (instantNs !== null) {
-    const opus = join(dir, "mic.opus");
-    if (!existsSync(opus)) {
+    const opus = fileIn(dir, "mic.opus");
+    if (opus === null) {
       return { kind: "missing", reason: `"${id}" has no audio to open` };
     }
     const map = readTimeMap(dir);
@@ -567,7 +569,31 @@ function readTimeMap(dir: string): TimeMap | null {
  */
 function originalIn(dir: string, id: string): string | null {
   const dot = id.lastIndexOf(".");
-  const name = dot > 0 ? `source${id.slice(dot)}` : "source";
+  return fileIn(dir, dot > 0 ? `source${id.slice(dot)}` : "source");
+}
+
+/**
+ * A regular file directly inside a source's directory, or `null`.
+ *
+ * **The directory being confined is not enough, and this is where that gap
+ * was.** `resolvedSourceDir` resolves and confines `dir`, so a junction
+ * *standing where the source directory should be* is refused — but the file
+ * inside it was then simply joined and handed to `readFileSync` and to
+ * `shell.showItemInFolder`. A repository shipping `raw/leak.png/source.png` as
+ * a symlink to a key or a credentials file therefore read that file's bytes
+ * into a `data:` URL and across IPC into the renderer, on one click of what
+ * looks like an ordinary citation. A security review found it.
+ *
+ * Two checks, because they fail differently. `lstatSync` does not follow, so it
+ * is what *sees* a link rather than its target; `isWithin` resolves the real
+ * path, so it also catches whatever a link would have reached. Everything else
+ * in this module that walks a source directory already does one or the other —
+ * `browseSource` skips a symlinked entry, `safeRoot` resolves the root — and
+ * this was the last path that did neither.
+ */
+function fileIn(dir: string, name: string): string | null {
   const candidate = join(dir, name);
-  return existsSync(candidate) ? candidate : null;
+  const stat = lstatSync(candidate, { throwIfNoEntry: false });
+  if (!stat || stat.isSymbolicLink() || !stat.isFile()) return null;
+  return isWithin(dir, candidate) ? candidate : null;
 }
