@@ -31,6 +31,13 @@ that decides and the write that acts have to resolve the same path the same way.
 **New project**, and a **Choose…** button beside the directory field of the new
 project form (R2.1, R3.1, R3.2).
 
+**`apps/desktop/src/renderer/FirstRun.tsx`** — the same offer, on the screen
+`Launcher` renders _instead of_ that one whenever the registry is empty (R2.1).
+Both call the one `openExisting`, so the three outcomes cannot drift; what
+differs is only where a refused directory lands. The launcher opens its create
+form on it; the first run is already standing on the step that makes a project,
+so it fills that step's own field and says why.
+
 ## Boundaries and contracts
 
 Serves R2.1, R2.4, R3.1, R3.3.

@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { bridge } from "./bridge.js";
 import { canLeave, nextStep, STEPS, stepNumber, type StepId } from "./first-run.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
-import { directoryAfterChoosing } from "./open-existing.js";
+import { directoryAfterChoosing, openExisting } from "./open-existing.js";
 import { Button } from "./ui/Button.js";
 import { Segmented } from "./ui/Segmented.js";
 
@@ -36,6 +36,8 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  /** What the project step says after a directory turned out not to be one. */
+  const [openNote, setOpenNote] = useState<string | null>(null);
 
   const current = STEPS.find((s) => s.id === step) ?? STEPS[0]!;
 
@@ -54,6 +56,39 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
       setBusy(false);
     }
   }, [name, directory, language, harnesses]);
+
+  /**
+   * Open a project that already exists, from the one screen that had no way to
+   * (`specs/opening-an-existing-project`, R2.1).
+   *
+   * **The first run is the launcher when nothing is known**, and this is the
+   * screen where somebody who already *has* a project is most likely to be
+   * standing: a registry is empty on a new machine, after a reinstall, and for
+   * everyone who cloned a project a colleague made. Offering only "create your
+   * first project" to that person tells them to make a second one.
+   */
+  const openExistingProject = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const attempt = await openExisting(bridge());
+      if (attempt.kind === "cancelled") return;
+      if (attempt.kind === "opened") {
+        // A window is opening on it, and it is registered — so the launcher has
+        // a project to list now, and this screen is no longer the right one.
+        onDone();
+        return;
+      }
+      // Not a project. Keep them here, on the step that makes one, with the
+      // directory they already chose (R2.4).
+      setDirectory(attempt.directory);
+      setOpenNote(`${attempt.directory} is not a project yet — name it and it will be one.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [onDone]);
 
   /** R3.1, and R3.3: a cancelled chooser leaves what is in the box alone. */
   const chooseDirectory = useCallback(async () => {
@@ -138,6 +173,20 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
               </button>
             </div>
           </label>
+          {/* R2.1 — the other door, on the screen that only ever offered one.
+              An empty registry is not the same as no project: it is a new
+              machine, a reinstall, or a project a colleague made and you
+              cloned. */}
+          <p className="empty">
+            Already have one? A project made on another machine, or cloned from a colleague, is
+            opened rather than created.
+          </p>
+          <div className="editor__bar">
+            <button type="button" disabled={busy} onClick={() => void openExistingProject()}>
+              {busy ? "Opening…" : "Open a project I already have…"}
+            </button>
+          </div>
+          {openNote ? <p className="empty">{openNote}</p> : null}
         </>
       ) : null}
 

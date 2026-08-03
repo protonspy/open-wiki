@@ -19,3 +19,4 @@
 
 - [x] 4.1 (Unit) Offer **Open project…** beside **New project**, carrying a directory that is not a project into the create form — R2.1, R2.4
 - [x] 4.2 (Unit) Put **Choose…** beside the directory field, leaving what is typed there alone when the chooser is cancelled — R3.1, R3.2, R3.3
+- [x] 4.3 (Unit) Offer opening an existing project on the first run too, which an empty registry is the whole of — R2.1
