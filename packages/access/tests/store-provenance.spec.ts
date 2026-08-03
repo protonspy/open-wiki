@@ -191,6 +191,34 @@ describe("resolveProvenance (5.4)", () => {
       );
     });
 
+    it("confines a directory handed in, not only one it resolved itself", () => {
+      // The index can only hold what the walk produced, so this cannot happen
+      // today — but `dirs` is a parameter of an exported function, and a caller
+      // that built one from a setting or a citation would otherwise reach a
+      // file outside `raw/` with nothing refusing it. It reads as no map, which
+      // is how every other failure here reads.
+      mkdirSync(join(root, "elsewhere"), { recursive: true });
+      writeFileSync(
+        join(root, "elsewhere", "timemap.json"),
+        JSON.stringify({
+          version: 1,
+          compressedDurationNs: 1,
+          segments: [
+            { compressedStartNs: 0, durationNs: 1, recordedStartNs: 0, wallStartMs: 1_000_000 },
+          ],
+          chunks: [],
+        }),
+        "utf8",
+      );
+      const escaping = new Map([["fenix-weekly-2026-07-31", join(root, "elsewhere")]]);
+      // The instant is past the end of the planted map, so an unconfined read
+      // would report it; a refused one falls back to the weaker check and says
+      // nothing.
+      expect(
+        resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"], escaping),
+      ).toEqual([]);
+    });
+
     it("answers the same for a source filed into a folder", () => {
       mkdirSync(join(root, "raw", "2026"), { recursive: true });
       renameSync(

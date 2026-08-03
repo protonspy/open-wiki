@@ -224,6 +224,12 @@ export function boundedManifest(manifest: SourceManifest): SourceManifest {
   return {
     ...manifest,
     title: boundedText(manifest.title),
+    // The original filename, which is free text out of the same file and is
+    // served by MCP's `ow_sources` alongside the title. It was missed on the
+    // first version of this function — while the doc above it claimed *every*
+    // field — which is the fourth instance of this exact miss and the argument
+    // for the function existing at all.
+    original: boundedText(manifest.original),
     ...(manifest.description !== undefined
       ? { description: boundedText(manifest.description) }
       : {}),

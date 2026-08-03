@@ -8,6 +8,7 @@ import {
   TIMEMAP_FILE,
   type TimeMap,
 } from "@open-wiki/audio/timemap";
+import { assertWithin } from "../paths.js";
 import { resolvedSourceDir, sourceExists } from "../sources/manifest.js";
 import type { PageIssue } from "./page.js";
 
@@ -153,8 +154,19 @@ function readTimeMap(
     // citation past the end of that recording passed `ow check` when it should
     // have been refused. Failing quietly is the outcome this check exists to
     // prevent, so it must not be how the check itself fails.
+    // Confined on **both** branches. The index can only hold directories the
+    // walk produced, so today this cannot fail — but `dirs` is a parameter of a
+    // function exported from the package, and a caller that built one from a
+    // setting, a citation or a merge of two maps would reintroduce the
+    // unconfined read `resolvedSourceDir` exists to stop, silently, because
+    // nothing here would have refused it. The check is one comparison; the
+    // review that has to notice its absence is not.
     const found = dirs?.get(id);
-    const file = join(found ?? resolvedSourceDir(projectRoot, id), TIMEMAP_FILE);
+    const dir =
+      found !== undefined
+        ? assertWithin(join(projectRoot, "raw"), found)
+        : resolvedSourceDir(projectRoot, id);
+    const file = join(dir, TIMEMAP_FILE);
     if (!existsSync(file)) return null;
     const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     return isTimeMap(parsed) ? parsed : null;

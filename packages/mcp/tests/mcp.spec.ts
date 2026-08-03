@@ -196,7 +196,7 @@ describe("MCP read tools — path confinement (9.9)", () => {
         id: "notes.txt",
         title: "T".repeat(9000),
         kind: "file",
-        original: "notes.txt",
+        original: "o".repeat(9000),
         description: "d".repeat(9000),
       }),
       "utf8",
@@ -206,6 +206,11 @@ describe("MCP read tools — path confinement (9.9)", () => {
     expect(manifest.title.length).toBeLessThan(9000);
     expect(manifest.description!.length).toBeLessThan(9000);
     expect(manifest.description).toMatch(/9000 characters, truncated/);
+    // `original` is served by `ow_sources` beside the title and is free text
+    // out of the same file. The first `boundedManifest` missed it while its own
+    // doc claimed every field was cut.
+    expect(manifest.original.length).toBeLessThan(9000);
+    expect(manifest.original).toMatch(/9000 characters, truncated/);
   });
 
   it("bounds a field the schema gained later, not only the two it was written for", () => {
