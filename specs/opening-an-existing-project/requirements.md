@@ -49,8 +49,9 @@ printing success is not a trade R1.1 is worth.
 
 ## R2 · Opening a project the application does not know
 
-- **R2.1** The launcher shall offer opening a project by choosing its directory,
-  alongside creating a new one.
+- **R2.1** (MODIFIED) The launcher shall offer opening a project by choosing its directory,
+  alongside creating a new one, on every screen it shows when no project is open —
+  including the first run, where nothing is in the registry yet.
 - **R2.2** When a chosen directory is already a project, the application shall open
   it, without asking for a name, a language or a harness.
 - **R2.3** When a project is opened this way, the application shall record it in the
@@ -59,6 +60,13 @@ printing success is not a trade R1.1 is worth.
   and offer to make one there, carrying the chosen directory into that form.
 - **R2.5** If a chosen directory is already in the registry, then the application shall open
   it rather than adding a second entry for it.
+
+R2.1 was modified after the first build of it shipped with exactly this hole.
+`Launcher` shows the four-step first run as soon as the registry is empty, and
+the button was put beside **New project** on the screen below that branch — so
+the only person who never saw it was the one with no projects on this machine.
+An empty registry is not "somebody with no project": it is a new machine, a
+reinstall, or anyone who cloned a project a colleague made.
 
 ## R3 · Naming the directory
 

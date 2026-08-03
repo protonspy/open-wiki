@@ -98,4 +98,25 @@ describe("the launcher offers both doors (R2.1, R3.1)", () => {
       expect(source).toMatch(/directoryAfterChoosing/);
     }
   });
+
+  it("offers it on the first run too, where the registry is empty", () => {
+    // The defect this closes: `Launcher` returns `<FirstRun />` as soon as the
+    // registry is empty, so the button beside **New project** was in a branch
+    // that screen never reaches. An empty registry is precisely the state of a
+    // machine whose projects were all made somewhere else — which is who needs
+    // this most, and who could not see it.
+    expect(firstRun).toMatch(/openExisting\(bridge\(\)\)/);
+    expect(firstRun).toMatch(/Open a project I already have…/);
+  });
+
+  it("keeps the first run's escape hatch on the step that can use it", () => {
+    // Rendered inside the `project` step, not after it: the directory a refused
+    // choice carries back (R2.4) is the field on that step, and an offer that
+    // appears three steps later is an offer nobody takes.
+    const projectStep = firstRun.slice(
+      firstRun.indexOf('step === "project"'),
+      firstRun.indexOf('step === "harness"'),
+    );
+    expect(projectStep).toMatch(/openExistingProject/);
+  });
 });
