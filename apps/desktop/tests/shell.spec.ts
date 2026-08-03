@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeSettings } from "@open-wiki/access";
 import { NoSuchPageError, projectInfo, readPage, wikiIndex } from "../src/main/api.js";
-import { CHANNELS, createApi, dispatch } from "../src/main/ipc.js";
+import { CHANNELS, createApi, createRouter, dispatch, NoProjectError } from "../src/main/ipc.js";
 import { looksLikeProject, resolveProject } from "../src/main/project.js";
 import { areaOf, describeChange, isOpenPage, toProjectPath } from "../src/main/watcher.js";
 
@@ -171,6 +171,65 @@ describe("the IPC surface (8.2)", () => {
   });
 });
 
+describe("the window router (plans/desktop-ipc-per-window)", () => {
+  /** A second project, because one window per project is the whole point. */
+  let other: string;
+
+  beforeEach(() => {
+    other = mkdtempSync(join(tmpdir(), "ow-other-"));
+    for (const part of ["raw", "wiki", ".state"]) {
+      mkdirSync(join(other, part), { recursive: true });
+    }
+  });
+
+  afterEach(() => rmSync(other, { recursive: true, force: true }));
+
+  it("answers each window from its own project", async () => {
+    const router = createRouter();
+    router.attach(1, createApi({ projectRoot: root }));
+    router.attach(2, createApi({ projectRoot: other }));
+    expect(await router.route(1, CHANNELS.project, [])).toMatchObject({ root });
+    expect(await router.route(2, CHANNELS.project, [])).toMatchObject({ root: other });
+  });
+
+  it("does not answer a project window from the launcher that opened it", async () => {
+    // The defect: one channel table, armed by whichever window came first. A
+    // launcher opens a project and the new window is told it has no project.
+    page("fenix", { id: "fenix", title: "Fenix" });
+    const router = createRouter();
+    router.attach(1, createApi({ projectRoot: null }));
+    router.attach(2, createApi({ projectRoot: root }));
+    expect(await router.route(2, CHANNELS.index, [])).toMatchObject({ slugs: ["fenix"] });
+    await expect(router.route(1, CHANNELS.index, [])).rejects.toThrow(NoProjectError);
+  });
+
+  it("leaves the windows that remain answering when one closes", async () => {
+    const router = createRouter();
+    router.attach(1, createApi({ projectRoot: root }));
+    router.attach(2, createApi({ projectRoot: other }));
+    router.detach(1);
+    expect(router.size).toBe(1);
+    expect(await router.route(2, CHANNELS.project, [])).toMatchObject({ root: other });
+  });
+
+  it("refuses a sender it has no window for, rather than guessing at one", async () => {
+    const router = createRouter();
+    router.attach(1, createApi({ projectRoot: root }));
+    await expect(router.route(7, CHANNELS.project, [])).rejects.toThrow(/no window 7/);
+  });
+
+  it("counts the windows attached", () => {
+    const router = createRouter();
+    expect(router.size).toBe(0);
+    router.attach(1, createApi({ projectRoot: root }));
+    router.attach(2, createApi({ projectRoot: other }));
+    expect(router.size).toBe(2);
+    router.detach(2);
+    router.detach(2); // twice is not negative
+    expect(router.size).toBe(1);
+  });
+});
+
 describe("recording over IPC (8.2)", () => {
   /** A recorder control that records whether it was asked to start one. */
   function control() {
@@ -293,9 +352,7 @@ describe("recording over IPC (8.2)", () => {
     const started = await api.recordStart("Fenix weekly");
 
     expect(r.calls).toContain('endpoints {"mic":"","system":""}');
-    expect(started.unresolved).toEqual([
-      { track: "mic", endpoint: "{mic-from-another-machine}" },
-    ]);
+    expect(started.unresolved).toEqual([{ track: "mic", endpoint: "{mic-from-another-machine}" }]);
   });
 
   it("starts the sidecar only when asked to record", async () => {

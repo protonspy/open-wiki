@@ -91,6 +91,30 @@ describe("the transcription door withdraws a processed declaration (source-statu
   });
 });
 
+describe("the main process arms one channel table (plans/desktop-ipc-per-window)", () => {
+  // A source-level assertion, the same way the transcription door above is
+  // pinned: `index.ts` is Electron wiring and CI has no display to run it in.
+  // What it catches is the regression that actually happened — the channel
+  // table registered inside `createWindow`, which made a second window throw
+  // on `project:info` and never open.
+  const main = readFileSync(join(__dirname, "..", "src", "main", "index.ts"), "utf8");
+  const perWindow = main.slice(main.indexOf("function createWindow"));
+
+  it("registers the handlers outside the per-window path", () => {
+    expect(main).toMatch(/ipcMain\.handle/);
+    expect(perWindow).not.toMatch(/ipcMain\.handle/);
+  });
+
+  it("answers whichever window sent the invocation", () => {
+    expect(main).toMatch(/router\.route\(\s*event\.sender\.id/);
+  });
+
+  it("detaches a closed window instead of disarming the ones still open", () => {
+    expect(main).not.toMatch(/removeHandler/);
+    expect(perWindow).toMatch(/router\.detach\(windowId\)/);
+  });
+});
+
 describe("spawnTransport (8.2)", () => {
   it("splits the sidecar's output into whole lines", async () => {
     // `process.execPath` stands in for the recorder: this tests the framing,

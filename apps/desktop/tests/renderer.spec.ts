@@ -8,6 +8,7 @@ import {
 } from "../src/renderer/markdown.js";
 import { History, isOpenableExternally, linkTarget, Shell } from "../src/renderer/navigation.js";
 import { describeRecording, formatElapsed, readStatus, IDLE } from "../src/renderer/recording.js";
+import { mayAskForProject, windowView } from "../src/renderer/window-view.js";
 
 describe("extractWikilinks", () => {
   it("finds a plain link and a labelled one", () => {
@@ -398,5 +399,29 @@ describe("the recording indicator (8.1, 8.2)", () => {
     for (const payload of [null, "recording", {}, { state: "capturing" }, { state: 1 }]) {
       expect(readStatus(payload).state).toBe("idle");
     }
+  });
+});
+
+describe("windowView (plans/desktop-ipc-per-window)", () => {
+  it("shows the project shell only once there is a project", () => {
+    expect(windowView(true)).toBe("project");
+  });
+
+  it("shows the launcher when the answer was that there is none", () => {
+    expect(windowView(false)).toBe("launcher");
+  });
+
+  it("shows neither while the answer is still in flight", () => {
+    // The whole point. `waiting` is not "a wiki that has not loaded" — the
+    // project shell fetches on mount, so rendering it here is what made a
+    // launcher window ask for an index, a history and an inbox it had no
+    // project for.
+    expect(windowView(null)).toBe("waiting");
+  });
+
+  it("lets only a window with a project use a channel that needs one", () => {
+    expect(mayAskForProject("project")).toBe(true);
+    expect(mayAskForProject("launcher")).toBe(false);
+    expect(mayAskForProject("waiting")).toBe(false);
   });
 });

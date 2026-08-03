@@ -2,7 +2,7 @@ import "./agent/tracing.js"; // disable tracing before any langchain import (R2.
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { CHANNELS, createApi, dispatch, INBOX_STABILITY_MS } from "./ipc.js";
+import { CHANNELS, createApi, createRouter, INBOX_STABILITY_MS } from "./ipc.js";
 import { PUSH_CHANNELS } from "./channels.js";
 import { asDropOutcome, inboxFailure } from "./ingest.js";
 import { resolveProject } from "./project.js";
@@ -27,6 +27,27 @@ import { createChatControl, type ChatCredentials } from "./agent/chat-control.js
  */
 
 const here = fileURLToPath(import.meta.url);
+
+/**
+ * Every open window's API, and the sender ids that tell them apart.
+ *
+ * One router for the process, because `ipcMain` is one table for the process.
+ * See `createRouter` in `ipc.ts` for why this is not per window.
+ */
+const router = createRouter();
+
+/**
+ * Arm the channel table. **Once, for the application** — a second call would
+ * throw on the first channel, which is exactly the defect this replaced.
+ */
+function armChannels(): void {
+  for (const channel of Object.values(CHANNELS)) {
+    if (PUSH_CHANNELS.has(channel)) continue; // main → renderer only
+    ipcMain.handle(channel, (event, ...args: unknown[]) =>
+      router.route(event.sender.id, channel, args),
+    );
+  }
+}
 
 function createWindow(projectRoot: string | null): BrowserWindow {
   const window = new BrowserWindow({
@@ -155,10 +176,10 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     ...(projectRoot ? { inbox: { drain: () => inboxDrain(projectRoot) } } : {}),
     ...(chat ? { chat } : {}),
   });
-  for (const channel of Object.values(CHANNELS)) {
-    if (PUSH_CHANNELS.has(channel)) continue; // main → renderer only
-    ipcMain.handle(channel, (_event, ...args: unknown[]) => dispatch(api, channel, args));
-  }
+  // The window's own id, read now: `webContents` is gone by the time `closed`
+  // fires, and detaching is the one thing that has to happen then.
+  const windowId = window.webContents.id;
+  router.attach(windowId, api);
 
   // 9.14 — the CLI asks here rather than starting a process, when this
   // window already has the project open. Read and validate only; the socket
@@ -218,7 +239,9 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     void inbox?.close();
     queries?.close();
     session?.dispose();
-    for (const channel of Object.values(CHANNELS)) ipcMain.removeHandler(channel);
+    // This window's API, and nothing else. Removing the handlers here — which
+    // is what this used to do — disarmed every other open window.
+    router.detach(windowId);
   });
 
   const devServer = process.env["VITE_DEV_SERVER_URL"];
@@ -264,6 +287,9 @@ void app.whenReady().then(() => {
   // that look for them count directories up from their own source file. The
   // bundle collapses those depths, so the packaged location is stated here.
   if (app.isPackaged) applyPackagedBinaries(process.resourcesPath);
+
+  // Before the first window, and never again.
+  armChannels();
 
   // 8.4 — `ow` outside a project opens the launcher rather than guessing at
   // one. A window with no project answers `null` to `project()`, and the
