@@ -24,7 +24,7 @@ import type {
   SaveCredentialInput,
   SettingsView,
 } from "../main/settings.js";
-import type { PageSource, SourceLocation, SourceRow } from "../main/sources.js";
+import type { PageSource, SourceBrowse, SourceLocation, SourceRow } from "../main/sources.js";
 import type { TranscribeOutcome } from "../main/transcribe-run.js";
 import type {
   ChatCancelInput,
@@ -68,6 +68,10 @@ export interface OwBridge {
   sourceDetail(id: string): Promise<SourceRow>;
   sourcesOfPage(slug: string): Promise<PageSource[]>;
   retitle(id: string, title: string): Promise<void>;
+  /** Declare a source read by hand, or withdraw it (plan 7.1). */
+  markSource(id: string, processed: boolean): Promise<void>;
+  /** The files a source holds, an unpacked archive as a tree (plan 7.5). */
+  browseSource(id: string): Promise<SourceBrowse>;
   findings(): Promise<Finding[]>;
   locate(id: string, fragment: string): Promise<SourceLocation>;
   /** 5.5 — the peaks the provenance transport draws, or null when there is no audio. */

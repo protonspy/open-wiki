@@ -47,6 +47,9 @@ const api = {
   sourceDetail: (id: string) => ipcRenderer.invoke(CHANNELS.sourceDetail, id),
   sourcesOfPage: (slug: string) => ipcRenderer.invoke(CHANNELS.sourcesOfPage, slug),
   retitle: (id: string, title: string) => ipcRenderer.invoke(CHANNELS.retitle, id, title),
+  markSource: (id: string, processed: boolean) =>
+    ipcRenderer.invoke(CHANNELS.markSource, id, processed),
+  browseSource: (id: string) => ipcRenderer.invoke(CHANNELS.browseSource, id),
   findings: () => ipcRenderer.invoke(CHANNELS.findings),
   locate: (id: string, fragment: string) => ipcRenderer.invoke(CHANNELS.locate, id, fragment),
   waveform: (id: string) => ipcRenderer.invoke(CHANNELS.waveform, id),

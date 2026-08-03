@@ -508,6 +508,32 @@ export function retitleSource(projectRoot: string, id: string, title: string): v
 }
 
 /**
+ * Declare a source read, or withdraw the declaration — by hand, from the
+ * sources screen (plan task 7.1).
+ *
+ * **The one action on that screen that is not the agent's.** Everything else
+ * about a source is either observed on disk or written by whoever read the
+ * file; this is a judgement a person makes about a source they read outside the
+ * loop, or about one the agent marked and they disagree with. `ow source mark`
+ * is the same act through the other door (4.2), and both go through the single
+ * manifest mutator of `specs/source-status` R2.1 rather than growing a second
+ * writer in the Electron process — which is exactly what that rule was written
+ * after finding here.
+ *
+ * The date is the desktop's own local day, for the reason the CLI uses its
+ * own: a source marked and a page written in one sitting should carry the same
+ * date.
+ */
+export function markSourceProcessed(
+  projectRoot: string,
+  id: string,
+  processed: boolean,
+  today: string,
+): void {
+  updateManifest(projectRoot, id, { processed: processed ? today : null });
+}
+
+/**
  * One snapshot covering every path an operation touches.
  *
  * `writePage` snapshots the single page it writes, which is right for a save

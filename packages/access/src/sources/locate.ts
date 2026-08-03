@@ -16,6 +16,29 @@ import { join } from "node:path";
 export const INBOX = "_inbox";
 
 /**
+ * Where an unpacked archive's tree lives inside a source directory (plan 6.1).
+ */
+export const CONTENTS = "contents";
+
+/**
+ * The marker that says an unpack is in flight — plan task 6.6.
+ *
+ * **A half-unpacked archive has to be distinguishable from a whole one**, and
+ * nothing else on disk can say which it is: a tree of four hundred files looks
+ * exactly like a tree of four thousand that stopped. So the marker is written
+ * before the first entry and removed after the last, and a directory still
+ * carrying it is a source that was interrupted.
+ *
+ * The same shape task 4.14 gave a recording, which keeps its WAV and its
+ * journal until transcription confirms and deletes both — and for the same
+ * reason: the state that matters is *did this finish*, the filesystem is the
+ * only thing that survives a crash, and a marker present is the one fact a
+ * crash cannot forge. It is not a second record of derived state, which 6.1
+ * forbids: nothing else observes it.
+ */
+export const UNPACKING = "unpacking.json";
+
+/**
  * Where a source actually sits — plan task 8.3.
  *
  * **A source is its id wherever it sits under `raw/`**, which is the decision

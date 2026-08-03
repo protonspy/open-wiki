@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { boundedManifest, readManifestAt, requireSourceDir, type SourceKind } from "./manifest.js";
-import { listSourceRefs } from "./locate.js";
+import { listSourceRefs, UNPACKING } from "./locate.js";
 
 /**
  * Each source's state (plan 6.1): received, text ready, cited on a page.
@@ -74,6 +74,27 @@ export interface SourceState {
    * only reachable from a manifest this application did not write.
    */
   superseded?: { by: string; date?: string };
+  /**
+   * How big the file that arrived is, in bytes — the preserved original for an
+   * upload, the Opus for a recording, `0` when neither is there yet (plan 7.1).
+   *
+   * **The file, not the directory.** Totalling the directory would mean walking
+   * it, and an unpacked archive (6.1) is thousands of files — so a listing of
+   * twenty sources would stat a hundred thousand of them to render one column.
+   * It is also the more honest number: the archive is what arrived and what a
+   * citation can be checked against, and the tree beside it is a convenience
+   * `ow` can produce again, which is exactly why 6.5 keeps it out of git.
+   */
+  bytes: number;
+  /**
+   * True when an unpack started and never finished (6.6), so the tree beside
+   * this source is part of an archive rather than all of one.
+   *
+   * The marker had no reader when 6.1 wrote it, which a security review pointed
+   * out: a crash mid-unpack left a partial tree that every reader walked into
+   * as though it were whole. This is that reader.
+   */
+  incomplete?: true;
   /** True once `text.md` exists, whatever the stage says. */
   textReady: boolean;
   /** The pages citing this source, as project-relative paths. */
@@ -129,6 +150,11 @@ export function sourceState(
   // in `boundedManifest` and a field added there reaches every view at once.
   const manifest = boundedManifest(readManifestAt(dir, id));
   const textReady = existsSync(join(dir, "text.md"));
+  const bytes = originalBytes(dir, id, manifest.kind);
+  // The one reader of 6.6's marker. Without it a tree a crash left half-written
+  // is walked as though it were whole, by everything from the sources pane to
+  // a codewiki citation.
+  const incomplete = existsSync(join(dir, UNPACKING)) ? ({ incomplete: true } as const) : {};
 
   const journal = readJournal(dir);
   const chunks = journal?.chunks ?? [];
@@ -151,6 +177,8 @@ export function sourceState(
   // `readManifest` directly and never build a `SourceState`.
   const base = {
     id,
+    bytes,
+    ...incomplete,
     title: manifest.title,
     kind: manifest.kind,
     // Carried on every stage, because the question it answers — has anybody
@@ -198,6 +226,32 @@ export function sourceState(
     return { ...base, stage: "transcribing", ...error, ...progressOf(chunks.length, done) };
   }
   return { ...base, stage: "received" };
+}
+
+/**
+ * The size of the file that arrived, or `0` when it is not there yet.
+ *
+ * **Derived from the id, never read out of the manifest.** `register.ts` writes
+ * an upload as `source.<ext>` with the extension taken from the id
+ * (`adr:0011`), so the name is computable — and a filename read out of a
+ * `manifest.json` that arrived with a clone would be a path this function was
+ * asked to stat. The desktop's `originalIn` derives it the same way, for the
+ * same reason.
+ *
+ * A recording is measured by its Opus, which is what `adr:0006` keeps: the WAV
+ * is gone once the source seals, so it is not what anybody has.
+ */
+function originalBytes(dir: string, id: string, kind: SourceKind): number {
+  const names =
+    kind === "recording"
+      ? ["mic.opus", "system.opus"]
+      : [`source${id.slice(id.lastIndexOf(".") > 0 ? id.lastIndexOf(".") : id.length)}`];
+  let total = 0;
+  for (const name of names) {
+    const stat = statSync(join(dir, name), { throwIfNoEntry: false });
+    if (stat?.isFile()) total += stat.size;
+  }
+  return total;
 }
 
 function progressOf(total: number, done: number): { progress?: { done: number; total: number } } {

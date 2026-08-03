@@ -61,7 +61,7 @@ function registerTools(server: McpServer, projectRoot: string): void {
 
   server.tool(
     "ow_read_source",
-    "Return a source's text.md — the normalised text the citations point into.",
+    "Return a source's text.md when it has one. A source with none reports what it is instead — its title, kind, original filename, status and description — because this project stores sources and does not read them (adr:0021). The original file is not reachable from here.",
     { id: z.string().describe("the frozen source id (the raw/ directory name)") },
     ({ id }) => run(() => readSourceText(projectRoot, id)),
   );

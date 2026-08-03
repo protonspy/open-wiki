@@ -6,12 +6,14 @@ import { CHANNELS, createApi, dispatch } from "../src/main/ipc.js";
 import { PUSH_CHANNELS } from "../src/main/channels.js";
 import { asDropOutcome, inboxFailure, ingestDrop, ingestFile } from "../src/main/ingest.js";
 import {
+  browseSource,
   findings,
   locateCitation,
   sourceDetail,
   sourceRows,
   sourcesOfPage,
 } from "../src/main/sources.js";
+import { markSourceProcessed } from "../src/main/edit.js";
 import { chunkCells, toneOfStage } from "../src/renderer/Sources.js";
 import { startFragment } from "../src/shared/sources.js";
 
@@ -525,5 +527,201 @@ describe("startFragment (5.1, plan 6.5)", () => {
 
   it("falls back to a page for a source nobody could describe", () => {
     expect(startFragment(null)).toBe("p1");
+  });
+});
+
+describe("the provenance viewer opens what it is given (7.4)", () => {
+  /** A source holding a preserved original of this name. */
+  function withOriginal(id: string, bytes = "x"): void {
+    source(id, { text: false });
+    const dot = id.lastIndexOf(".");
+    writeFileSync(join(root, "raw", id, dot > 0 ? `source${id.slice(dot)}` : "source"), bytes);
+  }
+
+  it("opens an image as an image, with a type the CSP will load", () => {
+    // The renderer's CSP is `default-src 'none'` with `img-src 'self' data:`,
+    // so this is a real constraint: these bytes can reach an `<img>` and a
+    // PDF's cannot.
+    withOriginal("diagram.png");
+    const at = locateCitation(root, "diagram.png", "p1");
+    expect(at.kind).toBe("image");
+    expect(at.kind === "image" && at.mime).toBe("image/png");
+  });
+
+  it("opens a PDF at the page the citation named", () => {
+    withOriginal("report.pdf");
+    const at = locateCitation(root, "report.pdf", "p12");
+    expect(at.kind).toBe("document");
+    expect(at.kind === "document" && at.page).toBe(12);
+  });
+
+  it("hands an SVG to the system rather than to an img element", () => {
+    // It is a document that can carry script, and it arrived from a source
+    // nobody parsed. The CSP would load it; that is the problem, not the
+    // permission.
+    withOriginal("chart.svg");
+    expect(locateCitation(root, "chart.svg", "p1").kind).toBe("external");
+  });
+
+  it("names anything else and offers it to the system handler", () => {
+    // `adr:0021` means a source can be any file at all, so this branch is what
+    // keeps "any file" from quietly meaning "any file we listed".
+    for (const name of ["model.step", "book.epub", "sheet.xlsx", "notes"]) {
+      withOriginal(name);
+      expect(locateCitation(root, name, "p1").kind, name).toBe("external");
+    }
+  });
+
+  it("opens an unpacked archive as its tree, not as the zip beside it", () => {
+    withOriginal("repo.zip");
+    mkdirSync(join(root, "raw", "repo.zip", "contents", "src"), { recursive: true });
+    writeFileSync(join(root, "raw", "repo.zip", "contents", "src", "main.rs"), "fn main() {}\n");
+    const at = locateCitation(root, "repo.zip", "p1");
+    expect(at.kind).toBe("tree");
+    expect(at.kind === "tree" && at.incomplete).toBe(false);
+  });
+
+  it("says when the tree it opens is only part of one", () => {
+    withOriginal("repo.zip");
+    mkdirSync(join(root, "raw", "repo.zip", "contents"), { recursive: true });
+    writeFileSync(join(root, "raw", "repo.zip", "unpacking.json"), "{}");
+    const at = locateCitation(root, "repo.zip", "p1");
+    expect(at.kind === "tree" && at.incomplete).toBe(true);
+  });
+});
+
+describe("browsing into a source (7.5)", () => {
+  it("lists the files a source holds", () => {
+    source("notes.md");
+    const browse = browseSource(root, "notes.md");
+    expect(browse.tree).toBe(false);
+    expect(browse.entries.map((e) => e.path).sort()).toEqual(["manifest.json", "text.md"]);
+    expect(browse.entries.find((e) => e.path === "text.md")?.bytes).toBeGreaterThan(0);
+  });
+
+  it("lists an unpacked archive as a tree, and not the two files beside it", () => {
+    // `source.zip` and `contents/` is a listing nobody came to see.
+    source("repo.zip", { text: false });
+    mkdirSync(join(root, "raw", "repo.zip", "contents", "src"), { recursive: true });
+    writeFileSync(join(root, "raw", "repo.zip", "contents", "README.md"), "# acme\n");
+    writeFileSync(join(root, "raw", "repo.zip", "contents", "src", "main.rs"), "fn main() {}\n");
+
+    const browse = browseSource(root, "repo.zip");
+    expect(browse.tree).toBe(true);
+    expect(browse.entries.map((e) => e.path)).toEqual(["README.md", "src", "src/main.rs"]);
+    expect(browse.entries.find((e) => e.path === "src")?.kind).toBe("dir");
+  });
+
+  it("says when the tree is only part of an archive", () => {
+    source("repo.zip", { text: false });
+    mkdirSync(join(root, "raw", "repo.zip", "contents"), { recursive: true });
+    writeFileSync(join(root, "raw", "repo.zip", "unpacking.json"), "{}");
+    expect(browseSource(root, "repo.zip").incomplete).toBe(true);
+  });
+
+  it("refuses an id that names no source", () => {
+    expect(() => browseSource(root, "ghost")).toThrow(/no source/i);
+  });
+
+  it("finds a source filed into a folder", () => {
+    mkdirSync(join(root, "raw", "2026", "filed.md"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "2026", "filed.md", "manifest.json"),
+      JSON.stringify({ id: "filed.md", title: "Filed", kind: "file", original: "" }),
+      "utf8",
+    );
+    expect(browseSource(root, "filed.md").entries.map((e) => e.path)).toEqual(["manifest.json"]);
+  });
+});
+
+describe("a superseded source says so where the page shows it (7.6)", () => {
+  function superseded(id: string, by: string, date?: string): void {
+    source(id);
+    writeFileSync(
+      join(root, "raw", id, "manifest.json"),
+      JSON.stringify({
+        id,
+        title: "The old one",
+        kind: "file",
+        original: id,
+        status: "superseded",
+        "superseded-by": by,
+        ...(date ? { superseded: date } : {}),
+      }),
+      "utf8",
+    );
+  }
+
+  it("carries the replacement onto the page's own list of what it rests on", () => {
+    // A citation into replaced evidence resolving silently is the outcome
+    // supersession exists to prevent, so it is said here and not only on the
+    // sources screen somebody may never open.
+    superseded("old.pdf", "new.pdf", "2026-08-03");
+    page("fenix", "As src://old.pdf#p1 says.");
+
+    const cited = sourcesOfPage(root, "fenix");
+    expect(cited).toHaveLength(1);
+    expect(cited[0]!.superseded).toEqual({ by: "new.pdf", date: "2026-08-03" });
+  });
+
+  it("says nothing about supersession for a source nobody replaced", () => {
+    source("current.pdf");
+    page("fenix", "As src://current.pdf#p1 says.");
+    expect(sourcesOfPage(root, "fenix")[0]!.superseded).toBeUndefined();
+  });
+
+  it("shows it on the sources row too", () => {
+    superseded("old.pdf", "new.pdf");
+    expect(sourceRows(root)[0]!.superseded?.by).toBe("new.pdf");
+  });
+});
+
+describe("marking a source read by hand (7.1)", () => {
+  it("writes the declaration through the one manifest mutator", () => {
+    source("notes.md");
+    markSourceProcessed(root, "notes.md", true, "2026-08-03");
+    expect(sourceRows(root)[0]!.processed).toBe("2026-08-03");
+  });
+
+  it("withdraws it again", () => {
+    source("notes.md");
+    markSourceProcessed(root, "notes.md", true, "2026-08-03");
+    markSourceProcessed(root, "notes.md", false, "2026-08-03");
+    expect(sourceRows(root)[0]!.processed).toBeUndefined();
+  });
+
+  it("reaches the renderer through its own channel", async () => {
+    source("notes.md");
+    const api = createApi({ projectRoot: root });
+    await dispatch(api, CHANNELS.markSource, ["notes.md", true]);
+    expect(sourceDetail(root, "notes.md").processed).toBeTruthy();
+    const browse = await dispatch(api, CHANNELS.browseSource, ["notes.md"]);
+    expect((browse as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the sources pane shows what a source is (7.1)", () => {
+  it("carries the size of what arrived onto the row", () => {
+    source("report.pdf", { text: false });
+    writeFileSync(join(root, "raw", "report.pdf", "source.pdf"), "%PDF-1.4 and then some");
+    expect(sourceRows(root)[0]!.bytes).toBe(22);
+  });
+
+  it("carries the description the agent wrote", () => {
+    source("fnd348r34nr483r.txt");
+    writeFileSync(
+      join(root, "raw", "fnd348r34nr483r.txt", "manifest.json"),
+      JSON.stringify({
+        id: "fnd348r34nr483r.txt",
+        title: "fnd348r34nr483r.txt",
+        kind: "file",
+        original: "fnd348r34nr483r.txt",
+        description: "The Q3 incident timeline.",
+      }),
+      "utf8",
+    );
+    // The row this whole group exists for: its only readable field was the
+    // filename, and the filename says nothing.
+    expect(sourceRows(root)[0]!.description).toBe("The Q3 incident timeline.");
   });
 });

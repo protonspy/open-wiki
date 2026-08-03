@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listSourceStates, sourceState } from "../src/sources/state.js";
 import { MissingSourceError, readManifest } from "../src/sources/manifest.js";
+import { registerSource } from "../src/sources/register.js";
+import { UNPACKING } from "../src/sources/locate.js";
 
 function tempProject(): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "ow-state-")));
@@ -285,5 +287,46 @@ describe("source state (6.1)", () => {
       source(root, "a.md", { text: "a" });
       expect(listSourceStates(root)).toEqual(listSourceStates(root));
     });
+  });
+});
+
+describe("what the sources pane needs (plan 7.1, 7.5)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("measures the file that arrived, not the directory around it", () => {
+    // The directory would mean walking it, and an unpacked archive is thousands
+    // of files — a listing of twenty sources would stat a hundred thousand to
+    // render one column. It is also the more honest number: the archive is what
+    // arrived, and the tree beside it is a convenience `ow` can produce again.
+    const { id } = registerSource(root, {
+      name: "report.pdf",
+      kind: "file",
+      content: Buffer.from("%PDF-1.4 and then some"),
+    });
+    expect(sourceState(root, id).bytes).toBe(22);
+  });
+
+  it("says nothing about size for a recording with no audio yet", () => {
+    const { id } = registerSource(root, {
+      name: "Weekly 2026-08-01",
+      kind: "recording",
+      content: null,
+    });
+    expect(sourceState(root, id).bytes).toBe(0);
+  });
+
+  it("reads an unfinished unpack as unfinished (6.6, 7.5)", () => {
+    // The marker had no reader when 6.1 wrote it: a crash mid-unpack left a
+    // partial tree that every reader walked into as though it were whole.
+    const { id } = registerSource(root, {
+      name: "repo.zip",
+      kind: "file",
+      content: Buffer.from("PK"),
+    });
+    expect(sourceState(root, id).incomplete).toBeUndefined();
+    writeFileSync(join(root, "raw", id, UNPACKING), "{}", "utf8");
+    expect(sourceState(root, id).incomplete).toBe(true);
   });
 });

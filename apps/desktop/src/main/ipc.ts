@@ -23,6 +23,7 @@ import {
   history,
   renamePage,
   retitleSource,
+  markSourceProcessed,
   savePage,
   savePageToday,
   undoOperation,
@@ -70,10 +71,12 @@ import {
   findings,
   locateCitation,
   sourceDetail,
+  browseSource,
   sourcesOfPage,
   type PageSource,
   type SourceLocation,
   type SourceRow,
+  type SourceBrowse,
 } from "./sources.js";
 import { waveformOf } from "./waveform.js";
 
@@ -199,6 +202,8 @@ export interface DesktopApi {
   undo(id: string): void;
 
   sourceDetail(id: string): SourceRow;
+  markSource(id: string, processed: boolean): void;
+  browseSource(id: string): SourceBrowse;
   sourcesOfPage(slug: string): PageSource[];
   retitle(id: string, title: string): void;
   findings(): Finding[];
@@ -319,6 +324,8 @@ export function createApi(deps: Deps): DesktopApi {
     sourceDetail: (id) => sourceDetail(root(), id),
     sourcesOfPage: (slug) => sourcesOfPage(root(), slug),
     retitle: (id, title) => retitleSource(root(), id, title),
+    markSource: (id, processed) => markSourceProcessed(root(), id, processed, savePageToday()),
+    browseSource: (id) => browseSource(root(), id),
     findings: () => findings(root()),
     locate: (id, fragment) => locateCitation(root(), id, fragment),
     waveform: (id) => waveformOf(root(), id),
@@ -429,6 +436,10 @@ export async function dispatch(
       return api.sourcesOfPage(String(args[0] ?? ""));
     case CHANNELS.retitle:
       return api.retitle(String(args[0] ?? ""), String(args[1] ?? ""));
+    case CHANNELS.markSource:
+      return api.markSource(String(args[0] ?? ""), Boolean(args[1]));
+    case CHANNELS.browseSource:
+      return api.browseSource(String(args[0] ?? ""));
     case CHANNELS.findings:
       return api.findings();
     case CHANNELS.locate:

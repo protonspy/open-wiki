@@ -1,6 +1,7 @@
 import { AudioLines, FileText } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { SourceStage } from "@open-wiki/access";
+import { humanBytes } from "@open-wiki/access/format";
 import type { SourceRow } from "../main/sources.js";
 import { startFragment } from "../shared/sources.js";
 import { useDialogs, type Dialogs } from "./Ask.js";
@@ -26,10 +27,11 @@ import { Table, type Column } from "./ui/Table.js";
  */
 
 const COLUMNS: readonly Column[] = [
-  { header: "Source", width: "38%" },
-  { header: "State", width: "16%" },
-  { header: "Progress", width: "26%" },
-  { header: "Cited", width: "10%", align: "right" },
+  { header: "Source", width: "34%" },
+  { header: "State", width: "20%" },
+  { header: "Progress", width: "20%" },
+  { header: "Size", width: "8%", align: "right" },
+  { header: "Cited", width: "8%", align: "right" },
   { header: "", align: "right" },
 ];
 
@@ -210,6 +212,26 @@ function SourceItem({
     }
   }, [ask, row.id, row.title, onChanged]);
 
+  /**
+   * 7.1 — declaring a source read by hand, or withdrawing it.
+   *
+   * Through the same single manifest mutator the CLI's `ow source mark` uses
+   * (`specs/source-status` R2.1), so the two doors cannot disagree about what
+   * a declaration is.
+   */
+  const mark = useCallback(async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await bridge().markSource(row.id, row.processed === undefined);
+      onChanged();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [row.id, row.processed, onChanged]);
+
   const cells = chunkCells(row.progress, busy);
 
   return (
@@ -227,6 +249,11 @@ function SourceItem({
                 keeps its filename, so repeating it would be noise. */}
             {row.id !== row.title ? <code className="src-name__id">{row.id}</code> : null}
           </span>
+          {/* 8.1 — what the agent learned about this source. The row this
+              whole group exists for is the one whose only readable field is
+              `fnd348r34nr483r.txt`; a description is what makes it a row
+              somebody can act on. */}
+          {row.description ? <span className="src-name__note">{row.description}</span> : null}
           {row.error ? <span className="src-name__error">{row.error}</span> : null}
           {note ? <span className="src-name__note">{note}</span> : null}
         </td>
@@ -236,7 +263,22 @@ function SourceItem({
           {/* 6.6 — the case that disappears from view on its own. Hollow and
               dashed, because its failure mode is going unnoticed among the
               filled pills beside it. */}
-          {row.uncited ? <Pill tone="uncited">nothing cites this</Pill> : null}
+          {row.uncited ? <Pill tone="uncited">nothing cites this</Pill> : null}{" "}
+          {/* specs/source-status — the one declared fact. It is beside the
+              stage rather than inside it because every other member of that
+              field is observed on disk and this one is a judgement. */}
+          {row.processed ? <Pill tone="ok">read {row.processed}</Pill> : null}{" "}
+          {/* 7.6 — a citation into replaced evidence resolving silently is the
+              outcome supersession exists to prevent, so it is said wherever the
+              source is shown and not only where somebody goes looking. */}
+          {row.superseded ? (
+            <Pill tone="uncited">
+              replaced{row.superseded.by ? ` by ${row.superseded.by}` : ""}
+            </Pill>
+          ) : null}{" "}
+          {/* 6.6 — an unpack that never finished. The tree beside this source
+              is part of an archive rather than all of one. */}
+          {row.incomplete ? <Pill tone="error">unpack unfinished</Pill> : null}
         </td>
 
         <td>
@@ -251,6 +293,8 @@ function SourceItem({
             </span>
           ) : null}
         </td>
+
+        <td className="table__num">{row.bytes > 0 ? humanBytes(row.bytes) : "—"}</td>
 
         <td className="table__num">
           {row.citedBy.length === 0 ? (
@@ -282,6 +326,13 @@ function SourceItem({
           ) : null}
           <Button size="sm" variant="ghost" onClick={() => void retitle()} disabled={busy}>
             Rename
+          </Button>
+          {/* 7.1 — the second of the two actions that are not the agent's. A
+              person read this outside the loop, or disagrees with a mark the
+              agent made; `ow source mark` is the same act through the other
+              door. */}
+          <Button size="sm" variant="ghost" onClick={() => void mark()} disabled={busy}>
+            {row.processed ? "Mark unread" : "Mark read"}
           </Button>
         </td>
       </tr>

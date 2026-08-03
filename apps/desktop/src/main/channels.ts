@@ -33,6 +33,9 @@ export const CHANNELS = {
   sourceDetail: "sources:detail",
   sourcesOfPage: "sources:of-page",
   retitle: "sources:retitle",
+  /** Declaring a source read by hand, and browsing into one (7.1, 7.5). */
+  markSource: "sources:mark",
+  browseSource: "sources:browse",
   findings: "check:findings",
   locate: "sources:locate",
   drop: "sources:drop",
