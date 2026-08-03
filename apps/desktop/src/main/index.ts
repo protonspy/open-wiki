@@ -145,6 +145,13 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     // same way `openWindow` does, so `ipc.ts` stays a module a test can call
     // without a display.
     saveDialog: (options) => dialog.showSaveDialog(window, options),
+    // 7.4 — **reveal, not open.** `shell.showItemInFolder` selects the file in
+    // the file manager; `shell.openPath` would invoke whatever handler its
+    // extension is registered to, on bytes that arrived in an untrusted clone.
+    // The same reason `isOpenableExternally` exists a few lines below.
+    reveal: (file) => {
+      shell.showItemInFolder(file);
+    },
     ...(projectRoot ? { inbox: { drain: () => inboxDrain(projectRoot) } } : {}),
     ...(chat ? { chat } : {}),
   });

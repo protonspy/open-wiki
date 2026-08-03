@@ -72,6 +72,7 @@ import {
   locateCitation,
   sourceDetail,
   browseSource,
+  revealPath,
   sourcesOfPage,
   type PageSource,
   type SourceLocation,
@@ -131,6 +132,14 @@ export interface Deps {
    * answer for a build where nothing can open a window.
    */
   openWindow?: (projectRoot: string) => void;
+  /**
+   * Showing a source file in the system file manager (plan 7.4).
+   *
+   * Injected for the same reason `openWindow` is: `shell` lives in `index.ts`
+   * and this module is what the tests reach. Absent in a test, and absent in a
+   * build where nothing can reveal a file.
+   */
+  reveal?: (file: string) => void;
   /**
    * The system save dialog, for the export of `specs/wiki-export` (R4.3).
    *
@@ -204,6 +213,7 @@ export interface DesktopApi {
   sourceDetail(id: string): SourceRow;
   markSource(id: string, processed: boolean): void;
   browseSource(id: string): SourceBrowse;
+  revealSource(id: string): void;
   sourcesOfPage(slug: string): PageSource[];
   retitle(id: string, title: string): void;
   findings(): Finding[];
@@ -326,6 +336,7 @@ export function createApi(deps: Deps): DesktopApi {
     retitle: (id, title) => retitleSource(root(), id, title),
     markSource: (id, processed) => markSourceProcessed(root(), id, processed, savePageToday()),
     browseSource: (id) => browseSource(root(), id),
+    revealSource: (id) => deps.reveal?.(revealPath(root(), id)),
     findings: () => findings(root()),
     locate: (id, fragment) => locateCitation(root(), id, fragment),
     waveform: (id) => waveformOf(root(), id),
@@ -440,6 +451,8 @@ export async function dispatch(
       return api.markSource(String(args[0] ?? ""), Boolean(args[1]));
     case CHANNELS.browseSource:
       return api.browseSource(String(args[0] ?? ""));
+    case CHANNELS.revealSource:
+      return api.revealSource(String(args[0] ?? ""));
     case CHANNELS.findings:
       return api.findings();
     case CHANNELS.locate:

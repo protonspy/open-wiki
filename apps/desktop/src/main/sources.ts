@@ -14,6 +14,7 @@ import {
   type Finding,
   type SourceState,
 } from "@open-wiki/access/read";
+import { isWithin, resolveReal } from "@open-wiki/access/read";
 import { parseInstant, toWallMs, type TimeMap } from "@open-wiki/audio/timemap";
 // From `shared/`: the sources pane opens a source at its start too, and the two
 // must not disagree about what "the start" is spelled as.
@@ -170,6 +171,46 @@ export function findings(projectRoot: string): Finding[] {
   return checkProject(projectRoot).findings;
 }
 
+/**
+ * A directory to walk, or `null` when it is not really inside `within`.
+ *
+ * Resolves the real path before comparing, so a symlink or a Windows junction
+ * standing where a directory should be is refused rather than followed. `at`
+ * may equal `within`, which `isWithin` deliberately does not allow — a source's
+ * own directory is a legitimate root, and only what it *resolves to* matters.
+ */
+function safeRoot(within: string, at: string): string | null {
+  if (!existsSync(at)) return null;
+  const real = resolveReal(at);
+  if (real !== resolveReal(within) && !isWithin(within, at)) return null;
+  return real;
+}
+
+/**
+ * The file of a source, confined, for the one caller that hands a path to the
+ * operating system (plan 7.4).
+ *
+ * **Reveal, not open.** `shell.showItemInFolder` selects the file in the
+ * system file manager; `shell.openPath` would invoke whatever handler is
+ * registered for its extension, on bytes that arrived in an untrusted
+ * `git clone`. This repository already treats that distinction as load-bearing
+ * — `isOpenableExternally` exists because `shell.openExternal` is
+ * `ShellExecute` on Windows, and `ms-msdt:` is a documented path from "a link
+ * in a document" to code execution. A `.lnk`, a `.scr` or a double extension
+ * under `raw/` is the same shape of problem.
+ *
+ * The plan asks for the file to be "named and offered to the system handler".
+ * Revealing it is that offer: the file manager is the system handler for
+ * *choosing what to do with a file*, and opening it is one further click, taken
+ * by the person, where their own operating system's warnings apply.
+ */
+export function revealPath(projectRoot: string, id: string): string {
+  const dir = resolvedSourceDir(projectRoot, id);
+  const original = originalIn(dir, id);
+  if (!original) throw new Error(`"${id}" has no file to show`);
+  return original;
+}
+
 /** One entry in a source's own directory, as the browser shows it (plan 7.5). */
 export interface SourceEntry {
   /** Path relative to what is being browsed, with `/` separators. */
@@ -226,9 +267,16 @@ export function browseSource(projectRoot: string, id: string): SourceBrowse {
   if (!existsSync(join(dir, "manifest.json"))) {
     throw new Error(`there is no source named "${id}"`);
   }
-  const contents = join(dir, CONTENTS);
-  const tree = existsSync(contents);
-  const root = tree ? contents : dir;
+  // **The root is confined too, not only what the walk finds inside it.**
+  // `walk` skips a symlinked *entry*, which a review showed is the easier half:
+  // `contents` can itself be a junction, and a junction needs no privilege on
+  // Windows and is not a symlink — so walking it listed an arbitrary directory
+  // and handed the names and sizes to the renderer. `export/zip.ts` had to add
+  // the identical "the tree root is checked too" fix after the same finding.
+  const contents = safeRoot(dir, join(dir, CONTENTS));
+  const tree = contents !== null;
+  const root = contents ?? safeRoot(dir, dir);
+  if (root === null) throw new Error(`"${id}" does not resolve to a directory inside raw/`);
 
   const entries: SourceEntry[] = [];
   let seen = 0;
@@ -242,14 +290,18 @@ export function browseSource(projectRoot: string, id: string): SourceBrowse {
       if (entry.isSymbolicLink()) continue;
       const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
       seen += 1;
-      if (seen > MAX_BROWSE_ENTRIES) continue;
-      if (entry.isDirectory()) {
-        entries.push({ path: rel, kind: "dir" });
-        walk(join(at, entry.name), rel);
-      } else {
-        const stat = statSync(join(at, entry.name), { throwIfNoEntry: false });
-        entries.push({ path: rel, kind: "file", bytes: stat?.size ?? 0 });
+      // **Counting does not stop at the cap; only pushing does.** Skipping an
+      // over-cap directory outright meant none of its descendants were ever
+      // counted, so `truncated` said 1 where the answer was 501 — a number
+      // whose only job is to be right about what was not shown.
+      if (seen <= MAX_BROWSE_ENTRIES) {
+        if (entry.isDirectory()) entries.push({ path: rel, kind: "dir" });
+        else {
+          const stat = statSync(join(at, entry.name), { throwIfNoEntry: false });
+          entries.push({ path: rel, kind: "file", bytes: stat?.size ?? 0 });
+        }
       }
+      if (entry.isDirectory()) walk(join(at, entry.name), rel);
     }
   };
   walk(root, "");
@@ -282,8 +334,16 @@ export type SourceLocation =
    * `img-src 'self' data:` — a viewer can show these bytes and cannot show a
    * PDF's. Collapsing the two would put that constraint in the renderer's way
    * at the moment it is least able to answer it.
+   *
+   * **The bytes travel as a `data:` URL, because `img-src` has no `file:` in
+   * it.** `media-src` does, which is how the audio player loads an Opus off
+   * disk; `img-src` deliberately does not, and widening it to show a picture
+   * would be answering a constraint the plan calls "a real constraint and not a
+   * formality" by removing it. An image past `MAX_INLINE_IMAGE_BYTES` degrades
+   * to `external` instead — offered to the system handler, which is the same
+   * answer any other unshowable file gets.
    */
-  | { kind: "image"; file: string; mime: string }
+  | { kind: "image"; file: string; mime: string; dataUrl: string }
   /**
    * An unpacked archive, opened as the listing it is (plan 7.4, 7.5). There is
    * no single file to show, so the answer is where the tree starts — and
@@ -321,6 +381,28 @@ const IMAGE_TYPES: ReadonlyMap<string, string> = new Map([
 
 /** Documents the viewer opens at a page rather than handing to the system. */
 const DOCUMENT_TYPES: ReadonlySet<string> = new Set([".pdf"]);
+
+/**
+ * The largest image the viewer inlines as a `data:` URL.
+ *
+ * A rendering bound, like `boundedText`: the bytes cross an IPC channel and sit
+ * in the renderer's memory base64-encoded, a third larger than on disk. Past
+ * this the image is offered to the system handler instead — which shows it
+ * better than a panel would anyway.
+ */
+export const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * An image small enough to show, as the CSP's `data:` allows — or `null`,
+ * which sends it to the system handler like any other file the panel cannot
+ * render.
+ */
+function inlineImage(file: string, mime: string): SourceLocation | null {
+  const stat = statSync(file, { throwIfNoEntry: false });
+  if (!stat?.isFile() || stat.size > MAX_INLINE_IMAGE_BYTES) return null;
+  const dataUrl = `data:${mime};base64,${readFileSync(file).toString("base64")}`;
+  return { kind: "image", file, mime, dataUrl };
+}
 
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -367,8 +449,10 @@ export function locateCitation(projectRoot: string, id: string, fragment: string
   // An unpacked archive answers with its tree, before the "no file" branch:
   // there *is* a file — the archive — and opening a zip in a viewer shows
   // nobody anything. The tree is what somebody came to look at (plan 7.4).
-  const contents = join(dir, CONTENTS);
-  if (existsSync(contents)) {
+  // Confined the same way the browser confines it: `contents` can itself be a
+  // junction, and opening one would point the viewer at an arbitrary directory.
+  const contents = safeRoot(dir, join(dir, CONTENTS));
+  if (contents !== null) {
     return { kind: "tree", dir: contents, incomplete: existsSync(join(dir, UNPACKING)) };
   }
 
@@ -380,7 +464,10 @@ export function locateCitation(projectRoot: string, id: string, fragment: string
   // `adr:0021`'s "any file" from quietly meaning "any file we listed".
   const ext = extensionOf(original);
   const mime = IMAGE_TYPES.get(ext);
-  if (mime !== undefined) return { kind: "image", file: original, mime };
+  if (mime !== undefined) {
+    const inline = inlineImage(original, mime);
+    if (inline !== null) return inline;
+  }
   if (!DOCUMENT_TYPES.has(ext)) return { kind: "external", file: original };
   return { kind: "document", file: original, page: page ? Number(page[1]) : 1 };
 }

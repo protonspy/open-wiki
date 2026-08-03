@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   assertWithin,
   boundedManifest,
+  boundedText,
   resolvedSourceDir,
   OutsideProjectError,
   listEntityPages,
@@ -170,7 +171,7 @@ export function readSourceText(projectRoot: string, id: string): SourceTextResul
         }
       : {}),
     reason:
-      `"${id}" has no text.md. This project stores sources and does not read them ` +
+      `"${boundedText(id)}" has no text.md. This project stores sources and does not read them ` +
       `(adr:0021-sources-are-stored-not-parsed), so a document, an image or an archive has ` +
       `none until an agent working in that project writes one. The original is on that ` +
       `project's disk and cannot be served from here.`,

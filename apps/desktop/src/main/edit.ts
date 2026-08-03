@@ -14,6 +14,7 @@ import {
   registerInIndex,
   snapshot,
   undo,
+  readManifest,
   updateManifest,
   writePage,
   type GateDecision,
@@ -523,6 +524,14 @@ export function retitleSource(projectRoot: string, id: string, title: string): v
  * The date is the desktop's own local day, for the reason the CLI uses its
  * own: a source marked and a page written in one sitting should carry the same
  * date.
+ *
+ * **Idempotent, and it keeps the original date**, which is `runSourceMark`'s
+ * contract too: the declaration records *when somebody read the source*, so
+ * re-stamping it on a repeat would lose the only fact it carries. The first
+ * version wrote today's date unconditionally — nothing reached it twice,
+ * because the button only offers "Mark read" when there is no declaration, so
+ * the divergence was masked by its one caller rather than absent. A review
+ * caught it. Two doors onto one act must not disagree about what the act is.
  */
 export function markSourceProcessed(
   projectRoot: string,
@@ -530,7 +539,13 @@ export function markSourceProcessed(
   processed: boolean,
   today: string,
 ): void {
-  updateManifest(projectRoot, id, { processed: processed ? today : null });
+  const declared = readManifest(projectRoot, id).processed;
+  const wanted = processed ? (declared ?? today) : undefined;
+  // Nothing to write when the manifest already says this. A write that changes
+  // nothing is still a write: it rewrites the file, and on a repeat mark it
+  // would replace the date somebody's read is recorded at.
+  if (wanted === declared) return;
+  updateManifest(projectRoot, id, { processed: wanted ?? null });
 }
 
 /**

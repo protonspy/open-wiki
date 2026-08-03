@@ -50,6 +50,7 @@ const api = {
   markSource: (id: string, processed: boolean) =>
     ipcRenderer.invoke(CHANNELS.markSource, id, processed),
   browseSource: (id: string) => ipcRenderer.invoke(CHANNELS.browseSource, id),
+  revealSource: (id: string) => ipcRenderer.invoke(CHANNELS.revealSource, id),
   findings: () => ipcRenderer.invoke(CHANNELS.findings),
   locate: (id: string, fragment: string) => ipcRenderer.invoke(CHANNELS.locate, id, fragment),
   waveform: (id: string) => ipcRenderer.invoke(CHANNELS.waveform, id),

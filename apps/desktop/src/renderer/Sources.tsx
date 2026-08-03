@@ -2,7 +2,7 @@ import { AudioLines, FileText } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { SourceStage } from "@open-wiki/access";
 import { humanBytes } from "@open-wiki/access/format";
-import type { SourceRow } from "../main/sources.js";
+import type { SourceBrowse, SourceRow } from "../main/sources.js";
 import { startFragment } from "../shared/sources.js";
 import { useDialogs, type Dialogs } from "./Ask.js";
 import { bridge } from "./bridge.js";
@@ -163,6 +163,9 @@ function SourceItem({
   const [note, setNote] = useState<string | null>(null);
   /** 6.4 — which pages cite this, opened from the count rather than always on. */
   const [showCiting, setShowCiting] = useState(false);
+  /** 7.5 — the files this source holds, fetched when somebody asks to see them. */
+  const [browse, setBrowse] = useState<SourceBrowse | null>(null);
+  const [showFiles, setShowFiles] = useState(false);
 
   /**
    * 6.3 — transcribe, or finish what stopped.
@@ -231,6 +234,29 @@ function SourceItem({
       setBusy(false);
     }
   }, [row.id, row.processed, onChanged]);
+
+  /**
+   * 7.5 — seeing what arrived.
+   *
+   * Reading a source is the agent's job; this is how a person knows the upload
+   * was what they meant — that the zip really was the repository and not last
+   * month's one. Fetched on the first open rather than with the row, because a
+   * tree is thousands of entries and twenty rows must not carry twenty of them.
+   */
+  const toggleFiles = useCallback(async () => {
+    if (showFiles) {
+      setShowFiles(false);
+      return;
+    }
+    setShowFiles(true);
+    if (browse) return;
+    try {
+      setBrowse(await bridge().browseSource(row.id));
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+      setShowFiles(false);
+    }
+  }, [showFiles, browse, row.id]);
 
   const cells = chunkCells(row.progress, busy);
 
@@ -334,8 +360,41 @@ function SourceItem({
           <Button size="sm" variant="ghost" onClick={() => void mark()} disabled={busy}>
             {row.processed ? "Mark unread" : "Mark read"}
           </Button>
+          {/* 7.5 — what this source actually holds. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void toggleFiles()}
+            aria-expanded={showFiles}
+          >
+            Files
+          </Button>
         </td>
       </tr>
+
+      {/* 7.5 — the files it holds, an unpacked archive as a tree. */}
+      {showFiles && browse ? (
+        <tr>
+          <td colSpan={COLUMNS.length} className="table__detail">
+            {browse.incomplete ? (
+              <span className="src-name__error">
+                This archive was never fully unpacked, so what is below is part of it.
+              </span>
+            ) : null}
+            <ul className="source-tree__list">
+              {browse.entries.map((entry) => (
+                <li key={entry.path} className={entry.kind === "dir" ? "is-dir" : undefined}>
+                  <span className="source-tree__path">{entry.path}</span>
+                  {entry.kind === "file" ? (
+                    <span className="source-tree__size">{humanBytes(entry.bytes ?? 0)}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            {browse.truncated > 0 ? <span>{browse.truncated} more not shown.</span> : null}
+          </td>
+        </tr>
+      ) : null}
 
       {/* 6.4 — from a source to the pages that cite it. A row of its own rather
           than a fifth thing in the first cell: it is a list, and it is only

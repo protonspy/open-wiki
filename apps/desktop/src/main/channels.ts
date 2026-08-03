@@ -36,6 +36,8 @@ export const CHANNELS = {
   /** Declaring a source read by hand, and browsing into one (7.1, 7.5). */
   markSource: "sources:mark",
   browseSource: "sources:browse",
+  /** Show a source's file in the system file manager (7.4). */
+  revealSource: "sources:reveal",
   findings: "check:findings",
   locate: "sources:locate",
   drop: "sources:drop",

@@ -72,6 +72,8 @@ export interface OwBridge {
   markSource(id: string, processed: boolean): Promise<void>;
   /** The files a source holds, an unpacked archive as a tree (plan 7.5). */
   browseSource(id: string): Promise<SourceBrowse>;
+  /** Show a source's file in the system file manager (plan 7.4). */
+  revealSource(id: string): Promise<void>;
   findings(): Promise<Finding[]>;
   locate(id: string, fragment: string): Promise<SourceLocation>;
   /** 5.5 — the peaks the provenance transport draws, or null when there is no audio. */

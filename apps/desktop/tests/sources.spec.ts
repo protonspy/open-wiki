@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +16,9 @@ import { asDropOutcome, inboxFailure, ingestDrop, ingestFile } from "../src/main
 import {
   browseSource,
   findings,
+  revealPath,
+  MAX_BROWSE_ENTRIES,
+  MAX_INLINE_IMAGE_BYTES,
   locateCitation,
   sourceDetail,
   sourceRows,
@@ -723,5 +734,107 @@ describe("the sources pane shows what a source is (7.1)", () => {
     // The row this whole group exists for: its only readable field was the
     // filename, and the filename says nothing.
     expect(sourceRows(root)[0]!.description).toBe("The Q3 incident timeline.");
+  });
+});
+
+describe("group 7, after review", () => {
+  it("refuses to walk a contents/ that is itself a junction (7.5)", () => {
+    // `walk` skips a symlinked *entry*, which is the easier half — `contents`
+    // can itself be a junction, and a junction needs no privilege on Windows
+    // and is not a symlink. Walking it listed an arbitrary directory and handed
+    // the names and sizes to the renderer. `export/zip.ts` had to add the same
+    // "the tree root is checked too" fix after the same finding.
+    source("repo.zip", { text: false });
+    const outside = mkdtempSync(join(tmpdir(), "ow-outside-"));
+    writeFileSync(join(outside, "secret-file.txt"), "not this project's");
+    try {
+      symlinkSync(outside, join(root, "raw", "repo.zip", "contents"), "junction");
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return; // junction creation unavailable on this machine
+    }
+
+    const browse = browseSource(root, "repo.zip");
+    expect(browse.entries.map((e) => e.path)).not.toContain("secret-file.txt");
+    // It falls back to the source's own directory, which is inside `raw/`.
+    expect(browse.tree).toBe(false);
+    // And the viewer does not offer it either.
+    expect(locateCitation(root, "repo.zip", "p1").kind).not.toBe("tree");
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("counts what it did not show, including inside a directory past the cap (7.5)", () => {
+    // Skipping an over-cap directory outright meant none of its descendants
+    // were ever counted, so `truncated` said 1 where the answer was 501 — a
+    // number whose only job is to be right about what was not shown.
+    source("many.zip", { text: false });
+    const contents = join(root, "raw", "many.zip", "contents");
+    mkdirSync(contents, { recursive: true });
+    for (let i = 0; i < MAX_BROWSE_ENTRIES; i++) {
+      writeFileSync(join(contents, `f${String(i).padStart(5, "0")}.txt`), "x");
+    }
+    const deeper = join(contents, "zzz-more");
+    mkdirSync(deeper, { recursive: true });
+    for (let i = 0; i < 500; i++) writeFileSync(join(deeper, `g${i}.txt`), "x");
+
+    const browse = browseSource(root, "many.zip");
+    expect(browse.entries).toHaveLength(MAX_BROWSE_ENTRIES);
+    // 1 for the directory itself plus its 500 files.
+    expect(browse.truncated).toBe(501);
+  });
+
+  it("keeps the original date when a source is marked twice (7.1)", () => {
+    // `runSourceMark`'s contract, and this is "the same act through the other
+    // door". The declaration records *when somebody read the source*, so
+    // re-stamping it on a repeat would lose the only fact it carries.
+    source("notes.md");
+    markSourceProcessed(root, "notes.md", true, "2026-08-01");
+    markSourceProcessed(root, "notes.md", true, "2026-08-09");
+    expect(sourceRows(root)[0]!.processed).toBe("2026-08-01");
+  });
+
+  it("writes nothing when there is nothing to withdraw (7.1)", () => {
+    source("notes.md");
+    const before = readFileSync(join(root, "raw", "notes.md", "manifest.json"), "utf8");
+    markSourceProcessed(root, "notes.md", false, "2026-08-01");
+    expect(readFileSync(join(root, "raw", "notes.md", "manifest.json"), "utf8")).toBe(before);
+  });
+
+  it("carries an image as a data URL, because img-src has no file: in it (7.4)", () => {
+    // `media-src` does, which is how the audio player loads an Opus off disk;
+    // `img-src` is `'self' data:`, and widening it to show a picture would
+    // answer a real constraint by removing it.
+    source("shot.png", { text: false });
+    // A one-pixel PNG, so the bytes are a real image rather than a placeholder.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    writeFileSync(join(root, "raw", "shot.png", "source.png"), png);
+
+    const at = locateCitation(root, "shot.png", "p1");
+    expect(at.kind).toBe("image");
+    if (at.kind !== "image") return;
+    expect(at.dataUrl.startsWith("data:image/png;base64,")).toBe(true);
+    expect(Buffer.from(at.dataUrl.split(",")[1]!, "base64")).toEqual(png);
+  });
+
+  it("offers an image too large to inline to the system instead (7.4)", () => {
+    source("huge.png", { text: false });
+    writeFileSync(
+      join(root, "raw", "huge.png", "source.png"),
+      Buffer.alloc(MAX_INLINE_IMAGE_BYTES + 1),
+    );
+    // A panel is not where a 9 MB screenshot is read anyway, and the fallback is
+    // the same answer every other unshowable file gets.
+    expect(locateCitation(root, "huge.png", "p1").kind).toBe("external");
+  });
+
+  it("confines the file it hands to the system (7.4)", () => {
+    source("model.step", { text: false });
+    writeFileSync(join(root, "raw", "model.step", "source.step"), "solid");
+    expect(revealPath(root, "model.step")).toContain(join("raw", "model.step"));
+    expect(() => revealPath(root, "../../elsewhere")).toThrow();
+    expect(() => revealPath(root, "ghost")).toThrow(/no file to show/i);
   });
 });
