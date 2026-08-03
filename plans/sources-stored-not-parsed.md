@@ -308,12 +308,34 @@ Depends on group 2 and on nothing else. It is last because it is the only part w
 the application interprets structure, and everything before it is the reason that is
 now a bounded exception rather than the rule.
 
-- [ ] 6.1 (TDD) Unpack an archive into the source directory, refusing **per entry** what escapes it: a path that resolves outside after 2.6's real-path check, an entry that is a symbolic link, and an entry that is a Windows directory junction. Test-first without hesitation — this is the boundary class the plan reserves it for, and the failure is that something got through
-- [ ] 6.2 (TDD) Refuse an archive that expands beyond a bound, on total size and on ratio, and stop while unpacking rather than after — a bomb that is detected once the disk is full has been detected too late
-- [ ] 6.3 (TDD) Agent configuration inside an archive lands inert: `CLAUDE.md`, `.claude/` and `.mcp.json` anywhere in the unpacked tree are stored so that no harness loads them as its own, and the source says they were there. Test-first because a miss here is silent and it is somebody else's prompt text inside the user's project
-- [ ] 6.4 (Unit) The unpacked tree is provenance and is kept, the way `adr:0006` keeps the Opus. Deleting it to save space breaks every codewiki citation into it — 7.5 would report them, which is the check working and the evidence gone
-- [ ] 6.5 (Unit) A stance on what an unpacked archive does to git, written as ignore entries at `ow init` the way 2.8 wrote them for audio. A repository unpacked into `raw/` is thousands of files somebody did not choose to commit
-- [ ] 6.6 (Unit) Seal the source when unpacking finishes, so `raw/<id>/` is immutable once written and a half-unpacked archive is distinguishable from a whole one — the same shape 4.14 gave a recording, which keeps its WAV until transcription confirms
+- [x] 6.1 (TDD) Unpack an archive into the source directory, refusing **per entry** what escapes it: a path that resolves outside after 2.6's real-path check, an entry that is a symbolic link, and an entry that is a Windows directory junction. Test-first without hesitation — this is the boundary class the plan reserves it for, and the failure is that something got through
+  - **Red observed** first: 16 assertion failures across `sources-archive.spec.ts` against a signature-only stub.
+  - **`decodeStrings: false` is what makes "per entry" possible, and it is not about encodings.** With yauzl's default on, it runs its own `validateFileName` as each entry is emitted and raises an *archive-level* error for a name that is absolute or climbs out — which aborts the whole zip. That is one decision for the whole archive, and this task exists to make it one per member. Names arrive raw and are decoded with `getFileNameLowLevel`, yauzl's own decoder, exported for exactly this — so the answer is the same CP437-or-UTF-8 one rather than a second decoder that would disagree on the hardest names.
+  - **The junction is the case the string comparison misses**, and it is why the real-path check runs per entry rather than once for the destination: a junction needs no privilege on Windows, is not a symlink, and can be planted by an *earlier entry of the same archive*. The test creates a real one, and junction creation was confirmed to work on this machine rather than assumed — a security test that silently skips is worse than none.
+  - **A symbolic link is refused for its kind, not its target.** Deciding per target decides against a filesystem that can change after the decision.
+  - **Two entries may name one path** — by carrying the same name twice, which a zip is free to do, or by planting the neutralised name of 6.3. The second is refused and reported rather than overwriting the first, because a tree where a later entry won matches no archive and says so nowhere.
+  - The bytes of the fixtures are hand-built (`tests/zip-fixture.ts`): `yazl` validates every path it is given, so it cannot produce `../../escape.txt`, and it exposes nothing for the unix mode that marks a link. The archives an attacker sends are exactly the ones no writer library will build.
+- [x] 6.2 (TDD) Refuse an archive that expands beyond a bound, on total size and on ratio, and stop while unpacking rather than after — a bomb that is detected once the disk is full has been detected too late
+  - **Red observed** first: 5 assertion failures before the bounds existed.
+  - **The meter sits in the byte stream, between the decompressor and the file.** Counting an entry's declared `uncompressedSize` would be asking the attacker how much to allow, and checking after the entry would let one 4 GB member through. It throws part-way through an entry as readily as between two of them, which is what "stop while unpacking" has to mean.
+  - **Two bounds, because they catch different archives.** A total (256 MiB) is the disk decision 2.4 already made for a single upload; a ratio (100×) catches the small file that expands ten thousandfold and sits under any total worth setting.
+  - The bounds are injectable so the suite does not write a quarter of a gigabyte to prove arithmetic, and one test pins the product's real values so lowering them by accident is a failing test rather than a quieter machine.
+  - A refused archive leaves **nothing**: a half-unpacked tree is a source that says it holds a repository and holds part of one.
+- [x] 6.3 (TDD) Agent configuration inside an archive lands inert: `CLAUDE.md`, `.claude/` and `.mcp.json` anywhere in the unpacked tree are stored so that no harness loads them as its own, and the source says they were there. Test-first because a miss here is silent and it is somebody else's prompt text inside the user's project
+  - **Red observed** first: 6 assertion failures before the rule existed.
+  - **The bytes are kept and only the name changes.** The file is evidence — an agent reading this source should see that the repository shipped a `CLAUDE.md` and what it said — so deleting it would answer the safety question by destroying the thing the source exists to preserve. `.inert` is appended to the segment a harness matches, so `.claude/skills/evil/SKILL.md` is neutralised once at the directory rather than at every file under it.
+  - **At any depth, and matched exactly.** The root of the tree is the least interesting case: a harness reads a nested `CLAUDE.md` when it touches a file beside it. But `CLAUDE.md.bak`, `docs/claude.md` and `mcp.json` are somebody's files, and renaming them would be a different kind of wrong.
+  - The manifest of what arrived is returned as `inert`, so the source says where each one was.
+- [x] 6.4 (Unit) The unpacked tree is provenance and is kept, the way `adr:0006` keeps the Opus. Deleting it to save space breaks every codewiki citation into it — 7.5 would report them, which is the check working and the evidence gone
+  - Nothing deletes the tree, and that is the whole task: `adr:0006` keeps the Opus for the same reason, and deleting this to save space would break every codewiki citation into it — 7.5 reporting those is the check working with the evidence gone.
+  - The citation form needed nothing new. `[raw/<id>/contents/src/main.rs:48-64]()` is an ordinary project-relative path that `check/checks.ts` already resolves, **provided the tree is inside the project** — which is what every refusal in 6.1 buys.
+- [x] 6.5 (Unit) A stance on what an unpacked archive does to git, written as ignore entries at `ow init` the way 2.8 wrote them for audio. A repository unpacked into `raw/` is thousands of files somebody did not choose to commit
+  - `raw/**/contents/` joins the managed block, beside the audio entries 2.8 wrote. The archive itself stays committed and is the thing that actually arrived; the tree is a reading convenience `ow` can produce again from it.
+  - The opt-in is the case worth naming: a project whose codewiki pages cite into the tree needs those citations to resolve for everyone, and a negation below the closing marker is how the file says so.
+- [x] 6.6 (Unit) Seal the source when unpacking finishes, so `raw/<id>/` is immutable once written and a half-unpacked archive is distinguishable from a whole one — the same shape 4.14 gave a recording, which keeps its WAV until transcription confirms
+  - A marker file (`unpacking.json`) written before the first entry and removed after the last, the shape 4.14 gave a recording. Nothing else on disk can express the difference: a tree of four hundred files and a tree of four thousand that stopped at four hundred are the same directory to every other reader.
+  - It is **not** a second record of derived state, which 6.1 forbids — nothing else observes it, and *did this finish* is not observable anywhere else after a crash.
+  - A refusal removes the marker along with the partial tree, so a refused archive reads as an ordinary stored source rather than as one frozen mid-flight. Those are different states and only one of them asks somebody to act.
 
 ## 7 — What reads it
 
@@ -365,6 +387,15 @@ now a bounded exception rather than the rule.
 ---
 
 ## Notes
+
+**How this plan's loop runs, decided after group 8 stopped it.** The frontmatter's
+four answers govern; on top of them, **a review agent returning `blocked` is a finding
+to fix and disclose in the PR, not a reason to stop the loop.** Group 8 stopped on
+exactly that and the developer's answer was that the decisions in this file already
+covered it. So: fix it, say in the PR body that the fix did not go through a further
+review round, and carry on to the next group. The other stop conditions in
+`plan-run` — CI red twice on one cause, a non-mechanical conflict with `main`, a
+decision the plan never made — are unchanged and still stop the loop.
 
 **Provenance for documents is an open question this plan does not close.** Nothing
 validates that page 12 exists, before or after. What changes is that the application no

@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { registerSource } from "./register.js";
 import { writeSourceText } from "./ingest.js";
+import { isArchive, unpackArchive, type UnpackResult } from "./archive.js";
 
 /**
  * The largest file any door accepts. The inbox refuses on the `stat`, before
@@ -39,10 +40,19 @@ export type StoredAs =
   /** The bytes were preserved, and copied into `text.md`. */
   | "text"
   /** The bytes were preserved, and nothing was read. */
-  | "stored";
+  | "stored"
+  /** The bytes were preserved, and the archive was unpacked beside them (6.1). */
+  | "unpacked";
 
 export type IngestOutcome =
-  | { ok: true; name: string; id: string; stored: StoredAs }
+  | {
+      ok: true;
+      name: string;
+      id: string;
+      stored: StoredAs;
+      /** What unpacking refused and what it made inert, when it ran (group 6). */
+      unpacked?: UnpackResult;
+    }
   | { ok: false; name: string; reason: string };
 
 /**
@@ -94,6 +104,18 @@ export async function ingestSource(
 
   try {
     const { id } = registerSource(projectRoot, { name, kind: "file", content });
+    if (isArchive(name)) {
+      // Unpacked *after* the bytes are stored, never instead of them. The
+      // archive is what arrived and stays the thing a citation can be checked
+      // against; the tree beside it is a reading convenience (plan 6.1, 6.4).
+      //
+      // A refusal here is about this file — a bomb, a zip that will not open —
+      // so it comes back as an outcome like every other, and `unpackArchive`
+      // has already removed what it half-wrote. The source stays, stored: the
+      // bytes are still evidence, and the caller has more files to try.
+      const unpacked = await unpackArchive(projectRoot, id);
+      return { ok: true, name, id, stored: "unpacked", unpacked };
+    }
     if (!isTextSource(name)) return { ok: true, name, id, stored: "stored" };
     writeSourceText(projectRoot, id, content.toString("utf8"));
     return { ok: true, name, id, stored: "text" };
@@ -105,10 +127,11 @@ export async function ingestSource(
 }
 
 /**
- * `ingestSource` is now an `async` function that awaits nothing.
+ * `ingestSource` was an `async` function that awaited nothing, kept that way
+ * because narrowing the signature would have been an API change for every
+ * caller to gain nothing — and because group 6's archive unpacking would put
+ * real asynchrony back behind it.
  *
- * Kept async on purpose: it is the door two callers `await`, one of them a
- * watcher, and narrowing the signature to sync would be an API change for
- * every caller to gain nothing. Group 6's archive unpacking puts real
- * asynchrony back behind it.
+ * It has. `unpackArchive` streams entry by entry, so the door is genuinely
+ * asynchronous now and the callers that already awaited it need no change.
  */

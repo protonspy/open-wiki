@@ -44,6 +44,14 @@ describe("ignore entries (2.8)", () => {
     expect(readFileSync(join(root, ".gitignore"), "utf8")).toContain("raw/_inbox/");
   });
 
+  it("ignores an unpacked archive, which is thousands of files nobody chose (6.5)", () => {
+    // The archive beside it is committed and is the thing that arrived; the
+    // tree is a reading convenience `ow` can produce again from it. Committing
+    // it is the opt-in, for the project whose codewiki pages cite into it.
+    writeIgnore(root);
+    expect(readFileSync(join(root, ".gitignore"), "utf8")).toContain("raw/**/contents/");
+  });
+
   it("brings a project scaffolded by an earlier version up to date", () => {
     // The block used to be skipped whenever it was already present, so a rule
     // added later never reached a project created earlier — while `scaffold`
