@@ -6,6 +6,7 @@ import { runGraph } from "./commands/graph.js";
 import { runSearch } from "./commands/search.js";
 import { runConsultAdd } from "./commands/consult.js";
 import { parseCheckArgs, runCheck, CHECK_FAILED_TO_RUN } from "./commands/check.js";
+import { parseExportArgs, runExport } from "./commands/export.js";
 import { runSourceList, runSourceMark } from "./commands/source.js";
 import { askRunningApp, handleRequest } from "@open-wiki/access/socket";
 import { safe } from "@open-wiki/access";
@@ -34,6 +35,7 @@ Usage:
   ow source list [--unprocessed]                       the sources, as JSON; --unprocessed is the queue
   ow source mark <id>                                  record that this source has been read
   ow source unmark <id>                                withdraw that record
+  ow export [--out <path>] [--no-sources] [--survey]   write the project as one zip, outside it
   ow consult add <name>                                add a read-only consult of another project
   ow mcp --project <name> --read-only                  run the read-only MCP server`;
 }
@@ -132,6 +134,13 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
       const query = argv.slice(1).join(" ");
       if (!query) return fail("ow search needs a query");
       process.stdout.write(runSearch(projectRoot, query) + "\n");
+      return 0;
+    }
+
+    case "export": {
+      const result = await runExport(projectRoot, parseExportArgs(argv.slice(1)), today());
+      if (!result.ok) return fail(result.reason);
+      process.stdout.write(result.stdout);
       return 0;
     }
 

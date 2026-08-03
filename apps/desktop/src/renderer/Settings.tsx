@@ -1,4 +1,8 @@
-import type { Language } from "@open-wiki/access";
+import type { ExportResult, Language } from "@open-wiki/access";
+// The `format` subpath and not the barrel: a value import from either of the
+// restricted ones pulls `node:fs` into this bundle. `format.ts` imports
+// nothing, which is what makes it safe here rather than what makes it allowed.
+import { humanBytes } from "@open-wiki/access/format";
 import { CircleCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { AgentPrefs } from "../main/agent/agent-prefs.js";
@@ -230,8 +234,70 @@ export function Settings(): React.JSX.Element {
 
       {status ? <p className="empty">{status}</p> : null}
 
+      <Export />
+
       {view ? <Files view={view} /> : null}
     </div>
+  );
+}
+
+/**
+ * Take the project away as one zip — `specs/wiki-export`, R4.3.
+ *
+ * The size is surveyed and shown **before** the dialog opens, because `raw/` is
+ * where the bytes are and a several-hundred-megabyte file is a decision to make
+ * rather than to discover afterwards.
+ *
+ * Where it goes is the save dialog's answer and never this component's: a path
+ * crossing the bridge would be a compromised renderer naming anywhere the user
+ * can write, which is the correction `record:start` already took.
+ */
+function Export(): React.JSX.Element {
+  const [survey, setSurvey] = useState<ExportResult | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void bridge()
+      .exportSurvey()
+      .then(setSurvey)
+      .catch(() => setSurvey(null));
+  }, []);
+
+  async function run(): Promise<void> {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const outcome = await bridge().exportRun();
+      // Cancelled is the feature working, so it says nothing rather than
+      // reporting a failure the user caused on purpose.
+      if (!outcome.ok) setStatus(outcome.reason);
+      else if (!outcome.canceled) setStatus(`Exported ${outcome.files} files to ${outcome.path}`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="setting">
+      <h4>Export the wiki</h4>
+      <p>
+        One zip holding <code>wiki/</code> and <code>raw/</code>, which unpacks into a directory{" "}
+        <code>ow</code> opens as a project — so every citation still resolves. The snapshots in{" "}
+        <code>.state/</code> are left out: they hold each page as it was before every write, which
+        is where a redaction would survive being redacted.
+      </p>
+      <div className="setting__row">
+        <span>{survey ? `${survey.files} files, ${humanBytes(survey.bytes)}` : "Measuring…"}</span>
+        <span className="pane-bar__spacer" />
+        <Button disabled={busy} onClick={() => void run()}>
+          {busy ? "Exporting…" : "Export…"}
+        </Button>
+      </div>
+      {status ? <p className="empty">{status}</p> : null}
+    </section>
   );
 }
 

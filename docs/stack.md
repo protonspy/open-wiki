@@ -66,6 +66,8 @@ reads the project the way a harness does and writes `wiki/` only through the val
 
 - **yaml** — parses and writes the frontmatter the store validates. The page schema is the contract; a real YAML parser is what keeps it from drifting into "the subset we happened to hand-roll."
 
+- **yazl** — writes the export archive (`specs/wiki-export`). The same argument **hound** makes below about a WAV header applies harder to a ZIP central directory: it is simple enough to hand-roll and easy enough to get subtly wrong, and ZIP64 — which `raw/` reaches, because that is where the bytes are — is the part that is plausible and wrong. A malformed archive is discovered by the person we handed it to, not by us. It streams rather than building in memory, and it brings one transitive dependency (`buffer-crc32`) where `archiver` brings six, into a package that otherwise runs on two. Its sibling **yauzl** is the intended reader for plan task 6.1 of `plans/sources-stored-not-parsed.md`, which needs one that deliberately does *not* extract for you, because it has to refuse per entry what escapes the destination.
+
 ## Reading sources
 
 **Nothing here extracts text from a source any more** —

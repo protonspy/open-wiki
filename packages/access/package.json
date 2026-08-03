@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./read": "./src/read.ts",
+    "./format": "./src/format.ts",
     "./secrets": "./src/config/secrets.ts",
     "./socket": "./src/socket.ts"
   },
@@ -19,6 +20,10 @@
   "dependencies": {
     "@open-wiki/audio": "workspace:*",
     "chokidar": "^5.0.0",
-    "yaml": "^2.7.0"
+    "yaml": "^2.7.0",
+    "yazl": "^3.3.1"
+  },
+  "devDependencies": {
+    "@types/yazl": "^3.3.1"
   }
 }

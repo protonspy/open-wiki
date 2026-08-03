@@ -71,6 +71,8 @@ const api = {
     ipcRenderer.invoke(CHANNELS.saveCredentialFor, name, input),
   transcribe: (id: string, restart?: boolean) =>
     ipcRenderer.invoke(CHANNELS.transcribe, id, restart === true),
+  exportSurvey: () => ipcRenderer.invoke(CHANNELS.exportSurvey),
+  exportRun: () => ipcRenderer.invoke(CHANNELS.exportRun),
 
   chatSend: (input: unknown) => ipcRenderer.invoke(CHANNELS.chatSend, input),
   chatResume: (input: unknown) => ipcRenderer.invoke(CHANNELS.chatResume, input),

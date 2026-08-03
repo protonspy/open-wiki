@@ -1,5 +1,5 @@
 import "./agent/tracing.js"; // disable tracing before any langchain import (R2.6) — keep first
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CHANNELS, createApi, dispatch, INBOX_STABILITY_MS } from "./ipc.js";
@@ -141,6 +141,10 @@ function createWindow(projectRoot: string | null): BrowserWindow {
       createWindow(root);
     },
     recorder,
+    // `specs/wiki-export`, R4.3. The dialog lives here with the window, the
+    // same way `openWindow` does, so `ipc.ts` stays a module a test can call
+    // without a display.
+    saveDialog: (options) => dialog.showSaveDialog(window, options),
     ...(projectRoot ? { inbox: { drain: () => inboxDrain(projectRoot) } } : {}),
     ...(chat ? { chat } : {}),
   });

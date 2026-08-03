@@ -93,6 +93,15 @@ export { updateManifest, withdrawProcessed, type ManifestChange } from "./source
 export { deriveId, slugify, isIdTaken, isDerivedId, EmptyNameError } from "./sources/id.js";
 export { recordingId, baseId, type RecordingIdInput } from "./sources/recording-id.js";
 export {
+  exportProject,
+  surveyProject,
+  defaultExportPath,
+  ExportDestinationError,
+  type ExportOptions,
+  type ExportResult,
+} from "./export/zip.js";
+export { humanBytes } from "./format.js";
+export {
   sourceState,
   listSourceStates,
   type SourceState,
