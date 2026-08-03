@@ -107,7 +107,7 @@ describe("ow init", () => {
   it("scaffolds the project it was run in and reports what it installed", async () => {
     expect(await main(["init", "--claude"], root)).toBe(0);
     expect(stdout()).toContain(`scaffolded ${root}`);
-    expect(stdout()).toContain("hooks:");
+    expect(stdout()).toContain("gate:");
     expect(stdout()).toContain("entry:");
     expect(stdout()).not.toContain("registered as:");
     expect(existsSync(join(root, "wiki"))).toBe(true);
