@@ -58,6 +58,7 @@ is for a person; the field is for whatever acts on it.
   prose* with the check that reports it (`store/prose.ts`), because a rewrite
   that matched differently from the check would change a word nobody complained
   about and leave the finding standing.
+- **The fields are scrubbed and bounded like the sentence.** `safe()` has applied to every value interpolated into `message` since group 7, because a control sequence in an alias can forge or erase the report a human reads and a 10 KB alias can flood it. A field carrying the same value is the same risk, and the first version of this change missed it — a security review carried a two-megabyte wikilink target into `ow check --json`.
 - The cost is that a check now has two places to keep honest, the sentence and
   the field. That is the trade: the sentence may be reworded freely, which is
   precisely what it could not be while a button parsed it.

@@ -774,3 +774,22 @@ describe("the integrity checks (group 7)", () => {
     });
   });
 });
+
+describe("what a finding carries is scrubbed like what it says (adr:0023)", () => {
+  it("bounds and strips a wikilink target the way it does the message", () => {
+    // `message` and `fix` have gone through `safe()` since group 7; the fields
+    // `adr:0023` added had not, and a security review carried a two-megabyte
+    // target and a cursor escape straight into `ow check --json`.
+    const root = tempProject();
+    try {
+      index(root, []);
+      changelog(root, []);
+      page(root, "fenix.md", `See [[${"x".repeat(5000)}]].`);
+      const found = checkProject(root).findings.find((f) => f.code === "wikilink.broken");
+      expect(found?.target).toBeDefined();
+      expect(found!.target!.length).toBeLessThan(5000);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

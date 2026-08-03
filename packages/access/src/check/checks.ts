@@ -118,7 +118,12 @@ export function checkLinks(projectRoot: string, pages: LoadedPage[]): Finding[] 
         // sentence, which produced garbage the moment the wording changed.
         line: issue.target ? lineInPage(page, `[[${issue.target}`) : undefined,
         // desktop-ui 5.6 — what *Create the page* would create.
-        ...(issue.target ? { target: issue.target } : {}),
+        //
+        // Through `safe()` like `message` and `fix` above it. A wikilink's text
+        // is unbounded and unscrubbed on the page, and these fields are printed
+        // by `ow check --json` and served over the socket — a security review
+        // carried a two-megabyte target and a cursor escape straight through.
+        ...(issue.target ? { target: safe(issue.target) } : {}),
       });
     }
   }
@@ -333,8 +338,8 @@ export function checkProvenance(
         message: `${page.path}: ${safe(issue.reason)}`,
         fix: "Upload the source it names, or correct the citation. A citation that opens nothing is worse than none — if the source cannot be produced, the claim comes out with it.",
         // desktop-ui 5.6 — what *Open at 58:04* would open, and where.
-        ...(issue.endsAt ? { endsAt: issue.endsAt } : {}),
-        ...(issue.sourceId ? { source: issue.sourceId } : {}),
+        ...(issue.endsAt ? { endsAt: safe(issue.endsAt) } : {}),
+        ...(issue.sourceId ? { source: safe(issue.sourceId) } : {}),
       });
     }
   }
@@ -472,7 +477,9 @@ export function checkVocabulary(pages: LoadedPage[]): Finding[] {
         fix: `Use "${safe(owner.title)}", or link it as [[${owner.slug}]]. One name per concept is what keeps three names from appearing within a week.`,
         line: lineInPage(page, alias),
         // desktop-ui 5.6 — what *Replace* would rewrite, both halves.
-        replace: { avoid: alias, use: owner.title },
+        // Both halves scrubbed and bounded: they come verbatim out of another
+        // page's `aliases` and `title`.
+        replace: { avoid: safe(alias), use: safe(owner.title) },
       });
     }
   }

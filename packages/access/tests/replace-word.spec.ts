@@ -189,3 +189,37 @@ describe("replaceWordInPage", () => {
     expect(result.ok && result.operationId).toBeTruthy();
   });
 });
+
+describe("what the rewrite may reach (security review)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("refuses a path outside wiki/, not merely outside the project", () => {
+    // `gateWrite` refuses `.claude/`, `.mcp.json` and `CLAUDE.md` and *allows*
+    // everything else outside `wiki/`, so confining to the project left this
+    // able to rewrite `package.json`, a workflow, an ADR or a spec. A review
+    // did exactly that. The legitimate caller only ever passes `finding.page`,
+    // but the IPC channel enforces none of that.
+    writeFileSync(join(root, "package.json"), '{"name":"victim-project"}\n', "utf8");
+    expect(() =>
+      replaceWordInPage(root, "package.json", "victim-project", "pwned", DATE, "editor"),
+    ).toThrow();
+    expect(readFileSync(join(root, "package.json"), "utf8")).toContain("victim-project");
+  });
+
+  it("refuses a traversal that climbs out of wiki/", () => {
+    writeFileSync(join(root, "CLAUDE.md"), "the project's own instructions\n", "utf8");
+    expect(() =>
+      replaceWordInPage(root, "wiki/../CLAUDE.md", "instructions", "x", DATE, "editor"),
+    ).toThrow();
+    expect(readFileSync(join(root, "CLAUDE.md"), "utf8")).toContain("instructions");
+  });
+
+  it("still writes an ordinary page under wiki/", () => {
+    page(root, "fenix", "The grand total.\n");
+    expect(
+      replaceWordInPage(root, "wiki/fenix.md", "grand total", "order total", DATE, "editor").ok,
+    ).toBe(true);
+  });
+});

@@ -50,7 +50,17 @@ export function replaceWordInPage(
   if (avoid.trim() === "" || use.trim() === "") {
     return { ok: false, reason: "a replacement needs both a word to avoid and a word to use" };
   }
-  const full = assertWithin(projectRoot, join(projectRoot, pagePath));
+  // **Confined to `wiki/`, not to the project** — the distinction `socket.ts`
+  // already draws for its read verb, and the one this missed. `gateWrite`
+  // refuses `.claude/`, `.mcp.json` and `CLAUDE.md` and *allows* everything
+  // else outside `wiki/`, so confining to the project left this able to rewrite
+  // `package.json`, a workflow, an ADR or a spec — a security review did it.
+  //
+  // The legitimate caller only ever passes `finding.page`, but the IPC channel
+  // enforces none of that: whatever executes in the renderer can call it with
+  // three strings of its choosing. `assertSlug` exists in the desktop for this
+  // exact class, after `../CLAUDE` once renamed a page over `CLAUDE.md`.
+  const full = assertWithin(join(projectRoot, "wiki"), join(projectRoot, pagePath));
   if (!existsSync(full)) return { ok: false, reason: `no such page: ${pagePath}` };
 
   const markdown = readFileSync(full, "utf8");
