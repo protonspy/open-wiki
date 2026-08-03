@@ -5,6 +5,7 @@ import { readFrontmatter, validatePage } from "../store/page.js";
 import { linkableSlugs, resolveWikilinks } from "../store/wikilinks.js";
 import { extractProvenanceLinks, resolveProvenance } from "../store/provenance.js";
 import { listSources, readManifest } from "../sources/manifest.js";
+import { isDerivedId } from "../sources/id.js";
 import { assertWithin } from "../paths.js";
 import type { Finding } from "./findings.js";
 import { safe, sortFindings } from "./findings.js";
@@ -217,13 +218,42 @@ export function checkRecords(
       message: `raw/${id} is a source no page cites and nobody has marked read`,
       // Both ways out, because the reader who discarded this deliberately needs
       // to be told they may record that — not told again to distil it. The verb
-      // that records it is plan task 4.2 and is not built yet, so this says the
-      // judgement rather than naming a command nobody can run.
-      fix: "Distil it into a page, or — if it was read and there was nothing in it worth writing — mark it processed, which records that judgement so it stops being reported. It stays in raw/ either way; sources are never deleted to tidy a report.",
+      // is named now that plan task 4.2 has built it; while it did not exist
+      // this said the judgement instead, since a `fix` naming a command nobody
+      // can run is the noise a `fix` exists to avoid.
+      //
+      // **The command is offered only for an id that could have been derived.**
+      // `listSources` reads directory names verbatim and a directory under
+      // `raw/` is not necessarily one this application created, so an id can
+      // hold `;` or a backtick — and this text is written to be *acted on*, by
+      // an agent that has a shell. `safe` is not the guard for that: it strips
+      // control characters to stop a forged report line, and shell
+      // metacharacters are neither control characters nor a forgery. An id that
+      // is not a plain slug is named as data instead, which is the same advice
+      // without a command to paste.
+      fix: markFix(id),
     });
   }
 
   return findings;
+}
+
+/** The tail every `source.uncited` fix ends with. */
+const KEEPS_IT = "It stays in raw/ either way; sources are never deleted to tidy a report.";
+
+/**
+ * The correction path for an uncited source, offering the verb as something to
+ * run only when the id is one this application could have derived.
+ */
+function markFix(id: string): string {
+  const record = isDerivedId(id)
+    ? `run \`ow source mark ${id}\` to record that judgement`
+    : `mark the source named in this finding as processed to record that judgement ` +
+      `(its directory name is not a plain id, so it is named here rather than as a command to run)`;
+  return (
+    `Distil it into a page, or — if it was read and there was nothing in it worth writing — ` +
+    `${record}, and it stops being reported. ${KEEPS_IT}`
+  );
 }
 
 /**

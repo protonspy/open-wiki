@@ -2,13 +2,55 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deriveId, isIdTaken, EmptyNameError } from "../src/sources/id.js";
+import { deriveId, isDerivedId, isIdTaken, slugify, EmptyNameError } from "../src/sources/id.js";
 
 function tempProject() {
   const root = mkdtempSync(join(tmpdir(), "ow-id-"));
   mkdirSync(join(root, "raw"), { recursive: true });
   return root;
 }
+
+describe("isDerivedId — the shape, for anywhere an id would be read as syntax", () => {
+  it("accepts everything deriveId and slugify can produce", () => {
+    for (const name of [
+      "Arquitetura Fenix.pdf",
+      "Fenix weekly 2026-07-31",
+      "São Paulo — relatório.DOCX",
+      "README",
+      "a.b.c.txt",
+      "Report.PDF",
+    ]) {
+      expect(isDerivedId(deriveId(name)), name).toBe(true);
+    }
+    expect(isDerivedId(slugify("Vendor call re. arch"))).toBe(true);
+  });
+
+  it("rejects a directory name that could not have been derived", () => {
+    // `listSources` reads directory names verbatim, and a directory under
+    // `raw/` arrives with a clone, is created by an agent's own tools, or is
+    // unpacked from an archive. Every one of these is a legal directory name
+    // on Windows, which is the platform the MVP ships for.
+    for (const hostile of [
+      "a;rm -rf .",
+      "b`curl evil`",
+      "c$(id)",
+      "d e",
+      "x&calc",
+      "É.pdf",
+      "UPPER",
+      "-leading",
+      "trailing-",
+      "double--dash",
+      "",
+      "..",
+      "a/b",
+      "a\\b",
+      "a\nb",
+    ]) {
+      expect(isDerivedId(hostile), JSON.stringify(hostile)).toBe(false);
+    }
+  });
+});
 
 describe("deriveId (3.6)", () => {
   it("slugs the base, keeps the extension, collapses non-[a-z0-9] to one dash", () => {

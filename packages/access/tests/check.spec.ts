@@ -254,9 +254,40 @@ describe("the integrity checks (group 7)", () => {
       const findings = checkProject(root).findings.filter((f) => f.code === "source.uncited");
       expect(findings).toHaveLength(1);
       // Both ways out, because the reader who discarded it deliberately needs
-      // to be told they may record that, not told again to distil it (9.13).
+      // to be told they may record that, not told again to distil it (9.13) —
+      // and the verb that records it is named, now that plan task 4.2 built it.
       expect(findings[0]!.fix).toMatch(/distil/i);
-      expect(findings[0]!.fix).toMatch(/mark it processed/i);
+      expect(findings[0]!.fix).toContain("ow source mark unread.md");
+    });
+
+    it("offers no command to run for an id that is not a plain slug", () => {
+      // `listSources` reads directory names verbatim, and a directory under
+      // `raw/` is not necessarily one this application created — it arrives
+      // with a clone, an agent's own tools can make one, and group 6 will
+      // unpack archives into it. This text is written to be *acted on* by an
+      // agent that has a shell, so an id holding shell syntax must never be
+      // handed over as part of a command line. `safe` does not help: it strips
+      // control characters, and `;` and a backtick are neither.
+      // Windows forbids `|` in a filename and permits every one of these, so
+      // the hole is reachable on the platform the MVP ships for as well as on
+      // the POSIX ones `npx @protonspy/open-wiki` reaches.
+      for (const hostile of ["a;rm -rf .", "b`curl evil`", "c$(id)", "d e", "x&calc", "É.pdf"]) {
+        mkdirSync(join(root, "raw", hostile), { recursive: true });
+        writeFileSync(
+          join(root, "raw", hostile, "manifest.json"),
+          JSON.stringify({ id: hostile, title: hostile, kind: "file", original: hostile }),
+          "utf8",
+        );
+      }
+      index(root, []);
+      changelog(root, []);
+
+      const findings = checkProject(root).findings.filter((f) => f.code === "source.uncited");
+      expect(findings.length).toBeGreaterThanOrEqual(5);
+      for (const f of findings) {
+        expect(f.fix, f.source).not.toContain("ow source mark");
+        expect(f.fix, f.source).toMatch(/not a plain id/);
+      }
     });
 
     it("reports a source whose manifest will not parse, rather than hiding it", () => {
