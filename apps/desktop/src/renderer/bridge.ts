@@ -4,6 +4,7 @@ import type {
   Language,
   Operation,
   ProjectSettings,
+  Harness,
 } from "@open-wiki/access";
 import type { ExportOutcome } from "../main/export.js";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
@@ -97,7 +98,12 @@ export interface OwBridge {
   settingsView(): Promise<SettingsView>;
   setDeleteWav(on: boolean): Promise<ProjectSettings>;
   knownProjects(): Promise<KnownProject[]>;
-  createProject(name: string, directory: string, language: Language): Promise<KnownProject>;
+  createProject(
+    name: string,
+    directory: string,
+    language: Language,
+    harnesses: readonly Harness[],
+  ): Promise<KnownProject>;
   forgetProject(name: string): Promise<void>;
   /** 6.3 — open a window on a known project, by name. */
   openProject(name: string): Promise<void>;

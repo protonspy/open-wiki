@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 /**
@@ -62,4 +62,59 @@ export function assertWithin(root: string, target: string): string {
     throw new OutsideProjectError(root, target, resolved);
   }
   return resolved;
+}
+
+/**
+ * Thrown when a path this product means to write is a symbolic link.
+ */
+export class SymlinkedTargetError extends Error {
+  constructor(public readonly target: string) {
+    super(
+      `refused: ${target} is a symbolic link. This product writes files, never through links — ` +
+        `remove it if you want the file regenerated.`,
+    );
+    this.name = "SymlinkedTargetError";
+  }
+}
+
+/**
+ * Refuse to write *through* a symbolic link, wherever it points.
+ *
+ * **`assertWithin` does not cover this and cannot.** `resolveReal` walks up to
+ * the longest ancestor that exists and appends the rest verbatim, so for a
+ * *dangling* link the ancestor is the parent directory and the link's own name
+ * is appended — the check passes, and the plain `writeFileSync` that follows
+ * then hands the whole thing to the OS, which follows the link to wherever it
+ * actually points. `seedWiki` in `scaffold.ts` documents this exact bug and
+ * answers it with `lstat`, which asks about the *name* rather than about what
+ * the name points at.
+ *
+ * That lesson was learned in one function and not carried to the others.
+ * Everything this product writes into a project — the skills, the entry files,
+ * the seeds — goes through a name it chose, at a path a cloned repository could
+ * have planted a link at first. `existsSync` says "nothing there" for a dangling
+ * link, so the create path follows it; `refresh` and the regenerated entry files
+ * overwrite by design, so they follow an ordinary one.
+ *
+ * The rule is the same in every case and does not depend on the caller's
+ * intent: **a name that is a link is not a file this product will write.**
+ */
+export function refuseSymlink(target: string): void {
+  let stat;
+  try {
+    stat = lstatSync(target);
+  } catch {
+    return; // nothing of that name at all, which is the ordinary case
+  }
+  if (stat.isSymbolicLink()) throw new SymlinkedTargetError(target);
+}
+
+/** Whether anything at all bears this name — a file, a directory, or a link to anywhere or nowhere. */
+export function occupied(target: string): boolean {
+  try {
+    lstatSync(target);
+    return true;
+  } catch {
+    return false;
+  }
 }

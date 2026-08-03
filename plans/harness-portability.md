@@ -135,19 +135,87 @@ this project recorded and then had to route around twice.
 
 ## 2 — One template set, three renderings
 
-- [ ] 2.1 (Unit) A harness profile: entry filename, convention directory, MCP configuration path and schema, and the interception this harness offers — the strongest one, which the gate scaffolds and the convention text names. Data, not branches — the same move that let `scc` delete its per-harness template tree instead of growing two more. **Not "what the gate degrades to"**, which is how this task read before 1.1: `adr:0024` rejected the word because it assumed a hierarchy the source does not support
-- [ ] 2.2 (TDD) Render the convention through the profile, and prove no rendered file for one harness names another's directory. Test-first because that is the failure that ships quietly: a skill that tells a Codex user to look in `.claude/` is wrong in a way nothing errors on
-- [ ] 2.3 (Unit) `ow init` with a harness named — `--claude`, `--codex`, `--opencode`, and more than one accepted — scaffolds it and asks nothing
-- [ ] 2.4 (Unit) `ow init` with none named and a terminal attached opens a picker: the three harnesses, multi-select, nothing preselected. Multi-select is why this is a screen rather than a numbered prompt, and whatever it costs in dependencies is a `docs/stack.md` line like any other
-- [ ] 2.5 (Unit) `ow init` with none named and **no** terminal refuses, and names the flags. It does not guess — see below
-- [ ] 2.6 (Unit) The launcher and first run offer the same choice as a form, not a picker — the desktop has no terminal, and 8.12 already learned that lesson when a chain of `prompt()` calls answered nothing in a packaged build. Same scaffolder underneath, because a project is the same project whichever door it came through
-- [ ] 2.7 (Unit) The generated entry file carries the same content under whichever name, including the content language of 8.12 — and is regenerated per harness when that setting changes, since it is generated and the skills are not
+- [x] 2.1 (Unit) A harness profile: entry filename, convention directory, MCP configuration path and schema, and the interception this harness offers — the strongest one, which the gate scaffolds and the convention text names. Data, not branches — the same move that let `scc` delete its per-harness template tree instead of growing two more. **Not "what the gate degrades to"**, which is how this task read before 1.1: `adr:0024` rejected the word because it assumed a hierarchy the source does not support
+  - `packages/access/src/harness.ts` — `HARNESSES`, `PROFILES`, and the queries a renderer needs. No branch on harness identity anywhere outside it.
+  - **Reading corrected the plan a second time. All three harnesses read project-local skills**, with `SKILL.md`, from a directory this product can write: `.claude/skills`, `.codex/skills` (`SkillScope::Repo`, `codex-rs/core-skills/src/loader.rs`), `.opencode/skills` (`packages/core/src/config/plugin/skill.ts`, and opencode's own repository ships one). `adr:0024` was written expecting the convention to ship as a skill only "wherever a harness has a skills directory" and as entry-file text elsewhere. That branch is unexercised by these three, exactly as 1.1's "scaffold nothing where there is no gate" branch was.
+  - **Codex also reads `.agents/skills`, and the profile deliberately does not write there.** It is the harness-neutral location and therefore the tempting one; a convention written to a directory several harnesses share is one `ow update` cannot attribute, which would cost 5.1 its per-file answer.
+  - **Codex's gate can be JSON.** `.codex/hooks.json` is loaded beside the TOML form (`codex-rs/hooks/src/engine/discovery.rs`), and Codex warns when a layer carries both. So two of the three gates are a JSON hook file and only opencode's is a plugin — a smaller spread than "a hook in JSON, a hook in TOML, a plugin" suggested.
+  - **Two entry-file collisions, decided rather than discovered** (`adr:0024` asked for this): Codex and opencode both read `AGENTS.md`, so a project carrying both gets one file serving two harnesses; and opencode reads `CLAUDE.md` as well, so a project carrying Claude Code *and* opencode would load the convention twice. `entryFilesFor` and `harnessesSharingEntryFile` are what 2.2 renders from.
+- [x] 2.2 (TDD) Render the convention through the profile, and prove no rendered file for one harness names another's directory. Test-first because that is the failure that ships quietly: a skill that tells a Codex user to look in `.claude/` is wrong in a way nothing errors on
+  - **Red observed** before any implementation: 12 assertion failures in `tests/render.spec.ts` against signature-only stubs in `src/render.ts`. The 6 that passed against the stubs are the ones asserting *absence*, which an empty result satisfies — worth naming, because a suite where a third of the cases pass on nothing is a suite that would have been read as mostly-green.
+  - `renderConvention` returns `path -> content` and writes nothing. Separating rendering from writing is what lets 2.2 assert over every rendered byte with no temporary directory, and what gives 5.1 something to hash a file against.
+  - **The `AGENTS.md` collision is decided, not discovered.** Codex and opencode share the filename, so a project carrying both gets one file that lists each harness's skills directory on its own line. And because opencode reads `CLAUDE.md` too, a project carrying Claude Code beside either of them would otherwise load the whole convention twice in one session — so `CLAUDE.md` becomes a pointer carrying `@AGENTS.md`, which is the answer Claude Code's own reference gives for a repository that already has an `AGENTS.md`. Read from the source, not invented.
+  - **An existing test caught a real regression**, which is the entire argument for identifying the covering tests before writing anything: `install.spec.ts` asserts the entry file *links each skill by path*, and the first rendering named only the directory. The rule survives, now rendered through the profile.
+  - `claude-md.ts` no longer generates anything — it renders through the profile and writes. One generator, three renderings, per `adr:0024`.
+- [x] 2.3 (Unit) `ow init` with a harness named — `--claude`, `--codex`, `--opencode`, and more than one accepted — scaffolds it and asks nothing
+  - A flag per harness rather than `--harness <name>` repeated: the set is closed and small, and a flag that spells the answer is the one a person guesses right first time.
+  - **`ow.json` gains `harnesses`, and the schema is closed** — so this is a deliberate widening rather than a key that slipped in. It is normalised on read (fixed order, no duplicates) because the file is committed and therefore arrives from a `git clone`; two projects choosing the same set now produce byte-identical settings, which is what stops 5.1 reporting a diff nobody made.
+  - **Naming a harness adds it; naming none keeps what the project already is.** Re-running `ow init` has always meant "make this project current", so reading silence as "none" would strip a project of its convention on an idempotent re-run. Adding rather than replacing is also what makes 5.4 a change to a list instead of a re-scaffold.
+  - **Empty is a real state, not a missing one.** A project scaffolded before this key existed says `[]`, and that means Claude Code — what it actually has on disk — not "none wanted".
+- [x] 2.4 (Unit) `ow init` with none named and a terminal attached opens a picker: the three harnesses, multi-select, nothing preselected. Multi-select is why this is a screen rather than a numbered prompt, and whatever it costs in dependencies is a `docs/stack.md` line like any other
+  - `@inquirer/checkbox`, recorded in `docs/stack.md` with the argument for it. Reached only on the interactive path: naming a harness, or running headless, never loads it.
+  - `hasTerminal` demands a TTY on **both** streams. Piped input with a terminal on stdout would sit waiting for keystrokes nobody is typing.
+  - **Choosing nothing has its own message**, distinct from the headless refusal. They are different situations with different fixes — one is a script to edit, the other is a person who was just asked and answered "none" — and telling the second to pass a flag answers a question they did not ask.
+- [x] 2.5 (Unit) `ow init` with none named and **no** terminal refuses, and names the flags. It does not guess — see below
+  - The refusal says *why* it refuses, not only what to type. The reason is the whole decision: a wrong scaffold is discovered by a colleague next week, not by the person who ran the command.
+  - **This is the breaking change the plan called one.** Four existing tests in `main.spec.ts` now pass `--claude`, which is exactly the migration a script has to make.
+- [x] 2.6 (Unit) The launcher and first run offer the same choice as a form, not a picker — the desktop has no terminal, and 8.12 already learned that lesson when a chain of `prompt()` calls answered nothing in a packaged build. Same scaffolder underneath, because a project is the same project whichever door it came through
+  - A fifth first-run step, before the language, because it decides which entry files the language is then written into. It cannot be left with nothing chosen — the same refusal the CLI makes headless.
+  - **The renderer may not value-import `@open-wiki/access`** (a value import pulls `node:fs` into the browser bundle; the lint rule caught it). So `renderer/harnesses.ts` mirrors the profile's display data, exactly as `languages.ts` already does — and `harness-form.spec.ts` asserts the mirror matches `PROFILES`, because a mirror nobody checks is two answers to one question.
+  - The harnesses are validated at the IPC boundary rather than trusted: everything crossing it arrives as `unknown`, and an unrecognised harness reaching the scaffolder would be a directory no harness ever reads.
+- [x] 2.7 (Unit) The generated entry file carries the same content under whichever name, including the content language of 8.12 — and is regenerated per harness when that setting changes, since it is generated and the skills are not
+  - `setLanguage` regenerates every entry file the project carries, not `CLAUDE.md` alone. A Codex project would otherwise keep an `AGENTS.md` naming the old language while `ow.json` said another — and the entry file is what the agent reads, so the file would win and the setting would look broken.
+  - `claude-md.ts` keeps `writeClaudeMd` as `writeEntryFiles` with one harness, so there is one write path rather than two.
+
+## What group 2's review turned up, and what it moved
+
+Both review gates ran on group 2 and between them found four things worth naming here,
+because three of them changed code outside group 2's own tasks.
+
+**The gate was never installed.** `ow init` wrote `.claude/hooks/hooks.json` from task 9.5
+of [[open-wiki]] onward. Claude Code does not read that file — a project's hooks live under
+a `hooks` key in `.claude/settings.json`, and a standalone `hooks/hooks.json` is a plugin's
+mechanism resolved inside the plugin's own directory. So the write gate this product's
+safety argument rests on has never engaged, and every `ow init` reported installing it. It
+surfaced because a reviewer asked for the citation behind `harness.ts`'s Claude Code gate
+field and there was none — the one field on that page with no source. Fixed here rather
+than deferred: group 2 is what turned the path into a written promise of protection.
+`writeHooks` now merges into the settings file and **refuses** one it cannot parse rather
+than replacing it, because that file is the user's and carries their permissions.
+
+**Task 3.3 came forward.** `isConfigWrite` guarded `.claude/`, `.mcp.json` and `CLAUDE.md`.
+Group 2 made `AGENTS.md`, `.codex/` and `.opencode/` real, and a security review traced the
+consequence: in a project scaffolded for Claude Code *and* Codex, an agent running under
+Claude's gate could rewrite the convention text Codex loads next session as trusted
+instructions, and the gate would answer "allow". That is a cross-harness injection primitive
+reachable with no group-3 work at all, so the refusal is now derived from `managedPaths` for
+**every** harness — including ones this project does not record, since `ow.json` is
+committed too and dropping a harness from it must not unlock its directory.
+
+**A link is never a file this product writes.** `seedWiki` learned in [[open-wiki]] 1.3 that
+`existsSync` follows a dangling symlink and answers "nothing there"; `scaffoldSkills` and
+the entry-file writer had the old pattern, and group 2 had just pointed both at twice as
+many directories. `refuseSymlink` is now in `paths.ts` and applied at every writer.
+
+**And one regression of my own**, caught by the code review: reading "a project with no
+harnesses recorded" off the same test as "a project that does not exist" made a headless
+`ow init --language pt-BR` refuse against every project created before this feature. The
+plan's breaking change was that a *new* project must name a harness — never that an existing
+one loses its idempotent re-run.
 
 ## 3 — The gate, per harness
 
 - [ ] 3.1 (Unit) Scaffold the strongest interception 1.1 found for each harness, and where there is none, scaffold nothing and say so rather than writing a file that looks like a gate and is not
+  - **Claude Code's is done, and was broken before this plan started** — see above. What remains here is Codex's `.codex/hooks.json` and opencode's plugin.
+  - `render.ts` carries `GATES_INSTALLED`, one line naming the harnesses whose gate this build actually writes. The entry file says "no gate is installed yet" for the others rather than describing one that is not there. **Extend that list in the same commit that starts writing those files**, so the text and the fact cannot drift.
+  - `writeHooks` is still called unconditionally from `runInit`, so a Codex-only project gets `.claude/settings.json` written. That is wrong and it is this task's to fix.
+  - A project scaffolded before this branch has a stale `.claude/hooks/hooks.json` that does nothing. Removing it belongs to `ow update` (5.1), which is the verb that knows what this product wrote.
 - [ ] 3.2 (Unit) The `ow write` verb is the documented path wherever hooks are absent, and the convention text says which regime this project is under — a user who believes they are protected and is not is worse off than one who knows they are not
-- [ ] 3.3 (Unit) 9.6's refusal — no agent-mediated write reaches `.claude/`, `.mcp.json` or `CLAUDE.md` — extends to every harness's equivalent paths. The reason is unchanged and applies exactly: it is the gate's own configuration, and a write path that reaches it edits away its own restraint through a change that reads as documentation
+- [x] 3.3 (Unit) 9.6's refusal — no agent-mediated write reaches `.claude/`, `.mcp.json` or `CLAUDE.md` — extends to every harness's equivalent paths. The reason is unchanged and applies exactly: it is the gate's own configuration, and a write path that reaches it edits away its own restraint through a change that reads as documentation
+  - **Done in group 2, because group 2 is what opened the hole.** A security review traced it: with `AGENTS.md` and `.codex/skills/` scaffolded but unguarded, an agent under Claude Code's gate could rewrite what Codex reads next session as instructions. Leaving that to a later group would have shipped the primitive and the fix separately.
+  - Derived from `managedPaths`, not a second list — a hand-kept copy is the one that goes stale, and it would go stale in the direction of permitting more. Adding a harness to `harness.ts` guards it by the act of adding it.
+  - **Guarded for every harness, whatever this project records.** `ow.json` arrives with a clone like everything else, so a project that quietly dropped `codex` from its list would otherwise unlock `.codex/`.
+  - The whole dot-directory is guarded, not only the files this product writes in it. Deriving from `managedPaths` alone *narrowed* the guard on the first attempt — `.claude/settings.local.json` and `.claude/agents/` fell out of it — and a widening that quietly drops coverage is worse than no widening.
 
 ## 4 — MCP configuration, per harness
 

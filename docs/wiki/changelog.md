@@ -4,6 +4,22 @@ What changed in the wiki, newest first.
 
 ## 2026-08-03
 
+- Recorded in [[what-a-harness-loads]] that **Claude Code reads a project's hooks from
+  `.claude/settings.json`, never from `.claude/hooks/hooks.json`** — that path is a plugin's
+  mechanism only. `ow init` wrote the second one from plan 9.5 onward, so the write gate was
+  never installed and every run reported that it was. Found by a code review asking for the
+  citation behind a profile field; [[claude-code-plugins]] had the plugin half right since
+  2026-07-31 and the project half was never checked. Fixed in the same branch, along with
+  refusing to overwrite a settings file this product does not own.
+- Revised [[what-a-harness-loads]] for task 2.1, and **it corrected the page the same way
+  the page had just corrected the plan**. Recording a convention directory for Claude Code
+  and none for the others read as "only Claude Code has skills", and `adr:0024` wrote a
+  branch for that. All three read a project-local `SKILL.md`: `.claude/skills`,
+  `.codex/skills` — plus `.agents/skills`, the harness-neutral location this product
+  deliberately does not write to — and `.opencode/skills`. Also recorded: Codex reads
+  `.codex/hooks.json` beside the TOML hook form, so two of the three gates are a JSON hook
+  file and only opencode's is a plugin. **An unrecorded capability reads as a missing one**,
+  which is the failure mode of a findings page and is now said on the page itself.
 - Added [[what-a-harness-loads]], read from each harness own source for task 1.1 of
   `plans/harness-portability.md`. It carries two findings that reach the plan. **The gate
   does not degrade**: Codex has `PreToolUse` with `should_block` and names `apply_patch` in

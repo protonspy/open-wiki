@@ -37,7 +37,13 @@ import {
   type SaveResult,
 } from "./edit.js";
 import { asDropOutcome, ingestDrop, type DropOutcome } from "./ingest.js";
-import { drainInbox, listInbox, type InboxOutcome } from "@open-wiki/access";
+import {
+  drainInbox,
+  isHarness,
+  listInbox,
+  type Harness,
+  type InboxOutcome,
+} from "@open-wiki/access";
 import {
   createProject,
   credentialState,
@@ -245,7 +251,12 @@ export interface DesktopApi {
   settingsView(): SettingsView;
   setDeleteWav(on: boolean): ProjectSettings;
   knownProjects(): KnownProject[];
-  createProject(name: string, directory: string, language: Language): KnownProject;
+  createProject(
+    name: string,
+    directory: string,
+    language: Language,
+    harnesses: readonly Harness[],
+  ): KnownProject;
   forgetProject(name: string): void;
   openProject(name: string): void;
   saveCredentialFor(name: string, input: unknown): Promise<CredentialCheck>;
@@ -367,7 +378,8 @@ export function createApi(deps: Deps): DesktopApi {
     settingsView: () => settingsView(root()),
     setDeleteWav: (on) => setDeleteWav(root(), on),
     knownProjects: () => knownProjects(),
-    createProject: (name, directory, language) => createProject(name, directory, language),
+    createProject: (name, directory, language, harnesses) =>
+      createProject(name, directory, language, undefined, harnesses),
     forgetProject: (name) => forgetProject(name),
     openProject: (name) => {
       // The registry resolves the name; a window is opened on what it says.
@@ -496,6 +508,14 @@ export async function dispatch(
         String(args[0] ?? ""),
         String(args[1] ?? ""),
         String(args[2] ?? "en") as Language,
+        // Validated here rather than trusted: everything crossing this boundary
+        // arrives as `unknown`, and an unrecognised harness reaching the
+        // scaffolder would be a directory no harness ever reads. An empty list
+        // falls back to Claude Code inside `createProject`, which is what every
+        // caller meant before 2.6 existed.
+        (Array.isArray(args[3]) ? args[3] : []).filter(
+          (h): h is Harness => typeof h === "string" && isHarness(h),
+        ),
       );
     case CHANNELS.forgetProject:
       return api.forgetProject(String(args[0] ?? ""));

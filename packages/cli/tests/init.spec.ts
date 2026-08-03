@@ -52,7 +52,8 @@ describe("ow init (9.3–9.5)", () => {
       expect(existsSync(join(root, dir)), dir).toBe(true);
     }
     expect(existsSync(result.hooks)).toBe(true);
-    expect(existsSync(result.claudeMd)).toBe(true);
+    expect(result.entryFiles).toHaveLength(1);
+    expect(existsSync(result.entryFiles[0]!)).toBe(true);
     // No `--name`, so nothing was registered.
     expect(result.registeredName).toBeUndefined();
   });
@@ -78,7 +79,9 @@ describe("ow init (9.3–9.5)", () => {
     });
 
     it("says what to do about it, and that doing it overwrites the file", () => {
-      const notice = staleSkillsNotice([{ dir: "wiki", found: "0.1.0", expected: "0.3.0" }]);
+      const notice = staleSkillsNotice([
+        { dir: "wiki", harness: "claude" as const, found: "0.1.0", expected: "0.3.0" },
+      ]);
       expect(notice).toContain("wiki: 0.1.0");
       expect(notice).toContain("--refresh-skills");
       expect(notice).toMatch(/overwrites the files/i);
@@ -90,8 +93,13 @@ describe("ow init (9.3–9.5)", () => {
 
     it("renders an unreadable skill as such rather than as a missing marker", () => {
       const notice = staleSkillsNotice([
-        { dir: "wiki", found: "unreadable", expected: "0.3.0" },
-        { dir: "codewiki", found: null, expected: "0.3.0" },
+        {
+          dir: "wiki",
+          harness: "claude" as const,
+          found: "unreadable" as const,
+          expected: "0.3.0",
+        },
+        { dir: "codewiki", harness: "claude" as const, found: null, expected: "0.3.0" },
       ]);
       expect(notice).toContain("wiki: could not be read");
       expect(notice).toContain("codewiki: no version marker");
@@ -114,14 +122,14 @@ describe("ow init (9.3–9.5)", () => {
   it("records the chosen language in the settings and the generated CLAUDE.md", () => {
     const result = runInit({ projectRoot: root, language: "pt-BR" });
     expect(readSettings(root).language).toBe("pt-BR");
-    expect(readFileSync(result.claudeMd, "utf8")).toContain("Brazilian Portuguese");
+    expect(readFileSync(result.entryFiles[0]!, "utf8")).toContain("Brazilian Portuguese");
   });
 
   it("keeps the language a later init does not mention", () => {
     runInit({ projectRoot: root, language: "es" });
     const result = runInit({ projectRoot: root });
     expect(readSettings(root).language).toBe("es");
-    expect(readFileSync(result.claudeMd, "utf8")).toContain("Spanish");
+    expect(readFileSync(result.entryFiles[0]!, "utf8")).toContain("Spanish");
   });
 
   it("refuses a language the project has no content convention for", () => {

@@ -105,22 +105,24 @@ describe("ow init", () => {
   });
 
   it("scaffolds the project it was run in and reports what it installed", async () => {
-    expect(await main(["init"], root)).toBe(0);
+    expect(await main(["init", "--claude"], root)).toBe(0);
     expect(stdout()).toContain(`scaffolded ${root}`);
     expect(stdout()).toContain("hooks:");
-    expect(stdout()).toContain("claude.md:");
+    expect(stdout()).toContain("entry:");
     expect(stdout()).not.toContain("registered as:");
     expect(existsSync(join(root, "wiki"))).toBe(true);
   });
 
   it("reports the name it registered when given one", async () => {
-    expect(await main(["init", "--language", "pt-BR", "--name", "fenix"], root)).toBe(0);
+    expect(await main(["init", "--claude", "--language", "pt-BR", "--name", "fenix"], root)).toBe(
+      0,
+    );
     expect(stdout()).toContain("registered as: fenix");
     expect(readFileSync(join(root, "CLAUDE.md"), "utf8")).toContain("Brazilian Portuguese");
   });
 
   it("turns a refusal into a sentence on stderr, not a stack", async () => {
-    expect(await main(["init", "--language", "fr"], root)).toBe(2);
+    expect(await main(["init", "--claude", "--language", "fr"], root)).toBe(2);
     expect(stderr()).toContain("--language must be one of");
     expect(stderr()).not.toContain("    at ");
   });
@@ -330,6 +332,7 @@ describe("parseInitArgs — --refresh-skills (5.3)", () => {
 
   it("is read alongside the other flags", () => {
     expect(parseInitArgs(["--refresh-skills", "--name", "fenix"])).toEqual({
+      harnesses: [],
       refreshSkills: true,
       name: "fenix",
     });
@@ -376,15 +379,19 @@ describe("ow mcp", () => {
 
 describe("parseInitArgs", () => {
   it("reads --language and --name, and defaults both to absent", () => {
-    expect(parseInitArgs([])).toEqual({});
+    expect(parseInitArgs([])).toEqual({ harnesses: [] });
     expect(parseInitArgs(["--language", "pt-BR", "--name", "fenix"])).toEqual({
+      harnesses: [],
       language: "pt-BR",
       name: "fenix",
     });
   });
 
   it("ignores an argument it does not know", () => {
-    expect(parseInitArgs(["--colour", "blue", "--name", "fenix"])).toEqual({ name: "fenix" });
+    expect(parseInitArgs(["--colour", "blue", "--name", "fenix"])).toEqual({
+      harnesses: [],
+      name: "fenix",
+    });
   });
 });
 

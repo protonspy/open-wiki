@@ -69,8 +69,8 @@ const api = {
   settingsView: () => ipcRenderer.invoke(CHANNELS.settingsView),
   setDeleteWav: (on: boolean) => ipcRenderer.invoke(CHANNELS.setDeleteWav, on),
   knownProjects: () => ipcRenderer.invoke(CHANNELS.knownProjects),
-  createProject: (name: string, directory: string, language: string) =>
-    ipcRenderer.invoke(CHANNELS.createProject, name, directory, language),
+  createProject: (name: string, directory: string, language: string, harnesses: string[]) =>
+    ipcRenderer.invoke(CHANNELS.createProject, name, directory, language, harnesses),
   forgetProject: (name: string) => ipcRenderer.invoke(CHANNELS.forgetProject, name),
   openProject: (name: string) => ipcRenderer.invoke(CHANNELS.openProject, name),
   saveCredentialFor: (name: string, input: unknown) =>

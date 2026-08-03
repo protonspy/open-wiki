@@ -13,8 +13,18 @@ import { canLeave, nextStep, STEPS, stepNumber } from "../src/renderer/first-run
  */
 
 describe("STEPS (6.3)", () => {
-  it("is the draft's four, in the draft's order", () => {
-    expect(STEPS.map((s) => s.id)).toEqual(["project", "language", "transcription", "done"]);
+  it("is the draft's four plus the harness step, in order", () => {
+    // The harness step is 2.6 of `plans/harness-portability.md`, added after the
+    // draft was written: the draft knew one harness, and a project may carry
+    // several (`adr:0024`). It sits before the language because it decides
+    // which entry files the language is then written into.
+    expect(STEPS.map((s) => s.id)).toEqual([
+      "project",
+      "harness",
+      "language",
+      "transcription",
+      "done",
+    ]);
   });
 
   it("asks for a project rather than a workspace", () => {
@@ -26,13 +36,14 @@ describe("STEPS (6.3)", () => {
 
   it("counts from one, because a person reads it", () => {
     expect(stepNumber("project")).toBe(1);
-    expect(stepNumber("done")).toBe(4);
+    expect(stepNumber("done")).toBe(5);
   });
 });
 
 describe("nextStep (6.3)", () => {
   it("walks forward", () => {
-    expect(nextStep("project")).toBe("language");
+    expect(nextStep("project")).toBe("harness");
+    expect(nextStep("harness")).toBe("language");
     expect(nextStep("language")).toBe("transcription");
     expect(nextStep("transcription")).toBe("done");
   });
