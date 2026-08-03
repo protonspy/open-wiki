@@ -53,8 +53,8 @@ export function directoryAfterChoosing(current: string, chosen: string | null): 
 /**
  * Where a new project is proposed to go (R3.4).
  *
- * `<default location>/<project name>`, so naming the project is the whole of
- * saying where it lives — which is the friction
+ * `<default location>/<name in kebab-case>`, so naming the project is the whole
+ * of saying where it lives — which is the friction
  * `adr:0013-the-project-directory-is-the-unit` left behind when it removed the
  * container folder and left an absolute path to be typed for every project.
  *
@@ -62,15 +62,62 @@ export function directoryAfterChoosing(current: string, chosen: string | null): 
  * comes from the main process and this code runs in a sandboxed renderer with
  * no `path` module to ask. A Windows root gives `\`; anything else gives `/`.
  *
- * An empty name proposes nothing: `WikiProjects\` on its own is not a place to
- * put a project, and offering it would make the Create button look ready.
+ * A name that survives no folder name proposes nothing: `WikiProjects\` on its
+ * own is not a place to put a project, and offering it would make the Create
+ * button look ready.
  */
 export function proposedDirectory(defaultRoot: string, name: string): string {
-  const project = name.trim();
-  if (defaultRoot === "" || project === "") return "";
+  const folder = kebabCase(name);
+  if (defaultRoot === "" || folder === "") return "";
   const separator = defaultRoot.includes("\\") ? "\\" : "/";
   const root = defaultRoot.replace(/[\\/]+$/, "");
-  return `${root}${separator}${project}`;
+  return `${root}${separator}${folder}`;
+}
+
+/**
+ * A project's name as a folder name (R3.4).
+ *
+ * What somebody types is prose — `Meu Projeto (2024)` — and what a path wants is
+ * one predictable token. Kebab-case is what this repository already names things
+ * on disk with: a page's slug, a source's id, a branch. A folder matching the
+ * typed name exactly would put spaces and parentheses into every path anybody
+ * ever quotes afterwards.
+ *
+ * **Accents are folded, not dropped**, so `Ação` becomes `acao` rather than
+ * `a-o`. This product's content language is often Portuguese (`adr:0008`),
+ * which makes an accented name an ordinary case here and not an edge one.
+ */
+export function kebabCase(name: string): string {
+  return (
+    name
+      .normalize("NFD")
+      // The combining marks the decomposition above leaves behind.
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+  );
+}
+
+/** The two ways a project gets made, and which one a click opens (R2.7). */
+export type CreationScreen = "first-run" | "form";
+
+/**
+ * Which one **New project** should open (R2.7).
+ *
+ * **The guided run only while this machine has nothing**, because it is the one
+ * path that offers the transcription credential, and a first project created
+ * without ever being asked about transcription is a worse trade than one extra
+ * screen. Once a project exists the compact form fits: whoever is making their
+ * second project has already answered those questions once and can reach them
+ * in settings.
+ *
+ * `null` — the list has not come back yet — counts as nothing known. It is the
+ * state a brand-new machine passes through, and guessing "form" would flash the
+ * wrong screen at exactly the person the guided run is for.
+ */
+export function creationScreenFor(projects: readonly unknown[] | null): CreationScreen {
+  return projects === null || projects.length === 0 ? "first-run" : "form";
 }
 
 /**

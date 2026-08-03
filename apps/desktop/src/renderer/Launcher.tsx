@@ -5,7 +5,13 @@ import type { KnownProject } from "../main/settings.js";
 import { bridge } from "./bridge.js";
 import { FirstRun } from "./FirstRun.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
-import { directoryAfterChoosing, directoryFor, openExisting } from "./open-existing.js";
+import {
+  creationScreenFor,
+  directoryAfterChoosing,
+  directoryFor,
+  openExisting,
+  type CreationScreen,
+} from "./open-existing.js";
 
 /**
  * The launcher (plan 8.4) — what `ow` run outside a project opens instead of
@@ -19,7 +25,8 @@ import { directoryAfterChoosing, directoryFor, openExisting } from "./open-exist
 export function Launcher(): React.JSX.Element {
   const [projects, setProjects] = useState<KnownProject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  /** Which way a project is being made right now, if one is (R2.7). */
+  const [creating, setCreating] = useState<CreationScreen | "none">("none");
   /**
    * The directory the create form opens on
    * (`specs/opening-an-existing-project`, R2.4).
@@ -92,7 +99,9 @@ export function Launcher(): React.JSX.Element {
       }
       setError(`${attempt.directory} is not a project yet — name it and it will be one.`);
       setCreatingAt(attempt.directory);
-      setCreating(true);
+      // The compact form, whatever the registry holds: this path already has a
+      // directory, and the guided run's first step is the one asking for one.
+      setCreating("form");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -100,10 +109,23 @@ export function Launcher(): React.JSX.Element {
     }
   }, [load]);
 
-  // 6.3 — the genuine first run: nothing known, so nothing to list. The four
-  // steps stand in for an empty list and a button.
-  if (projects !== null && projects.length === 0 && !creating) {
-    return <FirstRun onDone={load} />;
+  // R2.7 — the guided first run, reached from **New project** while nothing is
+  // known, rather than *instead of* this screen.
+  //
+  // It replaced the launcher outright until now, which put the two doors on a
+  // screen the one person who needed them never saw (R2.1's second modification
+  // says the rest). What it keeps is the credential step: the compact form does
+  // not ask for one, and a first project created without ever being offered
+  // transcription is a worse trade than one extra screen.
+  if (creating === "first-run") {
+    return (
+      <FirstRun
+        onDone={() => {
+          setCreating("none");
+          load();
+        }}
+      />
+    );
   }
 
   return (
@@ -114,12 +136,15 @@ export function Launcher(): React.JSX.Element {
       {/* Above the list, because these are what somebody came here to do — the
           list is what they came here to pick from. Below it, the two doors sat
           past however many projects this machine has. */}
-      {creating ? null : (
+      {creating === "form" ? null : (
         <div className="editor__bar">
           <button
             onClick={() => {
               setCreatingAt("");
-              setCreating(true);
+              // Nothing known yet — the guided run, which is the only path that
+              // offers the transcription credential (R2.7). Once this machine
+              // has a project, the compact form is the one that fits.
+              setCreating(creationScreenFor(projects));
             }}
           >
             New project
@@ -133,15 +158,15 @@ export function Launcher(): React.JSX.Element {
         </div>
       )}
 
-      {creating ? (
+      {creating === "form" ? (
         <NewProject
           startingDirectory={creatingAt}
           onCancel={() => {
-            setCreating(false);
+            setCreating("none");
             setCreatingAt("");
           }}
           onCreated={() => {
-            setCreating(false);
+            setCreating("none");
             setCreatingAt("");
             setError(null);
             load();

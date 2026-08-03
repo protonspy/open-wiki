@@ -32,3 +32,9 @@
 - [x] 6.1 (Unit) Register every project sitting directly inside the default location, skipping what is not one and what is already known — R2.6
 - [x] 6.2 (Unit) Answer the launcher's list with the discovery already done, over one channel — R2.6
 - [x] 6.3 (Unit) Put **New project** and **Open project…** above the list they act on — R2.1
+
+## 7 · The home, whatever the registry holds
+
+- [x] 7.1 (Unit) Show the list and both doors on an empty registry, reaching the guided first run from **New project** — R2.1, R2.7
+- [x] 7.2 (Unit) Take the second Open door back out of the first run, leaving it the steps that create — R2.7
+- [x] 7.3 (Unit) Name the proposed folder in kebab-case — R3.4

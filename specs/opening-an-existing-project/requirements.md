@@ -50,8 +50,8 @@ printing success is not a trade R1.1 is worth.
 ## R2 · Opening a project the application does not know
 
 - **R2.1** (MODIFIED) The launcher shall offer opening a project by choosing its directory,
-  alongside creating a new one, on every screen it shows when no project is open —
-  including the first run, where nothing is in the registry yet.
+  alongside creating a new one, above its list of projects and whatever that list
+  holds — including nothing at all.
 - **R2.2** When a chosen directory is already a project, the application shall open
   it, without asking for a name, a language or a harness.
 - **R2.3** When a project is opened this way, the application shall record it in the
@@ -62,6 +62,8 @@ printing success is not a trade R1.1 is worth.
   it rather than adding a second entry for it.
 - **R2.6** (ADDED) When the launcher opens, the application shall register every project sitting
   directly inside the default location that it does not already know.
+- **R2.7** (ADDED) While the registry holds nothing, the launcher shall still show its list and
+  both doors, and shall reach the guided first run from the one that creates.
 
 R2.6 narrows R3.4's "nothing enumerates that location", which was written one
 change earlier and is no longer true. What it does **not** narrow is
@@ -82,12 +84,20 @@ Cross that boundary — the list rendered from the directory, a project defined 
 sitting in it, entries dropped for leaving it — and it is `adr:0002` again, which
 would need an ADR that says so.
 
-R2.1 was modified after the first build of it shipped with exactly this hole.
-`Launcher` shows the four-step first run as soon as the registry is empty, and
-the button was put beside **New project** on the screen below that branch — so
-the only person who never saw it was the one with no projects on this machine.
-An empty registry is not "somebody with no project": it is a new machine, a
-reinstall, or anyone who cloned a project a colleague made.
+R2.1 has now been modified twice, and the second time undoes the workaround the
+first one was. `Launcher` returned the four-step first run as soon as the
+registry was empty, so the doors — sitting on the screen below that branch —
+were invisible to the one person who needed them: an empty registry is a new
+machine, a reinstall, or anyone who cloned a project a colleague made, not
+somebody with no project. The first fix put a second Open door **inside** the
+first run. R2.7 removes the reason for it: the list is shown whatever it holds,
+the doors sit above it from the first second, and the first run becomes what
+**New project** opens rather than a screen that replaces the launcher.
+
+So the first run goes back to being only what it is called — the steps that
+create a project. It keeps the credential step, which is why it is still reached
+at all: the compact form does not ask for one, and a first project created
+without ever being offered transcription is a worse trade than one extra screen.
 
 ## R3 · Naming the directory
 
@@ -96,8 +106,9 @@ reinstall, or anyone who cloned a project a colleague made.
 - **R3.2** The application shall keep accepting a directory typed by hand.
 - **R3.3** When the user cancels the chooser, the application shall leave the
   directory it already had.
-- **R3.4** (ADDED) The application shall propose, for a new project, a directory named for
-  that project inside a default location under the user's home directory.
+- **R3.4** (MODIFIED) The application shall propose, for a new project, a directory inside a
+  default location under the user's home directory, named for that project in
+  kebab-case.
 - **R3.5** (ADDED) When the user has named a directory themselves, the application shall keep
   what they named and stop proposing one.
 
