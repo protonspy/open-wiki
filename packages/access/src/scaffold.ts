@@ -1,10 +1,19 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { readSettings, writeSettings, type ProjectSettings } from "./config/settings.js";
 import { writeIgnore } from "./ignore.js";
 import { assertWithin } from "./paths.js";
 import { scaffoldSkills, type ScaffoldSkillsResult } from "./skills.js";
-import type { Harness } from "./harness.js";
+import { profilesFor, type Harness } from "./harness.js";
+import { renderSkills } from "./render.js";
+import { recordManaged } from "./update/managed.js";
 import { INBOX } from "./sources/manifest.js";
 import { CHANGELOG_SEED, INDEX_SEED } from "./store/index.js";
 
@@ -93,11 +102,42 @@ export function scaffold(
   writeIgnore(projectRoot);
   // A project that records no harness is one scaffolded before `adr:0024`, and
   // Claude Code is what it already has on disk — see `ScaffoldSkillsOptions`.
+  const forHarnesses =
+    settings.harnesses.length > 0 ? settings.harnesses : (["claude"] as const satisfies Harness[]);
   const skills = scaffoldSkills(projectRoot, {
     refresh: options.refreshSkills === true,
-    harnesses: settings.harnesses.length > 0 ? settings.harnesses : ["claude"],
+    harnesses: forHarnesses,
   });
+  recordWhatIsOurs(projectRoot, forHarnesses);
   return { createdDirs, settings, skills, wiki: seedWiki(projectRoot) };
+}
+
+/**
+ * Record which managed files are, right now, exactly what this build renders —
+ * so `ow update` can tell an aged file from an edited one (5.1).
+ *
+ * **Only the ones that match.** `scaffoldSkills` overwrites nothing, so a skill
+ * it *skipped* holds somebody else's content; recording our hash for it would
+ * claim we wrote it, and the first `ow update` would call it `updatable` and
+ * replace it. That is exactly the loss 5.2 exists to prevent, arriving through
+ * the door that records rather than the one that writes.
+ *
+ * So this compares before it records, and a file that differs stays unrecorded
+ * — which makes it `unknown`, which is never written over.
+ */
+function recordWhatIsOurs(projectRoot: string, harnesses: readonly Harness[]): void {
+  const ours: Record<string, string> = {};
+  for (const profile of profilesFor(harnesses)) {
+    for (const [rel, content] of Object.entries(renderSkills(profile))) {
+      try {
+        const onDisk = readFileSync(join(projectRoot, ...rel.split("/")), "utf8");
+        if (onDisk === content) ours[rel] = content;
+      } catch {
+        // Not there at all — nothing to record.
+      }
+    }
+  }
+  if (Object.keys(ours).length > 0) recordManaged(projectRoot, ours);
 }
 
 /**

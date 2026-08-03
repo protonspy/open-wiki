@@ -1,4 +1,5 @@
 import checkbox from "@inquirer/checkbox";
+import { createInterface } from "node:readline/promises";
 import { HARNESSES, profileFor, type Harness } from "@open-wiki/access";
 
 /**
@@ -27,6 +28,28 @@ export async function pickHarnesses(): Promise<Harness[]> {
   // In HARNESSES order rather than the order they were ticked, so two people
   // choosing the same set commit the same `ow.json`.
   return HARNESSES.filter((h) => chosen.includes(h));
+}
+
+/**
+ * A yes/no at the terminal (`harness-portability` 5.3).
+ *
+ * **`readline` rather than another dependency**, which is this repo's own rule
+ * read the other way round: `@inquirer/checkbox` earned its `docs/stack.md`
+ * line because *multi-select* is the thing a `readline` prompt cannot do. A
+ * yes/no is exactly the thing it can.
+ *
+ * **Defaults to no.** The question is asked before rewriting files in
+ * somebody's project, and a bare Enter meaning "go ahead" is how a person
+ * agrees to something they did not read.
+ */
+export async function confirm(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(`${question} [y/N] `);
+    return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
 }
 
 /**

@@ -63,8 +63,15 @@ export function staleSkillsNotice(outdated: readonly StaleSkill[]): string {
   return [
     `  skills out of date (${outdated.length}):`,
     ...lines,
-    "    Re-run with --refresh-skills to rewrite them. That overwrites the files,",
-    "    edits and all; copy anything of your own out first.",
+    // **`ow update` first, because it is the answer to this.** This notice named
+    // only `--refresh-skills`, which overwrites edits and all — and went on
+    // saying so after the careful verb existed, steering every user who read it
+    // toward the destructive path with no hint that a safe one was there. A
+    // review caught two verbs solving one problem with opposite guarantees and
+    // no cross-reference between them.
+    "    Run `ow update` — it shows what it would rewrite and never touches a file",
+    "    you have edited. `ow init --refresh-skills` is the blunt version: it",
+    "    overwrites them, edits and all.",
   ].join("\n");
 }
 

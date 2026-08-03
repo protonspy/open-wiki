@@ -85,7 +85,11 @@ describe("ow init (9.3–9.5)", () => {
       ]);
       expect(notice).toContain("wiki: 0.1.0");
       expect(notice).toContain("--refresh-skills");
-      expect(notice).toMatch(/overwrites the files/i);
+      // Points at `ow update` first — the safe verb — and names the blunt one
+      // second. A review found this notice steering every reader to the
+      // destructive path after the careful one existed.
+      expect(notice).toContain("ow update");
+      expect(notice).toMatch(/overwrites them, edits and all/i);
     });
 
     it("says nothing at all when nothing has aged", () => {
