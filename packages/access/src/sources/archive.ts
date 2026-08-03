@@ -13,6 +13,19 @@ import { pipeline } from "node:stream/promises";
 import { getFileNameLowLevel, open as openZip, type Entry, type ZipFile } from "yauzl";
 import { isWithin, resolveReal } from "../paths.js";
 import { requireSourceDir } from "./manifest.js";
+import { CONTENTS, UNPACKING } from "./locate.js";
+
+/**
+ * Where an unpacked tree lives, and the marker that says one is in flight.
+ *
+ * Both live in `locate.ts` and are re-exported here, the move `INBOX` made at
+ * task 8.3 and for the same reason: `sourceState` reads the marker, and
+ * importing this module to get the constant would pull `yauzl` and the whole
+ * unpacker into the read surface the MCP process loads (plan 9.9) — where
+ * read-only is meant to be what that process *can* do rather than what it
+ * agrees to do.
+ */
+export { CONTENTS, UNPACKING } from "./locate.js";
 
 /**
  * Unpacking an archive into the source's own directory — plan task 6.1.
@@ -38,27 +51,6 @@ import { requireSourceDir } from "./manifest.js";
  * costs itself and nothing else: the other ninety-nine land, and the caller is
  * told which did not and why.
  */
-
-/** Where an unpacked tree lives inside the source directory. */
-export const CONTENTS = "contents";
-
-/**
- * The marker that says an unpack is in flight — plan task 6.6.
- *
- * **A half-unpacked archive has to be distinguishable from a whole one**, and
- * nothing else on disk can say which it is: a tree of four hundred files looks
- * exactly like a tree of four thousand that stopped. So the marker is written
- * before the first entry and removed after the last, and a directory still
- * carrying it is a source that was interrupted.
- *
- * The same shape task 4.14 gave a recording, which keeps its WAV and its
- * journal until transcription confirms and deletes both — and for the same
- * reason: the state that matters is *did this finish*, the filesystem is the
- * only thing that survives a crash, and a marker present is the one fact a
- * crash cannot forge. It is not a second record of derived state, which 6.1
- * forbids: nothing else observes it.
- */
-export const UNPACKING = "unpacking.json";
 
 /**
  * What this can unpack.

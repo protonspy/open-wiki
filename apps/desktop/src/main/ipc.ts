@@ -23,6 +23,7 @@ import {
   history,
   renamePage,
   retitleSource,
+  markSourceProcessed,
   savePage,
   savePageToday,
   undoOperation,
@@ -70,10 +71,13 @@ import {
   findings,
   locateCitation,
   sourceDetail,
+  browseSource,
+  revealPath,
   sourcesOfPage,
   type PageSource,
   type SourceLocation,
   type SourceRow,
+  type SourceBrowse,
 } from "./sources.js";
 import { waveformOf } from "./waveform.js";
 
@@ -128,6 +132,14 @@ export interface Deps {
    * answer for a build where nothing can open a window.
    */
   openWindow?: (projectRoot: string) => void;
+  /**
+   * Showing a source file in the system file manager (plan 7.4).
+   *
+   * Injected for the same reason `openWindow` is: `shell` lives in `index.ts`
+   * and this module is what the tests reach. Absent in a test, and absent in a
+   * build where nothing can reveal a file.
+   */
+  reveal?: (file: string) => void;
   /**
    * The system save dialog, for the export of `specs/wiki-export` (R4.3).
    *
@@ -199,6 +211,9 @@ export interface DesktopApi {
   undo(id: string): void;
 
   sourceDetail(id: string): SourceRow;
+  markSource(id: string, processed: boolean): void;
+  browseSource(id: string): SourceBrowse;
+  revealSource(id: string): void;
   sourcesOfPage(slug: string): PageSource[];
   retitle(id: string, title: string): void;
   findings(): Finding[];
@@ -319,6 +334,9 @@ export function createApi(deps: Deps): DesktopApi {
     sourceDetail: (id) => sourceDetail(root(), id),
     sourcesOfPage: (slug) => sourcesOfPage(root(), slug),
     retitle: (id, title) => retitleSource(root(), id, title),
+    markSource: (id, processed) => markSourceProcessed(root(), id, processed, savePageToday()),
+    browseSource: (id) => browseSource(root(), id),
+    revealSource: (id) => deps.reveal?.(revealPath(root(), id)),
     findings: () => findings(root()),
     locate: (id, fragment) => locateCitation(root(), id, fragment),
     waveform: (id) => waveformOf(root(), id),
@@ -429,6 +447,12 @@ export async function dispatch(
       return api.sourcesOfPage(String(args[0] ?? ""));
     case CHANNELS.retitle:
       return api.retitle(String(args[0] ?? ""), String(args[1] ?? ""));
+    case CHANNELS.markSource:
+      return api.markSource(String(args[0] ?? ""), Boolean(args[1]));
+    case CHANNELS.browseSource:
+      return api.browseSource(String(args[0] ?? ""));
+    case CHANNELS.revealSource:
+      return api.revealSource(String(args[0] ?? ""));
     case CHANNELS.findings:
       return api.findings();
     case CHANNELS.locate:

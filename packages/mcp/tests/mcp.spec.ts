@@ -11,6 +11,13 @@ import {
   MissingPageError,
 } from "../src/tools.js";
 import { parseMcpArgs } from "../src/index.js";
+import type { SourceTextResult } from "../src/tools.js";
+
+/** The text of an answer that has one — the two 8.3 tests only care about that. */
+function textOf(answer: SourceTextResult): string {
+  if (!answer.hasText) throw new Error(`expected text, got: ${answer.reason}`);
+  return answer.text;
+}
 import { OutsideProjectError, MissingSourceError } from "@open-wiki/access/read";
 
 /**
@@ -258,7 +265,7 @@ describe("MCP read tools — path confinement (9.9)", () => {
     mkdirSync(join(root, "raw", "weekly"), { recursive: true });
     writeFileSync(join(root, "raw", "weekly", "text.md"), "planted by the clone\n", "utf8");
 
-    expect(readSourceText(root, "weekly")).toBe("the real transcript\n");
+    expect(textOf(readSourceText(root, "weekly"))).toBe("the real transcript\n");
     expect(listSourcesState(root).find((s) => s.id === "weekly")?.hasText).toBe(true);
   });
 
@@ -271,7 +278,7 @@ describe("MCP read tools — path confinement (9.9)", () => {
     );
     writeFileSync(join(root, "raw", "2026", "filed.md", "text.md"), "# Filed\n", "utf8");
 
-    expect(readSourceText(root, "filed.md")).toBe("# Filed\n");
+    expect(textOf(readSourceText(root, "filed.md"))).toBe("# Filed\n");
     expect(listSourcesState(root).find((s) => s.id === "filed.md")?.hasText).toBe(true);
   });
 
@@ -295,7 +302,66 @@ describe("MCP read tools — path confinement (9.9)", () => {
   });
 
   it("returns a source's text.md", () => {
-    expect(readSourceText(root, "notes.txt")).toBe("raw text\n");
+    expect(readSourceText(root, "notes.txt")).toEqual({
+      id: "notes.txt",
+      hasText: true,
+      text: "raw text\n",
+    });
+  });
+
+  it("says what a source with no text.md is, rather than returning nothing (7.3)", () => {
+    // Since `adr:0021` the application stores a source and does not read it, so
+    // most sources have no `text.md` at all. Throwing ENOENT told a consulting
+    // agent only that something went wrong — it could not tell *empty* from
+    // *unread*, which are different answers with different next steps.
+    const dir = join(root, "raw", "report.pdf");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "manifest.json"),
+      JSON.stringify({
+        id: "report.pdf",
+        title: "The Q3 report",
+        kind: "file",
+        original: "The Q3 report.pdf",
+        description: "What the cutover decided.",
+        processed: "2026-08-02",
+      }),
+      "utf8",
+    );
+
+    const answer = readSourceText(root, "report.pdf");
+    expect(answer.hasText).toBe(false);
+    if (answer.hasText) return;
+    expect(answer.title).toBe("The Q3 report");
+    expect(answer.kind).toBe("file");
+    expect(answer.original).toBe("The Q3 report.pdf");
+    expect(answer.processed).toBe("2026-08-02");
+    expect(answer.description).toBe("What the cutover decided.");
+    // And it says the original is out of reach: that project is not on this
+    // agent's disk, and MCP serves a different one over HTTP.
+    expect(answer.reason).toMatch(/cannot be served from here/i);
+  });
+
+  it("carries a supersession into the same answer (7.3, 8.5)", () => {
+    const dir = join(root, "raw", "old.pdf");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "manifest.json"),
+      JSON.stringify({
+        id: "old.pdf",
+        title: "Superseded",
+        kind: "file",
+        original: "old.pdf",
+        status: "superseded",
+        "superseded-by": "new.pdf",
+        superseded: "2026-08-03",
+      }),
+      "utf8",
+    );
+    const answer = readSourceText(root, "old.pdf");
+    expect(answer.hasText).toBe(false);
+    if (answer.hasText) return;
+    expect(answer.superseded).toEqual({ by: "new.pdf", date: "2026-08-03" });
   });
 
   it("refuses a source id that escapes the project", () => {

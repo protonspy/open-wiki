@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   checkProject,
@@ -8,9 +8,13 @@ import {
   readWiki,
   resolvedSourceDir,
   sourceExists,
+  CONTENTS,
+  UNPACKING,
   sourceState,
   type Finding,
   type SourceState,
+  isWithin,
+  resolveReal,
 } from "@open-wiki/access/read";
 import { parseInstant, toWallMs, type TimeMap } from "@open-wiki/audio/timemap";
 // From `shared/`: the sources pane opens a source at its start too, and the two
@@ -91,6 +95,17 @@ export interface PageSource {
    */
   reason?: string;
   /**
+   * Present when this source has been replaced (plan 7.6), with what replaced
+   * it and when.
+   *
+   * **A citation into replaced evidence resolving silently is the outcome
+   * supersession exists to prevent**, so it has to be said *here* — on the
+   * page's own list of what it rests on — and not only on the sources screen
+   * somebody may never open. It is the same thing 8.5 records and 5.2 already
+   * does for a page.
+   */
+  superseded?: { by: string; date?: string };
+  /**
    * Where clicking opens it — the start of a recording, the first page of a
    * document. The fragment goes back through `locateCitation` (8.6), so the
    * panel that opens is the same one a provenance link in the prose opens.
@@ -134,6 +149,7 @@ function describeSource(projectRoot: string, id: string): PageSource {
       id,
       title: state.title,
       kind: state.kind,
+      ...(state.superseded ? { superseded: state.superseded } : {}),
       fragment: startFragment(state.kind),
     };
   } catch (e) {
@@ -157,6 +173,221 @@ export function findings(projectRoot: string): Finding[] {
 }
 
 /**
+ * A directory to walk, or `null` when it is not really inside `within`.
+ *
+ * Resolves the real path before comparing, so a symlink or a Windows junction
+ * standing where a directory should be is refused rather than followed. `at`
+ * may equal `within`, which `isWithin` deliberately does not allow — a source's
+ * own directory is a legitimate root, and only what it *resolves to* matters.
+ */
+function safeRoot(within: string, at: string): string | null {
+  if (!existsSync(at)) return null;
+  const real = resolveReal(at);
+  if (real !== resolveReal(within) && !isWithin(within, at)) return null;
+  return real;
+}
+
+/**
+ * The file of a source, confined, for the one caller that hands a path to the
+ * operating system (plan 7.4).
+ *
+ * **Reveal, not open.** `shell.showItemInFolder` selects the file in the
+ * system file manager; `shell.openPath` would invoke whatever handler is
+ * registered for its extension, on bytes that arrived in an untrusted
+ * `git clone`. This repository already treats that distinction as load-bearing
+ * — `isOpenableExternally` exists because `shell.openExternal` is
+ * `ShellExecute` on Windows, and `ms-msdt:` is a documented path from "a link
+ * in a document" to code execution. A `.lnk`, a `.scr` or a double extension
+ * under `raw/` is the same shape of problem.
+ *
+ * The plan asks for the file to be "named and offered to the system handler".
+ * Revealing it is that offer: the file manager is the system handler for
+ * *choosing what to do with a file*, and opening it is one further click, taken
+ * by the person, where their own operating system's warnings apply.
+ */
+export function revealPath(projectRoot: string, id: string): string {
+  const dir = resolvedSourceDir(projectRoot, id);
+  const original = originalIn(dir, id);
+  if (!original) throw new Error(`"${id}" has no file to show`);
+  return original;
+}
+
+/** One entry in a source's own directory, as the browser shows it (plan 7.5). */
+export interface SourceEntry {
+  /** Path relative to what is being browsed, with `/` separators. */
+  path: string;
+  /** A directory, or a file with its size. */
+  kind: "file" | "dir";
+  bytes?: number;
+}
+
+/** What browsing into a source answers (plan 7.5). */
+export interface SourceBrowse {
+  id: string;
+  entries: SourceEntry[];
+  /** True when this source holds an unpacked archive, so `entries` is its tree. */
+  tree: boolean;
+  /**
+   * True when an unpack started and never finished (6.6). The tree below is
+   * then part of an archive rather than all of one, and saying so is the whole
+   * reason the marker exists.
+   */
+  incomplete: boolean;
+  /** Entries past the cap, when the tree is larger than one screen can be. */
+  truncated: number;
+  /**
+   * True when the walk stopped before it had seen everything, so `truncated`
+   * is a floor rather than a count.
+   *
+   * It is said rather than folded into `truncated` because "1,438 more" and
+   * "at least 38,000 more" are different answers, and a number that silently
+   * means the second is the kind of quiet wrong this plan spends its notes on.
+   */
+  atLeast?: true;
+}
+
+/**
+ * How many entries a browse returns.
+ *
+ * An unpacked repository is thousands of files and this crosses an IPC channel
+ * into a renderer that will lay every one of them out. The cap is a rendering
+ * decision, like `boundedText`: it destroys nothing, and `truncated` says how
+ * much was not shown rather than letting the list quietly end.
+ */
+export const MAX_BROWSE_ENTRIES = 2000;
+
+/**
+ * How many entries the walk will *look at* before it stops counting.
+ *
+ * A separate bound from the listing cap, because they answer different
+ * questions: the cap is how much the renderer is asked to lay out, and this is
+ * how much work the main process will do to say what it did not show. Making
+ * `truncated` exact removed the early exit, and nothing upstream bounds the
+ * tree — `unpackArchive` caps total bytes and the expansion ratio, and an
+ * archive of a million empty files passes both.
+ *
+ * Five times the cap. A review measured the first attempt at twenty: a tree of
+ * 65,000 directories took three seconds of synchronous walking, and this runs on
+ * the thread that answers every other IPC channel — so the bound is set by how
+ * long the window may stop responding, not by how exact the count would be.
+ */
+export const MAX_BROWSE_VISIT = 5 * MAX_BROWSE_ENTRIES;
+
+/**
+ * How deep the walk will go.
+ *
+ * `walk` recurses, so a tree of a thousand single-child directories is an
+ * uncaught `RangeError` rather than a slow answer. Deeper than any repository
+ * anybody nests by hand, and far short of the stack.
+ */
+export const MAX_BROWSE_DEPTH = 32;
+
+/**
+ * Browse into a source — the files it holds, and an unpacked archive as a tree
+ * (plan 7.5).
+ *
+ * **Reading a source is the agent's job; *seeing what arrived* is not.** This
+ * is how somebody knows the upload was what they meant — that the zip they
+ * dropped really was the repository and not last month's one, that the PDF is
+ * there beside its `text.md`. It returns names and sizes and opens nothing.
+ *
+ * Where the source holds an unpacked tree, that tree is what is browsed rather
+ * than the two files beside it: `source.zip` and `contents/` is a listing
+ * nobody came to see.
+ */
+export interface BrowseBounds {
+  /** Entries returned. Defaults to `MAX_BROWSE_ENTRIES`. */
+  entries?: number;
+  /** Entries the walk will look at. Defaults to `MAX_BROWSE_VISIT`. */
+  visit?: number;
+  /** How deep it will go. Defaults to `MAX_BROWSE_DEPTH`. */
+  depth?: number;
+}
+
+export function browseSource(
+  projectRoot: string,
+  id: string,
+  // Injectable so the suite does not write forty thousand files to prove
+  // arithmetic — the same escape `unpackArchive` takes for its own bounds, and
+  // one test pins what the product actually enforces.
+  bounds: BrowseBounds = {},
+): SourceBrowse {
+  const maxEntries = bounds.entries ?? MAX_BROWSE_ENTRIES;
+  const maxVisit = bounds.visit ?? MAX_BROWSE_VISIT;
+  const maxDepth = bounds.depth ?? MAX_BROWSE_DEPTH;
+  // Confined and found, never joined — a source filed into a folder is not at
+  // the path its id spells (task 8.3), and an id reaches here out of a page's
+  // prose.
+  const dir = resolvedSourceDir(projectRoot, id);
+  if (!existsSync(join(dir, "manifest.json"))) {
+    throw new Error(`there is no source named "${id}"`);
+  }
+  // **The root is confined too, not only what the walk finds inside it.**
+  // `walk` skips a symlinked *entry*, which a review showed is the easier half:
+  // `contents` can itself be a junction, and a junction needs no privilege on
+  // Windows and is not a symlink — so walking it listed an arbitrary directory
+  // and handed the names and sizes to the renderer. `export/zip.ts` had to add
+  // the identical "the tree root is checked too" fix after the same finding.
+  const contents = safeRoot(dir, join(dir, CONTENTS));
+  const tree = contents !== null;
+  const root = contents ?? safeRoot(dir, dir);
+  if (root === null) throw new Error(`"${id}" does not resolve to a directory inside raw/`);
+
+  const entries: SourceEntry[] = [];
+  let seen = 0;
+  let stopped = false;
+  const walk = (at: string, prefix: string, depth: number): void => {
+    // **Both bounds are on the walk, not on the listing.** Removing the early
+    // exit to make `truncated` exact left the walk itself unbounded, and a
+    // review was right that nothing upstream closes that: `unpackArchive` caps
+    // total bytes and the expansion ratio, and an archive of a million
+    // empty files or a thousand nested directories passes both. This runs
+    // synchronously in the Electron main process, so an unbounded walk is a
+    // frozen window, and an unbounded recursion is an uncaught RangeError.
+    if (depth > maxDepth) {
+      stopped = true;
+      return;
+    }
+    for (const entry of readdirSync(at, { withFileTypes: true }).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )) {
+      if (seen >= maxVisit) {
+        stopped = true;
+        return;
+      }
+      // Links are not followed, for the reason `listSourceRefs` does not follow
+      // them: one pointing out of `raw/` would list somebody else's disk as
+      // this source's contents.
+      if (entry.isSymbolicLink()) continue;
+      const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+      seen += 1;
+      // **Counting does not stop at the listing cap; only pushing does.**
+      // Skipping an over-cap directory outright meant none of its descendants
+      // were ever counted, so `truncated` said 1 where the answer was 501 — a
+      // number whose only job is to be right about what was not shown.
+      if (seen <= maxEntries) {
+        if (entry.isDirectory()) entries.push({ path: rel, kind: "dir" });
+        else {
+          const stat = statSync(join(at, entry.name), { throwIfNoEntry: false });
+          entries.push({ path: rel, kind: "file", bytes: stat?.size ?? 0 });
+        }
+      }
+      if (entry.isDirectory()) walk(join(at, entry.name), rel, depth + 1);
+    }
+  };
+  walk(root, "", 0);
+
+  return {
+    id,
+    entries,
+    tree,
+    incomplete: existsSync(join(dir, UNPACKING)),
+    truncated: Math.max(0, seen - maxEntries),
+    ...(stopped ? { atLeast: true as const } : {}),
+  };
+}
+
+/**
  * Where clicking a provenance citation should take the reader (plan 8.6).
  *
  * A document opens at its page; a recording opens at its instant, in seconds
@@ -168,7 +399,87 @@ export function findings(projectRoot: string): Finding[] {
 export type SourceLocation =
   | { kind: "document"; file: string; page: number }
   | { kind: "audio"; file: string; seconds: number; wallStartMs: number | null }
+  /**
+   * An image, opened as an image (plan 7.4).
+   *
+   * Its own kind because the renderer's CSP is `default-src 'none'` with
+   * `img-src 'self' data:` — a viewer can show these bytes and cannot show a
+   * PDF's. Collapsing the two would put that constraint in the renderer's way
+   * at the moment it is least able to answer it.
+   *
+   * **The bytes travel as a `data:` URL, because `img-src` has no `file:` in
+   * it.** `media-src` does, which is how the audio player loads an Opus off
+   * disk; `img-src` deliberately does not, and widening it to show a picture
+   * would be answering a constraint the plan calls "a real constraint and not a
+   * formality" by removing it. An image past `MAX_INLINE_IMAGE_BYTES` degrades
+   * to `external` instead — offered to the system handler, which is the same
+   * answer any other unshowable file gets.
+   */
+  | { kind: "image"; file: string; mime: string; dataUrl: string }
+  /**
+   * An unpacked archive, opened as the listing it is (plan 7.4, 7.5). There is
+   * no single file to show, so the answer is where the tree starts — and
+   * whether it is all of one, which 6.6's marker is the only thing that knows.
+   */
+  | { kind: "tree"; dir: string; incomplete: boolean }
+  /**
+   * Anything else: named, and offered to whatever the system opens it with.
+   * `adr:0021` means a source can be any file at all, so this branch is what
+   * keeps "any file" true rather than a list somebody maintains.
+   */
+  | { kind: "external"; file: string }
   | { kind: "missing"; reason: string };
+
+/**
+ * The image types the renderer may actually render, with their MIME types.
+ *
+ * A list, and it has to be one: the CSP allows `img-src 'self' data:`, so these
+ * bytes can reach an `<img>` — anything absent goes to the system handler
+ * instead, which is honest rather than a broken image element.
+ *
+ * **`.svg` is deliberately not here.** It is a document that can carry script,
+ * and it arrives from a source nobody parsed; it goes to the system handler
+ * like any other file rather than into a renderer that trusts `img-src`.
+ */
+const IMAGE_TYPES: ReadonlyMap<string, string> = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+  [".bmp", "image/bmp"],
+  [".avif", "image/avif"],
+]);
+
+/** Documents the viewer opens at a page rather than handing to the system. */
+const DOCUMENT_TYPES: ReadonlySet<string> = new Set([".pdf"]);
+
+/**
+ * The largest image the viewer inlines as a `data:` URL.
+ *
+ * A rendering bound, like `boundedText`: the bytes cross an IPC channel and sit
+ * in the renderer's memory base64-encoded, a third larger than on disk. Past
+ * this the image is offered to the system handler instead — which shows it
+ * better than a panel would anyway.
+ */
+export const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * An image small enough to show, as the CSP's `data:` allows — or `null`,
+ * which sends it to the system handler like any other file the panel cannot
+ * render.
+ */
+function inlineImage(file: string, mime: string): SourceLocation | null {
+  const stat = statSync(file, { throwIfNoEntry: false });
+  if (!stat?.isFile() || stat.size > MAX_INLINE_IMAGE_BYTES) return null;
+  const dataUrl = `data:${mime};base64,${readFileSync(file).toString("base64")}`;
+  return { kind: "image", file, mime, dataUrl };
+}
+
+function extensionOf(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot).toLowerCase() : "";
+}
 
 export function locateCitation(projectRoot: string, id: string, fragment: string): SourceLocation {
   let dir: string;
@@ -188,8 +499,8 @@ export function locateCitation(projectRoot: string, id: string, fragment: string
 
   const instantNs = parseInstant(fragment);
   if (instantNs !== null) {
-    const opus = join(dir, "mic.opus");
-    if (!existsSync(opus)) {
+    const opus = fileIn(dir, "mic.opus");
+    if (opus === null) {
       return { kind: "missing", reason: `"${id}" has no audio to open` };
     }
     const map = readTimeMap(dir);
@@ -206,7 +517,30 @@ export function locateCitation(projectRoot: string, id: string, fragment: string
 
   const page = /^p(\d+)$/.exec(fragment);
   const original = originalIn(dir, id);
+
+  // An unpacked archive answers with its tree, before the "no file" branch:
+  // there *is* a file — the archive — and opening a zip in a viewer shows
+  // nobody anything. The tree is what somebody came to look at (plan 7.4).
+  // Confined the same way the browser confines it: `contents` can itself be a
+  // junction, and opening one would point the viewer at an arbitrary directory.
+  const contents = safeRoot(dir, join(dir, CONTENTS));
+  if (contents !== null) {
+    return { kind: "tree", dir: contents, incomplete: existsSync(join(dir, UNPACKING)) };
+  }
+
   if (!original) return { kind: "missing", reason: `"${id}" has no file to open` };
+
+  // **What it is decides how it opens** (plan 7.4). An image goes to an `<img>`
+  // the CSP will actually load; a PDF opens at the page the citation named;
+  // anything else is named and handed to the system, which is what keeps
+  // `adr:0021`'s "any file" from quietly meaning "any file we listed".
+  const ext = extensionOf(original);
+  const mime = IMAGE_TYPES.get(ext);
+  if (mime !== undefined) {
+    const inline = inlineImage(original, mime);
+    if (inline !== null) return inline;
+  }
+  if (!DOCUMENT_TYPES.has(ext)) return { kind: "external", file: original };
   return { kind: "document", file: original, page: page ? Number(page[1]) : 1 };
 }
 
@@ -235,7 +569,31 @@ function readTimeMap(dir: string): TimeMap | null {
  */
 function originalIn(dir: string, id: string): string | null {
   const dot = id.lastIndexOf(".");
-  const name = dot > 0 ? `source${id.slice(dot)}` : "source";
+  return fileIn(dir, dot > 0 ? `source${id.slice(dot)}` : "source");
+}
+
+/**
+ * A regular file directly inside a source's directory, or `null`.
+ *
+ * **The directory being confined is not enough, and this is where that gap
+ * was.** `resolvedSourceDir` resolves and confines `dir`, so a junction
+ * *standing where the source directory should be* is refused — but the file
+ * inside it was then simply joined and handed to `readFileSync` and to
+ * `shell.showItemInFolder`. A repository shipping `raw/leak.png/source.png` as
+ * a symlink to a key or a credentials file therefore read that file's bytes
+ * into a `data:` URL and across IPC into the renderer, on one click of what
+ * looks like an ordinary citation. A security review found it.
+ *
+ * Two checks, because they fail differently. `lstatSync` does not follow, so it
+ * is what *sees* a link rather than its target; `isWithin` resolves the real
+ * path, so it also catches whatever a link would have reached. Everything else
+ * in this module that walks a source directory already does one or the other —
+ * `browseSource` skips a symlinked entry, `safeRoot` resolves the root — and
+ * this was the last path that did neither.
+ */
+function fileIn(dir: string, name: string): string | null {
   const candidate = join(dir, name);
-  return existsSync(candidate) ? candidate : null;
+  const stat = lstatSync(candidate, { throwIfNoEntry: false });
+  if (!stat || stat.isSymbolicLink() || !stat.isFile()) return null;
+  return isWithin(dir, candidate) ? candidate : null;
 }

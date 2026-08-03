@@ -1,6 +1,7 @@
 import { Copy, Pause, Play, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SourceLocation } from "../main/sources.js";
+import type { SourceBrowse, SourceLocation } from "../main/sources.js";
+import { humanBytes } from "@open-wiki/access/format";
 import { bridge } from "./bridge.js";
 import { citationOf, playheadPercent, transportLabel } from "./provenance.js";
 import { Button } from "./ui/Button.js";
@@ -199,8 +200,87 @@ export function SourceAt({
         ) : null}
 
         {at?.kind === "document" ? <p className="empty">{at.file}</p> : null}
+
+        {/* 7.4 — an image as an image. The bytes arrive as a `data:` URL
+            because the CSP's `img-src` is `'self' data:` and has no `file:`
+            in it: `media-src` does, which is how the audio above loads off
+            disk, and widening `img-src` to show a picture would answer a real
+            constraint by removing it. */}
+        {at?.kind === "image" ? (
+          <div className="source-at__image">
+            <img src={at.dataUrl} alt={at.file} />
+          </div>
+        ) : null}
+
+        {/* 7.4, 7.5 — an unpacked archive as the listing it is. There is no one
+            file to show, and opening the zip beside it shows nobody anything. */}
+        {at?.kind === "tree" ? <SourceTree id={id} /> : null}
+
+        {/* 7.4 — anything else: named, and offered to the system. */}
+        {at?.kind === "external" ? (
+          <div className="transport">
+            <span className="transport__at">{at.file}</span>
+            <span className="pane-bar__spacer" />
+            <Button variant="ghost" size="sm" onClick={() => void bridge().revealSource(id)}>
+              Show in folder
+            </Button>
+          </div>
+        ) : null}
       </div>
     </aside>
+  );
+}
+
+/**
+ * The files an unpacked archive holds (plan 7.5).
+ *
+ * Fetched here rather than carried on the location, because a tree is thousands
+ * of entries and a citation panel opens on every click: the location answers
+ * *what this is* immediately, and the listing arrives after.
+ */
+function SourceTree({ id }: { id: string }): React.JSX.Element {
+  const [browse, setBrowse] = useState<SourceBrowse | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setBrowse(null);
+    setFailed(null);
+    void bridge()
+      .browseSource(id)
+      .then((found) => {
+        if (live) setBrowse(found);
+      })
+      .catch((e: unknown) => {
+        if (live) setFailed(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      live = false;
+    };
+  }, [id]);
+
+  if (failed) return <p className="empty">{failed}</p>;
+  if (!browse) return <p className="empty">Reading…</p>;
+  return (
+    <div className="source-tree">
+      {/* 6.6 — the tree below is part of an archive rather than all of one. */}
+      {browse.incomplete ? (
+        <p className="src-name__error">
+          This archive was never fully unpacked, so what is below is part of it.
+        </p>
+      ) : null}
+      <ul className="source-tree__list">
+        {browse.entries.map((entry) => (
+          <li key={entry.path} className={entry.kind === "dir" ? "is-dir" : undefined}>
+            <span className="source-tree__path">{entry.path}</span>
+            {entry.kind === "file" ? (
+              <span className="source-tree__size">{humanBytes(entry.bytes ?? 0)}</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {browse.truncated > 0 ? <p className="empty">{browse.truncated} more not shown.</p> : null}
+    </div>
   );
 }
 

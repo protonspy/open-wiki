@@ -19,7 +19,13 @@ export { boundedText, MAX_LISTED } from "./format.js";
 // Resolving an id to where the source actually sits (task 8.3). Reads only, and
 // the MCP process needs it: joining `raw/<id>` there while `readManifest` walked
 // meant the two answered about two different directories for one id.
-export { listSourceRefs, duplicateSourceIds, type SourceRef } from "./sources/locate.js";
+export {
+  listSourceRefs,
+  duplicateSourceIds,
+  CONTENTS,
+  UNPACKING,
+  type SourceRef,
+} from "./sources/locate.js";
 export { sourceDir, requireSourceDir, resolvedSourceDir } from "./sources/manifest.js";
 export {
   listEntityPages,

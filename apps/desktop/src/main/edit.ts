@@ -14,6 +14,7 @@ import {
   registerInIndex,
   snapshot,
   undo,
+  readManifest,
   updateManifest,
   writePage,
   type GateDecision,
@@ -505,6 +506,46 @@ export function undoOperation(projectRoot: string, id: string): void {
  */
 export function retitleSource(projectRoot: string, id: string, title: string): void {
   updateManifest(projectRoot, id, { title });
+}
+
+/**
+ * Declare a source read, or withdraw the declaration — by hand, from the
+ * sources screen (plan task 7.1).
+ *
+ * **The one action on that screen that is not the agent's.** Everything else
+ * about a source is either observed on disk or written by whoever read the
+ * file; this is a judgement a person makes about a source they read outside the
+ * loop, or about one the agent marked and they disagree with. `ow source mark`
+ * is the same act through the other door (4.2), and both go through the single
+ * manifest mutator of `specs/source-status` R2.1 rather than growing a second
+ * writer in the Electron process — which is exactly what that rule was written
+ * after finding here.
+ *
+ * The date is the desktop's own local day, for the reason the CLI uses its
+ * own: a source marked and a page written in one sitting should carry the same
+ * date.
+ *
+ * **Idempotent, and it keeps the original date**, which is `runSourceMark`'s
+ * contract too: the declaration records *when somebody read the source*, so
+ * re-stamping it on a repeat would lose the only fact it carries. The first
+ * version wrote today's date unconditionally — nothing reached it twice,
+ * because the button only offers "Mark read" when there is no declaration, so
+ * the divergence was masked by its one caller rather than absent. A review
+ * caught it. Two doors onto one act must not disagree about what the act is.
+ */
+export function markSourceProcessed(
+  projectRoot: string,
+  id: string,
+  processed: boolean,
+  today: string,
+): void {
+  const declared = readManifest(projectRoot, id).processed;
+  const wanted = processed ? (declared ?? today) : undefined;
+  // Nothing to write when the manifest already says this. A write that changes
+  // nothing is still a write: it rewrites the file, and on a repeat mark it
+  // would replace the date somebody's read is recorded at.
+  if (wanted === declared) return;
+  updateManifest(projectRoot, id, { processed: wanted ?? null });
 }
 
 /**

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,12 +14,19 @@ import { CHANNELS, createApi, dispatch } from "../src/main/ipc.js";
 import { PUSH_CHANNELS } from "../src/main/channels.js";
 import { asDropOutcome, inboxFailure, ingestDrop, ingestFile } from "../src/main/ingest.js";
 import {
+  browseSource,
   findings,
+  revealPath,
+  MAX_BROWSE_ENTRIES,
+  MAX_BROWSE_VISIT,
+  MAX_BROWSE_DEPTH,
+  MAX_INLINE_IMAGE_BYTES,
   locateCitation,
   sourceDetail,
   sourceRows,
   sourcesOfPage,
 } from "../src/main/sources.js";
+import { markSourceProcessed } from "../src/main/edit.js";
 import { chunkCells, toneOfStage } from "../src/renderer/Sources.js";
 import { startFragment } from "../src/shared/sources.js";
 
@@ -525,5 +540,462 @@ describe("startFragment (5.1, plan 6.5)", () => {
 
   it("falls back to a page for a source nobody could describe", () => {
     expect(startFragment(null)).toBe("p1");
+  });
+});
+
+describe("the provenance viewer opens what it is given (7.4)", () => {
+  /** A source holding a preserved original of this name. */
+  function withOriginal(id: string, bytes = "x"): void {
+    source(id, { text: false });
+    const dot = id.lastIndexOf(".");
+    writeFileSync(join(root, "raw", id, dot > 0 ? `source${id.slice(dot)}` : "source"), bytes);
+  }
+
+  it("opens an image as an image, with a type the CSP will load", () => {
+    // The renderer's CSP is `default-src 'none'` with `img-src 'self' data:`,
+    // so this is a real constraint: these bytes can reach an `<img>` and a
+    // PDF's cannot.
+    withOriginal("diagram.png");
+    const at = locateCitation(root, "diagram.png", "p1");
+    expect(at.kind).toBe("image");
+    expect(at.kind === "image" && at.mime).toBe("image/png");
+  });
+
+  it("opens a PDF at the page the citation named", () => {
+    withOriginal("report.pdf");
+    const at = locateCitation(root, "report.pdf", "p12");
+    expect(at.kind).toBe("document");
+    expect(at.kind === "document" && at.page).toBe(12);
+  });
+
+  it("hands an SVG to the system rather than to an img element", () => {
+    // It is a document that can carry script, and it arrived from a source
+    // nobody parsed. The CSP would load it; that is the problem, not the
+    // permission.
+    withOriginal("chart.svg");
+    expect(locateCitation(root, "chart.svg", "p1").kind).toBe("external");
+  });
+
+  it("names anything else and offers it to the system handler", () => {
+    // `adr:0021` means a source can be any file at all, so this branch is what
+    // keeps "any file" from quietly meaning "any file we listed".
+    for (const name of ["model.step", "book.epub", "sheet.xlsx", "notes"]) {
+      withOriginal(name);
+      expect(locateCitation(root, name, "p1").kind, name).toBe("external");
+    }
+  });
+
+  it("opens an unpacked archive as its tree, not as the zip beside it", () => {
+    withOriginal("repo.zip");
+    mkdirSync(join(root, "raw", "repo.zip", "contents", "src"), { recursive: true });
+    writeFileSync(join(root, "raw", "repo.zip", "contents", "src", "main.rs"), "fn main() {}\n");
+    const at = locateCitation(root, "repo.zip", "p1");
+    expect(at.kind).toBe("tree");
+    expect(at.kind === "tree" && at.incomplete).toBe(false);
+  });
+
+  it("says when the tree it opens is only part of one", () => {
+    withOriginal("repo.zip");
+    mkdirSync(join(root, "raw", "repo.zip", "contents"), { recursive: true });
+    writeFileSync(join(root, "raw", "repo.zip", "unpacking.json"), "{}");
+    const at = locateCitation(root, "repo.zip", "p1");
+    expect(at.kind === "tree" && at.incomplete).toBe(true);
+  });
+});
+
+describe("browsing into a source (7.5)", () => {
+  it("lists the files a source holds", () => {
+    source("notes.md");
+    const browse = browseSource(root, "notes.md");
+    expect(browse.tree).toBe(false);
+    expect(browse.entries.map((e) => e.path).sort()).toEqual(["manifest.json", "text.md"]);
+    expect(browse.entries.find((e) => e.path === "text.md")?.bytes).toBeGreaterThan(0);
+  });
+
+  it("lists an unpacked archive as a tree, and not the two files beside it", () => {
+    // `source.zip` and `contents/` is a listing nobody came to see.
+    source("repo.zip", { text: false });
+    mkdirSync(join(root, "raw", "repo.zip", "contents", "src"), { recursive: true });
+    writeFileSync(join(root, "raw", "repo.zip", "contents", "README.md"), "# acme\n");
+    writeFileSync(join(root, "raw", "repo.zip", "contents", "src", "main.rs"), "fn main() {}\n");
+
+    const browse = browseSource(root, "repo.zip");
+    expect(browse.tree).toBe(true);
+    expect(browse.entries.map((e) => e.path)).toEqual(["README.md", "src", "src/main.rs"]);
+    expect(browse.entries.find((e) => e.path === "src")?.kind).toBe("dir");
+  });
+
+  it("says when the tree is only part of an archive", () => {
+    source("repo.zip", { text: false });
+    mkdirSync(join(root, "raw", "repo.zip", "contents"), { recursive: true });
+    writeFileSync(join(root, "raw", "repo.zip", "unpacking.json"), "{}");
+    expect(browseSource(root, "repo.zip").incomplete).toBe(true);
+  });
+
+  it("refuses an id that names no source", () => {
+    expect(() => browseSource(root, "ghost")).toThrow(/no source/i);
+  });
+
+  it("finds a source filed into a folder", () => {
+    mkdirSync(join(root, "raw", "2026", "filed.md"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "2026", "filed.md", "manifest.json"),
+      JSON.stringify({ id: "filed.md", title: "Filed", kind: "file", original: "" }),
+      "utf8",
+    );
+    expect(browseSource(root, "filed.md").entries.map((e) => e.path)).toEqual(["manifest.json"]);
+  });
+});
+
+describe("a superseded source says so where the page shows it (7.6)", () => {
+  function superseded(id: string, by: string, date?: string): void {
+    source(id);
+    writeFileSync(
+      join(root, "raw", id, "manifest.json"),
+      JSON.stringify({
+        id,
+        title: "The old one",
+        kind: "file",
+        original: id,
+        status: "superseded",
+        "superseded-by": by,
+        ...(date ? { superseded: date } : {}),
+      }),
+      "utf8",
+    );
+  }
+
+  it("carries the replacement onto the page's own list of what it rests on", () => {
+    // A citation into replaced evidence resolving silently is the outcome
+    // supersession exists to prevent, so it is said here and not only on the
+    // sources screen somebody may never open.
+    superseded("old.pdf", "new.pdf", "2026-08-03");
+    page("fenix", "As src://old.pdf#p1 says.");
+
+    const cited = sourcesOfPage(root, "fenix");
+    expect(cited).toHaveLength(1);
+    expect(cited[0]!.superseded).toEqual({ by: "new.pdf", date: "2026-08-03" });
+  });
+
+  it("says nothing about supersession for a source nobody replaced", () => {
+    source("current.pdf");
+    page("fenix", "As src://current.pdf#p1 says.");
+    expect(sourcesOfPage(root, "fenix")[0]!.superseded).toBeUndefined();
+  });
+
+  it("shows it on the sources row too", () => {
+    superseded("old.pdf", "new.pdf");
+    expect(sourceRows(root)[0]!.superseded?.by).toBe("new.pdf");
+  });
+});
+
+describe("marking a source read by hand (7.1)", () => {
+  it("writes the declaration through the one manifest mutator", () => {
+    source("notes.md");
+    markSourceProcessed(root, "notes.md", true, "2026-08-03");
+    expect(sourceRows(root)[0]!.processed).toBe("2026-08-03");
+  });
+
+  it("withdraws it again", () => {
+    source("notes.md");
+    markSourceProcessed(root, "notes.md", true, "2026-08-03");
+    markSourceProcessed(root, "notes.md", false, "2026-08-03");
+    expect(sourceRows(root)[0]!.processed).toBeUndefined();
+  });
+
+  it("reaches the renderer through its own channel", async () => {
+    source("notes.md");
+    const api = createApi({ projectRoot: root });
+    await dispatch(api, CHANNELS.markSource, ["notes.md", true]);
+    expect(sourceDetail(root, "notes.md").processed).toBeTruthy();
+    const browse = await dispatch(api, CHANNELS.browseSource, ["notes.md"]);
+    expect((browse as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the sources pane shows what a source is (7.1)", () => {
+  it("carries the size of what arrived onto the row", () => {
+    source("report.pdf", { text: false });
+    writeFileSync(join(root, "raw", "report.pdf", "source.pdf"), "%PDF-1.4 and then some");
+    expect(sourceRows(root)[0]!.bytes).toBe(22);
+  });
+
+  it("carries the description the agent wrote", () => {
+    source("fnd348r34nr483r.txt");
+    writeFileSync(
+      join(root, "raw", "fnd348r34nr483r.txt", "manifest.json"),
+      JSON.stringify({
+        id: "fnd348r34nr483r.txt",
+        title: "fnd348r34nr483r.txt",
+        kind: "file",
+        original: "fnd348r34nr483r.txt",
+        description: "The Q3 incident timeline.",
+      }),
+      "utf8",
+    );
+    // The row this whole group exists for: its only readable field was the
+    // filename, and the filename says nothing.
+    expect(sourceRows(root)[0]!.description).toBe("The Q3 incident timeline.");
+  });
+});
+
+describe("group 7, after review", () => {
+  it("refuses to walk a contents/ that is itself a junction (7.5)", () => {
+    // `walk` skips a symlinked *entry*, which is the easier half — `contents`
+    // can itself be a junction, and a junction needs no privilege on Windows
+    // and is not a symlink. Walking it listed an arbitrary directory and handed
+    // the names and sizes to the renderer. `export/zip.ts` had to add the same
+    // "the tree root is checked too" fix after the same finding.
+    source("repo.zip", { text: false });
+    const outside = mkdtempSync(join(tmpdir(), "ow-outside-"));
+    writeFileSync(join(outside, "secret-file.txt"), "not this project's");
+    try {
+      symlinkSync(outside, join(root, "raw", "repo.zip", "contents"), "junction");
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return; // junction creation unavailable on this machine
+    }
+
+    const browse = browseSource(root, "repo.zip");
+    expect(browse.entries.map((e) => e.path)).not.toContain("secret-file.txt");
+    // It falls back to the source's own directory, which is inside `raw/`.
+    expect(browse.tree).toBe(false);
+    // And the viewer does not offer it either.
+    expect(locateCitation(root, "repo.zip", "p1").kind).not.toBe("tree");
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("counts what it did not show, including inside a directory past the cap (7.5)", () => {
+    // Skipping an over-cap directory outright meant none of its descendants
+    // were ever counted, so `truncated` said 1 where the answer was 501 — a
+    // number whose only job is to be right about what was not shown.
+    source("many.zip", { text: false });
+    const contents = join(root, "raw", "many.zip", "contents");
+    mkdirSync(contents, { recursive: true });
+    for (let i = 0; i < MAX_BROWSE_ENTRIES; i++) {
+      writeFileSync(join(contents, `f${String(i).padStart(5, "0")}.txt`), "x");
+    }
+    const deeper = join(contents, "zzz-more");
+    mkdirSync(deeper, { recursive: true });
+    for (let i = 0; i < 500; i++) writeFileSync(join(deeper, `g${i}.txt`), "x");
+
+    const browse = browseSource(root, "many.zip");
+    expect(browse.entries).toHaveLength(MAX_BROWSE_ENTRIES);
+    // 1 for the directory itself plus its 500 files.
+    expect(browse.truncated).toBe(501);
+  });
+
+  it("keeps the original date when a source is marked twice (7.1)", () => {
+    // `runSourceMark`'s contract, and this is "the same act through the other
+    // door". The declaration records *when somebody read the source*, so
+    // re-stamping it on a repeat would lose the only fact it carries.
+    source("notes.md");
+    markSourceProcessed(root, "notes.md", true, "2026-08-01");
+    markSourceProcessed(root, "notes.md", true, "2026-08-09");
+    expect(sourceRows(root)[0]!.processed).toBe("2026-08-01");
+  });
+
+  it("writes nothing when there is nothing to withdraw (7.1)", () => {
+    source("notes.md");
+    const before = readFileSync(join(root, "raw", "notes.md", "manifest.json"), "utf8");
+    markSourceProcessed(root, "notes.md", false, "2026-08-01");
+    expect(readFileSync(join(root, "raw", "notes.md", "manifest.json"), "utf8")).toBe(before);
+  });
+
+  it("carries an image as a data URL, because img-src has no file: in it (7.4)", () => {
+    // `media-src` does, which is how the audio player loads an Opus off disk;
+    // `img-src` is `'self' data:`, and widening it to show a picture would
+    // answer a real constraint by removing it.
+    source("shot.png", { text: false });
+    // A one-pixel PNG, so the bytes are a real image rather than a placeholder.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    writeFileSync(join(root, "raw", "shot.png", "source.png"), png);
+
+    const at = locateCitation(root, "shot.png", "p1");
+    expect(at.kind).toBe("image");
+    if (at.kind !== "image") return;
+    expect(at.dataUrl.startsWith("data:image/png;base64,")).toBe(true);
+    expect(Buffer.from(at.dataUrl.split(",")[1]!, "base64")).toEqual(png);
+  });
+
+  it("offers an image too large to inline to the system instead (7.4)", () => {
+    source("huge.png", { text: false });
+    writeFileSync(
+      join(root, "raw", "huge.png", "source.png"),
+      Buffer.alloc(MAX_INLINE_IMAGE_BYTES + 1),
+    );
+    // A panel is not where a 9 MB screenshot is read anyway, and the fallback is
+    // the same answer every other unshowable file gets.
+    expect(locateCitation(root, "huge.png", "p1").kind).toBe("external");
+  });
+
+  it("confines the file it hands to the system (7.4)", () => {
+    source("model.step", { text: false });
+    writeFileSync(join(root, "raw", "model.step", "source.step"), "solid");
+    expect(revealPath(root, "model.step")).toContain(join("raw", "model.step"));
+    expect(() => revealPath(root, "../../elsewhere")).toThrow();
+    expect(() => revealPath(root, "ghost")).toThrow(/no file to show/i);
+  });
+});
+
+describe("the browse walk is bounded (7.5, second review)", () => {
+  it("has bounds that are the product's, not the tests'", () => {
+    // The tests below pass their own so the suite does not write forty thousand
+    // files to prove arithmetic. What the product enforces is pinned here, so
+    // loosening it by accident is a failing test rather than a frozen window.
+    expect(MAX_BROWSE_ENTRIES).toBe(2000);
+    expect(MAX_BROWSE_VISIT).toBe(10000);
+    expect(MAX_BROWSE_DEPTH).toBe(32);
+  });
+
+  it("stops counting past the visit bound, and says the number is a floor", () => {
+    // Making `truncated` exact removed the early exit, and nothing upstream
+    // bounds the tree: `unpackArchive` caps total bytes and the expansion
+    // ratio, and an archive of a million empty files passes both. This runs
+    // synchronously in the Electron main process, so an unbounded walk is a
+    // frozen window.
+    source("many.zip", { text: false });
+    const contents = join(root, "raw", "many.zip", "contents");
+    mkdirSync(contents, { recursive: true });
+    for (let i = 0; i < 40; i++) {
+      writeFileSync(join(contents, `f${String(i).padStart(3, "0")}.txt`), "");
+    }
+    const browse = browseSource(root, "many.zip", { entries: 5, visit: 20 });
+    expect(browse.entries).toHaveLength(5);
+    expect(browse.atLeast).toBe(true);
+    // A floor, not a count: 20 seen, 5 shown, and it stopped looking.
+    expect(browse.truncated).toBe(15);
+  });
+
+  it("stops descending past the depth bound rather than blowing the stack", () => {
+    // `walk` recurses, so a tree of a thousand single-child directories is an
+    // uncaught RangeError rather than a slow answer.
+    source("deep.zip", { text: false });
+    let at = join(root, "raw", "deep.zip", "contents");
+    mkdirSync(at, { recursive: true });
+    for (let i = 0; i <= 8; i++) {
+      at = join(at, `d${i}`);
+      mkdirSync(at, { recursive: true });
+    }
+    writeFileSync(join(at, "buried.txt"), "x");
+
+    const browse = browseSource(root, "deep.zip", { depth: 4 });
+    expect(browse.atLeast).toBe(true);
+    expect(browse.entries.some((e) => e.path.endsWith("buried.txt"))).toBe(false);
+  });
+
+  it("says nothing about a floor for a tree it counted whole", () => {
+    source("small.zip", { text: false });
+    const contents = join(root, "raw", "small.zip", "contents");
+    mkdirSync(contents, { recursive: true });
+    writeFileSync(join(contents, "a.txt"), "x");
+    const browse = browseSource(root, "small.zip");
+    expect(browse.atLeast).toBeUndefined();
+    expect(browse.truncated).toBe(0);
+  });
+
+  it("reveals a real source through the channel, not only through the function", () => {
+    // The `deps.reveal` branch was wired and never exercised for a valid id:
+    // the channel test used one that throws before reaching it.
+    source("model.step", { text: false });
+    writeFileSync(join(root, "raw", "model.step", "source.step"), "solid");
+    const revealed: string[] = [];
+    const api = createApi({ projectRoot: root, reveal: (file) => revealed.push(file) });
+    api.revealSource("model.step");
+    expect(revealed).toHaveLength(1);
+    expect(revealed[0]).toContain(join("raw", "model.step"));
+  });
+});
+
+describe("a source's own file cannot be a link out (7.4, security review)", () => {
+  /**
+   * Whether this machine can make a file symlink at all.
+   *
+   * Windows needs Developer Mode or an elevated shell, so the three cases below
+   * are **skipped rather than passed** where it cannot: a security test that
+   * quietly returns early reads as coverage it does not have, which is the
+   * failure this repository names in its own archive tests. The case that needs
+   * no privilege is asserted unconditionally at the end.
+   */
+  const canSymlink = ((): boolean => {
+    const probe = mkdtempSync(join(tmpdir(), "ow-sl-"));
+    try {
+      writeFileSync(join(probe, "t"), "x");
+      symlinkSync(join(probe, "t"), join(probe, "l"), "file");
+      return true;
+    } catch {
+      return false;
+    } finally {
+      rmSync(probe, { recursive: true, force: true });
+    }
+  })();
+
+  /** A source whose `source.<ext>` is a link to `target`. */
+  function linkedOriginal(id: string, target: string): boolean {
+    source(id, { text: false });
+    symlinkSync(target, join(root, "raw", id, `source${id.slice(id.lastIndexOf("."))}`), "file");
+    return true;
+  }
+
+  it.skipIf(!canSymlink)("does not read a symlinked original into a data URL", () => {
+    // The directory being confined was not enough. A repository shipping
+    // `raw/leak.png/source.png` as a symlink to a key read that file's bytes
+    // into a `data:` URL and across IPC into the renderer, on one click of what
+    // looks like an ordinary citation.
+    const outside = mkdtempSync(join(tmpdir(), "ow-secret-"));
+    const secret = join(outside, "id_rsa");
+    writeFileSync(secret, "PRIVATE KEY MATERIAL");
+    try {
+      linkedOriginal("leak.png", secret);
+      const at = locateCitation(root, "leak.png", "p1");
+      expect(at.kind).not.toBe("image");
+      expect(JSON.stringify(at)).not.toContain("PRIVATE KEY");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!canSymlink)("does not hand a symlinked original to the system", () => {
+    const outside = mkdtempSync(join(tmpdir(), "ow-secret-"));
+    writeFileSync(join(outside, "creds.txt"), "secret");
+    try {
+      linkedOriginal("leak.step", join(outside, "creds.txt"));
+      expect(() => revealPath(root, "leak.step")).toThrow(/no file to show/i);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!canSymlink)("does not open a symlinked recording as audio", () => {
+    const outside = mkdtempSync(join(tmpdir(), "ow-secret-"));
+    writeFileSync(join(outside, "anything.bin"), "bytes");
+    try {
+      source("weekly", { kind: "recording", text: false });
+      symlinkSync(join(outside, "anything.bin"), join(root, "raw", "weekly", "mic.opus"), "file");
+      const at = locateCitation(root, "weekly", "0:01");
+      expect(at.kind).toBe("missing");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a source.<ext> that is not a regular file, on any machine", () => {
+    // The half of `fileIn` that needs no privilege to exercise: a directory
+    // standing where the preserved original should be. It is the same rule —
+    // what is opened has to be the file this application wrote — and it runs
+    // everywhere, including where a symlink cannot be made.
+    source("odd.pdf", { text: false });
+    mkdirSync(join(root, "raw", "odd.pdf", "source.pdf"), { recursive: true });
+    expect(locateCitation(root, "odd.pdf", "p1").kind).toBe("missing");
+    expect(() => revealPath(root, "odd.pdf")).toThrow(/no file to show/i);
+  });
+
+  it("still opens an ordinary file that is really there", () => {
+    source("report.pdf", { text: false });
+    writeFileSync(join(root, "raw", "report.pdf", "source.pdf"), "%PDF-1.4");
+    expect(locateCitation(root, "report.pdf", "p3").kind).toBe("document");
   });
 });

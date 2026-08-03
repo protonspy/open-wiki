@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   assertWithin,
   boundedManifest,
+  boundedText,
   resolvedSourceDir,
   OutsideProjectError,
   listEntityPages,
@@ -113,13 +114,68 @@ export function listSourcesState(projectRoot: string): SourceState[] {
   });
 }
 
-/** A source's `text.md` — the normalised text the citations point into. */
-export function readSourceText(projectRoot: string, id: string): string {
+/**
+ * What `ow_read_source` answers — the text, or what is known about a source
+ * that has none (plan task 7.3).
+ *
+ * One shape with a discriminator rather than a string that is sometimes an
+ * apology: a consulting agent has to branch on *whether there is text* without
+ * pattern-matching prose.
+ */
+export type SourceTextResult =
+  | { id: string; hasText: true; text: string }
+  | {
+      id: string;
+      hasText: false;
+      title: string;
+      kind: SourceManifest["kind"];
+      original: string;
+      processed?: string;
+      description?: string;
+      superseded?: { by: string; date?: string };
+      reason: string;
+    };
+
+/** A source's `text.md`, or what it is when there is none (plan 7.3). */
+export function readSourceText(projectRoot: string, id: string): SourceTextResult {
   // Confine first so an escaping id is refused before anything is read; then
   // `readManifest` turns a merely-absent id into `MissingSourceError`.
   const file = sourceTextPath(projectRoot, id);
-  readManifest(projectRoot, id);
-  return readFileSync(file, "utf8");
+  const manifest = boundedManifest(readManifest(projectRoot, id));
+  if (existsSync(file)) return { id, hasText: true, text: readFileSync(file, "utf8") };
+
+  // **What it has, rather than nothing.** Since `adr:0021` the application
+  // stores a source and does not read it, so a great many sources have no
+  // `text.md` at all — a PDF, an image, an archive — and throwing ENOENT told a
+  // consulting agent only that something went wrong. It could not tell *empty*
+  // from *unread*, which are different answers with different next steps.
+  //
+  // **And it cannot offer the original.** That project is not on this agent's
+  // disk; MCP serves a different project over HTTP (`adr:0018`). Saying so is
+  // the honest answer, and naming the file is what makes it actionable for
+  // somebody who can reach the machine.
+  return {
+    id,
+    hasText: false,
+    title: manifest.title,
+    kind: manifest.kind,
+    original: manifest.original,
+    ...(manifest.processed !== undefined ? { processed: manifest.processed } : {}),
+    ...(manifest.description !== undefined ? { description: manifest.description } : {}),
+    ...(manifest.status === "superseded"
+      ? {
+          superseded: {
+            by: manifest["superseded-by"] ?? "",
+            ...(manifest.superseded !== undefined ? { date: manifest.superseded } : {}),
+          },
+        }
+      : {}),
+    reason:
+      `"${boundedText(id)}" has no text.md. This project stores sources and does not read them ` +
+      `(adr:0021-sources-are-stored-not-parsed), so a document, an image or an archive has ` +
+      `none until an agent working in that project writes one. The original is on that ` +
+      `project's disk and cannot be served from here.`,
+  };
 }
 
 /**
