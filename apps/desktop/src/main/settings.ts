@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { basename, isAbsolute, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import {
   LANGUAGES,
   ProjectRegistry,
@@ -334,6 +335,28 @@ export function settingsView(projectRoot: string, appDataDir?: string): Settings
     settingsText: existsSync(file) ? readFileSync(file, "utf8") : null,
     secretsFile: secretsFile(projectRoot, appDataDir ?? defaultAppDataDir()),
   };
+}
+
+/**
+ * The folder a new project is *proposed* in
+ * (`specs/opening-an-existing-project`, R3.4).
+ *
+ * **A suggestion, and nothing more.** `adr:0013-the-project-directory-is-the-unit`
+ * removed the container — "there is no workspace container and no directory of
+ * projects owned by the application" — and that stands here in full: nothing
+ * enumerates this directory, nothing about a project changes because it sits
+ * inside it, and it does not exist until a project is scaffolded in it. R2.1's
+ * **Open project…** is what makes a default safe rather than a slide back to
+ * `adr:0002`: a project anywhere else is reached on identical terms, so this is
+ * where typing stops being *required*, not where projects have to live.
+ *
+ * It is answered from here rather than built in the renderer because the home
+ * directory is the main process's to know — a sandboxed renderer has no `os`.
+ */
+export const PROJECTS_FOLDER = "WikiProjects";
+
+export function defaultProjectsDir(home: string = homedir()): string {
+  return join(home, PROJECTS_FOLDER);
 }
 
 /** One entry in the launcher (plan 8.4). */

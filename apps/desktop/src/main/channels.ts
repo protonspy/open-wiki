@@ -71,6 +71,12 @@ export const CHANNELS = {
    */
   chooseDirectory: "launcher:choose-directory",
   openDirectory: "launcher:open-directory",
+  /**
+   * Where a new project is *proposed* — never where one has to be (R3.4). The
+   * home directory is the main process's to know; a sandboxed renderer has no
+   * `os` and must not guess one from a user agent.
+   */
+  defaultDirectory: "launcher:default-directory",
   saveCredentialFor: "launcher:credential",
   transcribe: "sources:transcribe",
 

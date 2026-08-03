@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import type { AdoptOutcome } from "../src/main/settings.js";
 import {
   directoryAfterChoosing,
+  directoryFor,
   openExisting,
+  proposedDirectory,
   type OpenExistingBridge,
 } from "../src/renderer/open-existing.js";
 
@@ -77,6 +79,54 @@ describe("directoryAfterChoosing (R3.2, R3.3)", () => {
   });
 });
 
+describe("proposedDirectory (R3.4)", () => {
+  it("puts a new project under the default location, named for the project", () => {
+    expect(proposedDirectory("C:\\Users\\prode\\WikiProjects", "fenix")).toBe(
+      "C:\\Users\\prode\\WikiProjects\\fenix",
+    );
+  });
+
+  it("reads the separator off the root rather than assuming one", () => {
+    // The renderer is sandboxed and has no `path`. The root arrives from the
+    // main process, so it already says which platform this is.
+    expect(proposedDirectory("/home/prode/WikiProjects", "fenix")).toBe(
+      "/home/prode/WikiProjects/fenix",
+    );
+  });
+
+  it("does not double a separator the root already ends with", () => {
+    expect(proposedDirectory("C:\\Users\\prode\\WikiProjects\\", "fenix")).toBe(
+      "C:\\Users\\prode\\WikiProjects\\fenix",
+    );
+  });
+
+  it("proposes nothing until there is a name", () => {
+    // `WikiProjects\` alone is not a place to put a project, and offering it
+    // would make the Create button look ready when it is not.
+    expect(proposedDirectory("C:\\Users\\prode\\WikiProjects", "")).toBe("");
+    expect(proposedDirectory("C:\\Users\\prode\\WikiProjects", "   ")).toBe("");
+    expect(proposedDirectory("", "fenix")).toBe("");
+  });
+});
+
+describe("directoryFor (R3.4, R3.5)", () => {
+  const root = "C:\\Users\\prode\\WikiProjects";
+
+  it("follows the name while nobody has said where", () => {
+    expect(directoryFor("", { defaultRoot: root, name: "fenix", touched: false })).toBe(
+      "C:\\Users\\prode\\WikiProjects\\fenix",
+    );
+  });
+
+  it("stops having an opinion once the user has said where", () => {
+    // R3.5. A proposal that keeps rewriting a hand-typed path is the field
+    // fighting whoever is using it.
+    const mine = "D:\\work\\somewhere-else";
+    expect(directoryFor(mine, { defaultRoot: root, name: "fenix", touched: true })).toBe(mine);
+    expect(directoryFor(mine, { defaultRoot: root, name: "renamed", touched: true })).toBe(mine);
+  });
+});
+
 describe("the launcher offers both doors (R2.1, R3.1)", () => {
   // Source-level, for the same reason `index.ts` is pinned that way: there is
   // no DOM in this suite, and a button that exists in a module nothing renders
@@ -107,6 +157,24 @@ describe("the launcher offers both doors (R2.1, R3.1)", () => {
     // this most, and who could not see it.
     expect(firstRun).toMatch(/openExisting\(bridge\(\)\)/);
     expect(firstRun).toMatch(/Open a project I already have…/);
+  });
+
+  it("proposes the default location on both doors (R3.4)", () => {
+    // Both, or the two screens disagree about where a project goes — which is
+    // worse than neither, because whichever one you used first is the one you
+    // will believe.
+    for (const source of [launcher, firstRun]) {
+      expect(source).toMatch(/defaultDirectory\(\)/);
+      expect(source).toMatch(/directoryFor\(/);
+    }
+  });
+
+  it("stops proposing once the user has said where, on both doors (R3.5)", () => {
+    // The chooser and the text box both count as saying where, and so does
+    // arriving from R2.4 with a directory already picked.
+    for (const source of [launcher, firstRun]) {
+      expect(source).toMatch(/setTouched\(true\)/);
+    }
   });
 
   it("keeps the first run's escape hatch on the step that can use it", () => {

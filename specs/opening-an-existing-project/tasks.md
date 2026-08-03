@@ -20,3 +20,9 @@
 - [x] 4.1 (Unit) Offer **Open project…** beside **New project**, carrying a directory that is not a project into the create form — R2.1, R2.4
 - [x] 4.2 (Unit) Put **Choose…** beside the directory field, leaving what is typed there alone when the chooser is cancelled — R3.1, R3.2, R3.3
 - [x] 4.3 (Unit) Offer opening an existing project on the first run too, which an empty registry is the whole of — R2.1
+
+## 5 · Where a new project goes by default
+
+- [x] 5.1 (Unit) Answer where new projects go by default, derived from the user's home directory and owning nothing — R3.4
+- [x] 5.2 (Unit) Derive `<default>/<name>` while the directory field is untouched, and stop deriving once it is — R3.4, R3.5
+- [x] 5.3 (Unit) Use the proposal on both doors — the launcher's create form and the first run — R3.4, R3.5

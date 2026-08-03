@@ -38,19 +38,35 @@ differs is only where a refused directory lands. The launcher opens its create
 form on it; the first run is already standing on the step that makes a project,
 so it fills that step's own field and says why.
 
+**Where a new project is proposed** (R3.4, R3.5) is three small pieces rather
+than one, because the knowledge and the decision live on opposite sides of the
+bridge. `defaultProjectsDir()` in `settings.ts` names `<home>/WikiProjects` and
+creates nothing; `launcher:default-directory` answers it, because a sandboxed
+renderer has no `os` and must not infer a home directory from a user agent; and
+`proposedDirectory` / `directoryFor` in `open-existing.ts` do the deciding —
+`<root><sep><name>` while the field is untouched, and nothing at all once it is.
+The separator is read off the root rather than assumed, since the renderer has
+no `path` either and the root already says which platform this is.
+
+**The proposal stops for good the moment the user answers.** Typing, choosing,
+or arriving from R2.4 with a directory already picked all set `touched`, and
+`touched` is never unset — including when the box is cleared, because a field
+somebody emptied is not an invitation to refill it.
+
 ## Boundaries and contracts
 
-Serves R2.1, R2.4, R3.1, R3.3.
+Serves R2.1, R2.4, R3.1, R3.3, R3.4.
 
 The launcher needs the system's directory chooser, which lives in the main
 process, and it needs a directory turned into an open window. Those are two acts
 rather than one, because the chooser is also wanted on its own by the form that
 already takes a directory.
 
-| Channel                     | Answers                                                                            |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| `launcher:choose-directory` | the directory chosen, or `null` when cancelled (R3.1, R3.3)                        |
-| `launcher:open-directory`   | `{ kind: "opened", name }`, or `{ kind: "not-a-project", directory }` (R2.2, R2.4) |
+| Channel                      | Answers                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------- |
+| `launcher:choose-directory`  | the directory chosen, or `null` when cancelled (R3.1, R3.3)                        |
+| `launcher:open-directory`    | `{ kind: "opened", name }`, or `{ kind: "not-a-project", directory }` (R2.2, R2.4) |
+| `launcher:default-directory` | where a new project is proposed — a path, created by nothing (R3.4)                |
 
 `showOpenDialog` is injected into `createApi` as `chooseDirectory`, exactly the
 way `saveDialog` and `openWindow` already are: `dialog` lives in `index.ts` with

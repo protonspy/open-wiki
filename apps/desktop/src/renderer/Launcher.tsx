@@ -5,7 +5,7 @@ import type { KnownProject } from "../main/settings.js";
 import { bridge } from "./bridge.js";
 import { FirstRun } from "./FirstRun.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
-import { directoryAfterChoosing, openExisting } from "./open-existing.js";
+import { directoryAfterChoosing, directoryFor, openExisting } from "./open-existing.js";
 
 /**
  * The launcher (plan 8.4) — what `ow` run outside a project opens instead of
@@ -199,11 +199,37 @@ function NewProject({
   // is committed, so a guess here is paid for by whoever clones the project.
   const [harnesses, setHarnesses] = useState<Harness[]>([]);
   const [busy, setBusy] = useState(false);
+  /** Where new projects go unless somebody says otherwise (R3.4). */
+  const [defaultRoot, setDefaultRoot] = useState("");
+  /**
+   * Whether the directory is the user's answer rather than ours (R3.5).
+   *
+   * True from the start when R2.4 sent them here with a directory already
+   * chosen — that is emphatically their answer, and re-proposing over it would
+   * throw away the folder they just picked in the chooser.
+   */
+  const [touched, setTouched] = useState(startingDirectory !== "");
+
+  useEffect(() => {
+    void bridge()
+      .defaultDirectory()
+      .then(setDefaultRoot)
+      // No default is survivable: the field is still typeable and Choose… still
+      // works, which is R3.2. Failing the whole form over a suggestion is not.
+      .catch(() => setDefaultRoot(""));
+  }, []);
+
+  /** R3.4 — naming the project is the whole of saying where it goes. */
+  useEffect(() => {
+    setDirectory((current) => directoryFor(current, { defaultRoot, name, touched }));
+  }, [defaultRoot, name, touched]);
 
   /** R3.1 — and R3.3: a cancelled chooser leaves what is in the box alone. */
   const choose = useCallback(async () => {
     try {
       const chosen = await bridge().chooseDirectory();
+      if (chosen === null) return;
+      setTouched(true);
       setDirectory((current) => directoryAfterChoosing(current, chosen));
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
@@ -261,8 +287,13 @@ function NewProject({
           <input
             className="editor__source"
             value={directory}
-            placeholder="C:\projects\fenix"
-            onChange={(event) => setDirectory(event.target.value)}
+            placeholder={defaultRoot || "C:\\projects\\fenix"}
+            onChange={(event) => {
+              // Typing here is the user saying where (R3.5), including clearing
+              // it: an empty box they emptied is not an invitation to refill it.
+              setTouched(true);
+              setDirectory(event.target.value);
+            }}
           />
           <button type="button" onClick={() => void choose()} disabled={busy}>
             Choose…

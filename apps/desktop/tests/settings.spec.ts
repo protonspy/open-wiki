@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { isAbsolute, join, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readSecrets } from "@open-wiki/access/secrets";
 import { readSettings as currentSettings } from "@open-wiki/access";
@@ -12,6 +12,7 @@ import {
   createProject,
   credentialState,
   currentLanguage,
+  defaultProjectsDir,
   deriveProjectName,
   forgetProject,
   knownProjects,
@@ -539,6 +540,13 @@ describe("the launcher's two channels (R2.2, R2.4, R3.1, R3.3)", () => {
     expect(await dispatch(api, CHANNELS.chooseDirectory, [])).toBeNull();
   });
 
+  it("answers where a new project is proposed (R3.4)", async () => {
+    // Over a channel because the home directory is the main process's to know:
+    // a sandboxed renderer has no `os` and must not guess one.
+    const api = createApi({ projectRoot: null });
+    expect(await dispatch(api, CHANNELS.defaultDirectory, [])).toBe(defaultProjectsDir());
+  });
+
   it("opens a window on a chosen directory that is a project", async () => {
     const opened: string[] = [];
     const api = createApi({ projectRoot: null, openWindow: (r) => opened.push(r) });
@@ -563,6 +571,35 @@ describe("the launcher's two channels (R2.2, R2.4, R3.1, R3.3)", () => {
     } finally {
       rmSync(empty, { recursive: true, force: true });
     }
+  });
+});
+
+describe("defaultProjectsDir (R3.4)", () => {
+  it("proposes WikiProjects under the user's home directory", () => {
+    expect(defaultProjectsDir(join("C:", "Users", "prode"))).toBe(
+      join("C:", "Users", "prode", "WikiProjects"),
+    );
+  });
+
+  it("owns nothing — it names a path and does not create it", () => {
+    // `adr:0013` removed the container folder and this must not bring it back.
+    // A default that made a directory on startup would be the application
+    // owning a directory of projects again, which is the thing that was dropped.
+    const home = mkdtempSync(join(tmpdir(), "ow-home-"));
+    try {
+      defaultProjectsDir(home);
+      expect(existsSync(join(home, "WikiProjects"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("answers an absolute path when nobody says where home is", () => {
+    // The default argument is the process's own home, which is what the channel
+    // reaches. The machine running the suite decides the rest.
+    const answer = defaultProjectsDir();
+    expect(isAbsolute(answer)).toBe(true);
+    expect(answer.endsWith("WikiProjects")).toBe(true);
   });
 });
 
