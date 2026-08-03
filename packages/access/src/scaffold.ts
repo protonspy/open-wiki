@@ -51,15 +51,32 @@ export interface ScaffoldResult {
 }
 
 /**
- * True when the directory is empty or already looks like an open-wiki project
- * (it has `ow.json`, or both `raw/` and `wiki/`). Anything else is "occupied by
- * something else" and is refused.
+ * True when a project may be made in this directory
+ * (`specs/opening-an-existing-project`, R1.1): it is empty, it already looks
+ * like an open-wiki project — `ow.json`, or both `raw/` and `wiki/` — or it is a
+ * git repository. Anything else is "occupied by something else" and is refused.
+ *
+ * **The git case is the one this predicate was missing**, and the refusal has
+ * named it all along: `ow init` told the user to run it "in an empty directory,
+ * a git repo, or an existing open-wiki project" while nothing here read `.git`.
+ * The one instruction given to somebody who wants a wiki inside the repository
+ * they are already working in did not work.
+ *
+ * Requiring a repository rather than dropping the guard is what keeps the
+ * accident detectable. Scaffolding prints success, so a mistyped path would
+ * otherwise leave `raw/`, `wiki/`, `.state/` and a generated entry file
+ * somewhere nobody looks again; inside a repository `git status` shows exactly
+ * what arrived and `git clean` undoes it.
+ *
+ * `.git` is tested for presence rather than for being a directory — it is a file
+ * in a worktree and in a submodule, and both of those are still a repository.
  */
-function isEmptyOrProject(dir: string): boolean {
+function canScaffoldIn(dir: string): boolean {
   const entries = readdirSync(dir, { withFileTypes: true });
   if (entries.length === 0) return true;
   const names = new Set(entries.map((e) => e.name));
   if (names.has("ow.json")) return true;
+  if (names.has(".git")) return true;
   return names.has("raw") && names.has("wiki");
 }
 
@@ -74,7 +91,7 @@ export function scaffold(
   projectRoot: string,
   options: { refreshSkills?: boolean; harnesses?: readonly Harness[] } = {},
 ): ScaffoldResult {
-  if (existsSync(projectRoot) && !isEmptyOrProject(projectRoot)) {
+  if (existsSync(projectRoot) && !canScaffoldIn(projectRoot)) {
     throw new DirectoryOccupiedError(projectRoot);
   }
   mkdirSync(projectRoot, { recursive: true });

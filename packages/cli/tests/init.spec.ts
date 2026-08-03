@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectRegistry, readSettings } from "@open-wiki/access";
@@ -153,6 +153,57 @@ describe("ow init (9.3–9.5)", () => {
     expect(() => runInit({ projectRoot: root, name: "C:\\dev\\fenix" })).toThrow(
       /is not a valid project name/,
     );
+  });
+
+  // `specs/opening-an-existing-project`, R1.1. This command's own refusal has
+  // always named this case; until now it was the one instruction a user could
+  // follow and still be refused.
+  it("initialises inside a repository somebody is already working in", () => {
+    const repo = tempDir("ow-init-repo-");
+    try {
+      mkdirSync(join(repo, ".git"), { recursive: true });
+      writeFileSync(join(repo, "pyproject.toml"), "[project]\n", "utf8");
+      runInit({ projectRoot: repo, harnesses: ["claude"] });
+      expect(existsSync(join(repo, "wiki"))).toBe(true);
+      expect(existsSync(join(repo, "CLAUDE.md"))).toBe(true);
+      // The repository it was run in is still the repository it was run in.
+      expect(readFileSync(join(repo, "pyproject.toml"), "utf8")).toBe("[project]\n");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // R1.4 — the hazard R1.1 creates, and the reason it is not worth having
+  // without this. The people who use this product are the people who already
+  // have a `CLAUDE.md`.
+  it("keeps the CLAUDE.md a repository already had, and says that it did", () => {
+    const repo = tempDir("ow-init-claude-");
+    const mine = "# My own instructions\n\nNothing to do with open-wiki.\n";
+    try {
+      mkdirSync(join(repo, ".git"), { recursive: true });
+      writeFileSync(join(repo, "CLAUDE.md"), mine, "utf8");
+      const result = runInit({ projectRoot: repo, harnesses: ["claude"] });
+      expect(readFileSync(join(repo, "CLAUDE.md"), "utf8")).toBe(mine);
+      // Named, never silent: not writing without saying so is as confusing as
+      // overwriting.
+      expect(result.keptEntryFiles).toEqual([join(repo, "CLAUDE.md")]);
+      expect(result.entryFiles).toEqual([]);
+      // And the rest of the project is there — the wiki was still scaffolded.
+      expect(existsSync(join(repo, "wiki"))).toBe(true);
+      expect(existsSync(join(repo, ".claude", "skills", "wiki", "SKILL.md"))).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("still rewrites the entry file it wrote itself", () => {
+    // The other half of R1.4: keeping a foreign file must not stop a rule added
+    // in a later version from reaching a project made by an earlier one.
+    const first = runInit({ projectRoot: root, harnesses: ["claude"] });
+    expect(first.entryFiles).toEqual([join(root, "CLAUDE.md")]);
+    const second = runInit({ projectRoot: root, harnesses: ["claude"] });
+    expect(second.entryFiles).toEqual([join(root, "CLAUDE.md")]);
+    expect(second.keptEntryFiles).toEqual([]);
   });
 
   it("refuses a directory already occupied by something else, and says what to do", () => {

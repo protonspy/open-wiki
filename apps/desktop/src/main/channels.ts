@@ -63,6 +63,14 @@ export const CHANNELS = {
   createProject: "launcher:create",
   forgetProject: "launcher:forget",
   openProject: "launcher:open",
+  /**
+   * Opening a project this machine was never told about
+   * (`specs/opening-an-existing-project`, R2.1–R2.4, R3.1). Two channels rather
+   * than one: the chooser is also wanted on its own, by the form that already
+   * takes a directory.
+   */
+  chooseDirectory: "launcher:choose-directory",
+  openDirectory: "launcher:open-directory",
   saveCredentialFor: "launcher:credential",
   transcribe: "sources:transcribe",
 

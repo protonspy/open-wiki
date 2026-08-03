@@ -175,11 +175,24 @@ describe("the generated CLAUDE.md (9.4)", () => {
   });
 
   it("is written to the project root, and regenerated because it is generated", () => {
-    writeFileSync(join(root, "CLAUDE.md"), "stale, hand-edited\n", "utf8");
+    // Ours, so the language change reaches it: written once, then rewritten in
+    // another language. This is the path 8.12 depends on.
+    const file = writeClaudeMd(root, "en");
+    expect(file).toBe(join(root, "CLAUDE.md"));
+    expect(readFileSync(file, "utf8")).toContain("English");
+    expect(readFileSync(writeClaudeMd(root, "pt-BR"), "utf8")).toContain("Brazilian Portuguese");
+  });
+
+  it("keeps an entry file this product did not write", () => {
+    // `specs/opening-an-existing-project`, R1.4. This assertion used to be its
+    // opposite — a hand-edited `CLAUDE.md` was overwritten, "because it is
+    // generated" — and that was safe only while `ow init` refused every
+    // populated directory. R1.1 lifted that guard, so `ow init` now runs in
+    // repositories whose owners very often already have a `CLAUDE.md` of their
+    // own. Generated is not the same as ours.
+    writeFileSync(join(root, "CLAUDE.md"), "somebody's own convention\n", "utf8");
     const file = writeClaudeMd(root, "pt-BR");
     expect(file).toBe(join(root, "CLAUDE.md"));
-    const md = readFileSync(file, "utf8");
-    expect(md).not.toContain("stale, hand-edited");
-    expect(md).toContain("Brazilian Portuguese");
+    expect(readFileSync(file, "utf8")).toBe("somebody's own convention\n");
   });
 });

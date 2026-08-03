@@ -20,6 +20,7 @@ import type {
 import type { DropOutcome } from "../main/ingest.js";
 import type { RecorderStatus } from "../main/recorder.js";
 import type {
+  AdoptOutcome,
   CredentialCheck,
   CredentialState,
   KnownProject,
@@ -107,6 +108,13 @@ export interface OwBridge {
   forgetProject(name: string): Promise<void>;
   /** 6.3 — open a window on a known project, by name. */
   openProject(name: string): Promise<void>;
+  /**
+   * `specs/opening-an-existing-project` — a project this machine was never told
+   * about. R3.1 chooses the directory, R2.2 opens it, and R2.4 answers
+   * `not-a-project` so the create form can be offered on the same directory.
+   */
+  chooseDirectory(): Promise<string | null>;
+  openDirectory(directory: string): Promise<AdoptOutcome>;
   /** 6.3 — the first run configures the project it just made. */
   saveCredentialFor(name: string, input: SaveCredentialInput): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;

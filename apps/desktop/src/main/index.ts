@@ -166,6 +166,17 @@ function createWindow(projectRoot: string | null): BrowserWindow {
     // same way `openWindow` does, so `ipc.ts` stays a module a test can call
     // without a display.
     saveDialog: (options) => dialog.showSaveDialog(window, options),
+    // `specs/opening-an-existing-project`, R3.1. Modal on the window that asked,
+    // so the launcher cannot be clicked twice into two choosers.
+    chooseDirectory: async () => {
+      const chosen = await dialog.showOpenDialog(window, {
+        title: "Open a project",
+        // `openDirectory` alone: this is a project's folder, not a file in it.
+        properties: ["openDirectory"],
+      });
+      if (chosen.canceled) return null;
+      return chosen.filePaths[0] ?? null;
+    },
     // 7.4 — **reveal, not open.** `shell.showItemInFolder` selects the file in
     // the file manager; `shell.openPath` would invoke whatever handler its
     // extension is registered to, on bytes that arrived in an untrusted clone.

@@ -97,7 +97,14 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
             `  harnesses: ${result.harnesses.join(", ")}`,
             `  skills: written [${result.skills.written.join(", ")}] skipped [${result.skills.skipped.join(", ")}]`,
             `  gate: ${result.hooks.join(", ")}`,
-            `  entry: ${result.entryFiles.join(", ")}`,
+            result.entryFiles.length > 0 ? `  entry: ${result.entryFiles.join(", ")}` : "",
+            // R1.4 — named, never silent. A file we did not write is one this
+            // command left alone, and the user has to know their convention is
+            // still theirs *and* that ours is not there.
+            result.keptEntryFiles.length > 0
+              ? `  kept (not ours to overwrite): ${result.keptEntryFiles.join(", ")}\n` +
+                `    the convention is in the skills; point your entry file at .claude/skills/`
+              : "",
             result.registeredName ? `  registered as: ${result.registeredName}` : "",
             staleSkillsNotice(result.skills.outdated),
           ]

@@ -47,6 +47,7 @@ import {
   type InboxOutcome,
 } from "@open-wiki/access";
 import {
+  adoptProject,
   createProject,
   credentialState,
   parseCredentialInput,
@@ -61,6 +62,7 @@ import {
   settingsView,
   agentModels,
   selectAgentModel,
+  type AdoptOutcome,
   type CredentialCheck,
   type CredentialState,
   type KnownProject,
@@ -158,6 +160,14 @@ export interface Deps {
    * absent is also the honest answer for a process with no window to ask from.
    */
   saveDialog?: SaveDialog;
+  /**
+   * The system directory chooser (`specs/opening-an-existing-project`, R3.1).
+   *
+   * Injected for the same reason `saveDialog` is. Answers the directory chosen,
+   * or `null` when the user cancelled — which R3.3 makes a real answer rather
+   * than a failure: cancelling leaves whatever directory was already there.
+   */
+  chooseDirectory?: () => Promise<string | null>;
   /** Injected so a test does not depend on today's date. */
   now?: () => Date;
 }
@@ -287,6 +297,16 @@ export interface DesktopApi {
   ): KnownProject;
   forgetProject(name: string): void;
   openProject(name: string): void;
+  /** Choose a directory, or `null` if the chooser was cancelled (R3.1, R3.3). */
+  chooseDirectory(): Promise<string | null>;
+  /**
+   * Open a directory the user chose (R2.2, R2.4).
+   *
+   * Answers what happened rather than throwing for the ordinary case: a
+   * directory that is not a project is a step on the way to creating one, not a
+   * failure.
+   */
+  openDirectory(directory: string): AdoptOutcome;
   saveCredentialFor(name: string, input: unknown): Promise<CredentialCheck>;
   transcribe(id: string, restart?: boolean): Promise<TranscribeOutcome>;
 
@@ -454,6 +474,23 @@ export function createApi(deps: Deps): DesktopApi {
       if (!deps.openWindow) throw new Error("this build cannot open a window");
       deps.openWindow(path);
     },
+    async chooseDirectory() {
+      // Absent is not an error. A build with no window to ask from answers "no
+      // directory", which is the same answer cancelling gives — and R3.2 keeps
+      // the typed field working in both cases.
+      if (!deps.chooseDirectory) return null;
+      return deps.chooseDirectory();
+    },
+    openDirectory: (directory) => {
+      const outcome = adoptProject(directory);
+      if (outcome.kind !== "adopted") return outcome;
+      // Through the registry, like every other open: `openProject` resolves the
+      // name it was just given, so a window is opened on what the registry says
+      // rather than on the string the renderer sent.
+      if (!deps.openWindow) throw new Error("this build cannot open a window");
+      deps.openWindow(projectPath(outcome.project.name));
+      return outcome;
+    },
     saveCredentialFor: async (name, input) => {
       const parsed = parseCredentialInput(input);
       if (!parsed) return { ok: false, reason: "that is not a provider this application knows" };
@@ -588,6 +625,10 @@ export async function dispatch(
       return api.forgetProject(String(args[0] ?? ""));
     case CHANNELS.openProject:
       return api.openProject(String(args[0] ?? ""));
+    case CHANNELS.chooseDirectory:
+      return api.chooseDirectory();
+    case CHANNELS.openDirectory:
+      return api.openDirectory(String(args[0] ?? ""));
     case CHANNELS.saveCredentialFor:
       return api.saveCredentialFor(String(args[0] ?? ""), args[1]);
     case CHANNELS.transcribe:

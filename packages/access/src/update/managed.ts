@@ -211,7 +211,16 @@ export function planUpdate(
   };
 }
 
-function outcomeOf(
+/**
+ * What one managed file is, right now.
+ *
+ * Exported because **`writeEntryFiles` has to ask the same question before it
+ * writes** (`specs/opening-an-existing-project`, R1.4). A second classifier
+ * beside this one is the bug this file already warns about twice: the read that
+ * decides and the write that acts have to resolve the same path the same way,
+ * or one file is classified and another is rewritten.
+ */
+export function outcomeOf(
   projectRoot: string,
   rel: string,
   would: string,
