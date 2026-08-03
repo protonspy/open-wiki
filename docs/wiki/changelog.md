@@ -2,6 +2,15 @@
 
 What changed in the wiki, newest first.
 
+## 2026-08-03
+
+- Added [[what-a-harness-loads]], read from each harness own source for task 1.1 of
+  `plans/harness-portability.md`. It carries two findings that reach the plan. **The gate
+  does not degrade**: Codex has `PreToolUse` with `should_block` and names `apply_patch` in
+  the blocked path, and opencode can refuse through `permission.ask` — what varies is the
+  mechanism, not whether one exists. And **two of the three read `CLAUDE.md`**, so a project
+  scaffolded for more than one harness can load the same convention twice under two names.
+
 ## 2026-08-01
 
 - Updated [[claude-code-plugins]] for the CLI's published name. npm refused `open-wiki` as
