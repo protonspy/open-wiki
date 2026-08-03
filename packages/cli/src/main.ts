@@ -93,7 +93,7 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
             `scaffolded ${result.projectRoot}`,
             `  harnesses: ${result.harnesses.join(", ")}`,
             `  skills: written [${result.skills.written.join(", ")}] skipped [${result.skills.skipped.join(", ")}]`,
-            `  hooks: ${result.hooks}`,
+            `  gate: ${result.hooks.join(", ")}`,
             `  entry: ${result.entryFiles.join(", ")}`,
             result.registeredName ? `  registered as: ${result.registeredName}` : "",
             staleSkillsNotice(result.skills.outdated),

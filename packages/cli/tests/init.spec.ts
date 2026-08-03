@@ -51,7 +51,8 @@ describe("ow init (9.3–9.5)", () => {
     for (const dir of ["raw", "wiki", ".state"]) {
       expect(existsSync(join(root, dir)), dir).toBe(true);
     }
-    expect(existsSync(result.hooks)).toBe(true);
+    expect(result.hooks).toHaveLength(1);
+    expect(existsSync(result.hooks[0]!)).toBe(true);
     expect(result.entryFiles).toHaveLength(1);
     expect(existsSync(result.entryFiles[0]!)).toBe(true);
     // No `--name`, so nothing was registered.

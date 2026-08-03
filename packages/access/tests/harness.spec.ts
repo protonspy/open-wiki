@@ -91,6 +91,23 @@ describe("what each harness loads", () => {
     expect(profileFor("codex").gate?.mechanism).toBe("hook");
     expect(profileFor("opencode").gate?.mechanism).toBe("plugin");
   });
+
+  it("says which gate can complete a page and which can only refuse one", () => {
+    // Pinned by name, against the ground truth rather than against another
+    // module. `render.spec.ts` asserts the entry file *agrees* with these flags,
+    // which would stay green if one were flipped the wrong way — it would
+    // simply find the text newly consistent with wrong data. This is the test
+    // that goes red for that, and a review asked for it by exactly that
+    // argument.
+    //
+    // Claude Code's `PreToolUse` receives the whole `content` and can answer
+    // `updatedInput`, so the store completes a page before the write lands.
+    // Codex's `apply_patch` carries a patch, and opencode's `permission.ask`
+    // carries only paths — neither has content to complete.
+    expect(profileFor("claude").gate?.completes).toBe(true);
+    expect(profileFor("codex").gate?.completes).toBe(false);
+    expect(profileFor("opencode").gate?.completes).toBe(false);
+  });
 });
 
 describe("no profile names another harness's directory", () => {

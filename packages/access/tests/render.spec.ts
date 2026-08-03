@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { HARNESSES, profileFor, profilesFor, type Harness } from "../src/harness.js";
-import { renderConvention, renderEntryFiles, renderSkills } from "../src/render.js";
+import {
+  GATES_INSTALLED,
+  renderConvention,
+  renderEntryFiles,
+  renderSkills,
+} from "../src/render.js";
 
 /**
  * 2.2, written before the renderer existed and watched fail.
@@ -174,27 +179,51 @@ describe("renderEntryFiles", () => {
   it("does not claim a gate this build has not installed", () => {
     // The requirement, from `adr:0024` and task 3.2: a user who believes they
     // are protected and is not is worse off than one who knows they are not.
-    // `writeHooks` writes `.claude/hooks/hooks.json` and nothing else, so only
-    // Claude Code may be described as gated. Asserted against what is installed,
-    // not against what `gateParagraph` happens to emit — the first version of
-    // this test asserted the latter and locked in a false claim.
-    for (const h of ["codex", "opencode"] as const) {
+    //
+    // Asserted against **what is installed** rather than against what
+    // `gateParagraph` happens to emit. The first version compared the text to
+    // itself and locked in a claim that was false for two harnesses for a whole
+    // group; this one goes red the moment a profile gains a gate nothing writes.
+    for (const h of HARNESSES) {
       const body = Object.values(renderEntryFiles(profilesFor([h]), "en")).join("\n");
-      expect(body, `${h} has no gate installed and must say so`).toContain(
-        "no gate is installed yet",
-      );
-      expect(body).not.toContain("refuses a bad page before the write lands.");
+      if (GATES_INSTALLED.includes(h)) {
+        expect(body, `${h}'s gate is installed and must be described`).not.toContain(
+          "no gate is installed yet",
+        );
+        expect(body).toContain("refuses a bad page");
+      } else {
+        expect(body, `${h} has no gate installed and must say so`).toContain(
+          "no gate is installed yet",
+        );
+      }
     }
-    const claude = Object.values(renderEntryFiles(profilesFor(["claude"]), "en")).join("\n");
-    expect(claude).toContain("refuses a bad page before the write lands");
-    expect(claude).not.toContain("no gate is installed yet");
   });
 
-  it("tells a multi-harness project which of its harnesses is actually gated", () => {
-    // The dangerous case: one file serving two harnesses, one gated and one not.
+  it("says which gates complete a page and which only refuse one", () => {
+    // The asymmetry a Codex or opencode user actually feels. Nothing
+    // unvalidated reaches `wiki/` under any harness, but under two of them
+    // `ow write` is how a page lands rather than one way among several — a
+    // convention leaving that to be discovered from a denial would be
+    // technically true and practically a trap.
+    for (const h of HARNESSES) {
+      const gate = profileFor(h).gate;
+      if (!gate || !GATES_INSTALLED.includes(h)) continue;
+      const body = Object.values(renderEntryFiles(profilesFor([h]), "en")).join("\n");
+      if (gate.completes) {
+        expect(body, `${h} completes a page`).toContain("is completed");
+        expect(body).not.toContain("It refuses; it does not complete");
+      } else {
+        expect(body, `${h} only refuses`).toContain("It refuses; it does not complete");
+      }
+    }
+  });
+
+  it("tells a multi-harness project the regime of each of its harnesses", () => {
+    // The dangerous case: one file serving two harnesses whose regimes differ.
     // A single sentence for both would be wrong about exactly one of them.
     const body = renderEntryFiles(profilesFor(["claude", "codex"]), "en")["AGENTS.md"]!;
-    expect(body).toContain("no gate is installed yet");
+    expect(body).toContain("Codex");
+    expect(body).toContain("It refuses; it does not complete");
   });
 
   it("carries the configured content language", () => {

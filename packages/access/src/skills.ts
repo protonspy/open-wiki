@@ -21,7 +21,7 @@ import { renderSkills } from "./render.js";
  * The `open-wiki-version` frontmatter marker lets `ow init` report staleness
  * instead of overwriting — the open question in that record.
  */
-export const SKILLS_VERSION = "0.4.0";
+export const SKILLS_VERSION = "0.5.0";
 
 export const WIKI_SKILL_BODY = `---
 name: wiki
@@ -130,6 +130,19 @@ Run this loop until \`ow source list --unprocessed\` comes back empty:
 
 3. **Write the pages**, by the rules above, citing the source at the places the
    claims come from.
+
+   **How a page lands depends on the harness, and the entry file at the project
+   root says which regime this project is under.** Under some, editing the file
+   directly is enough: the gate validates what you wrote and fills the fields
+   the store owns before the write lands. Under others the gate can refuse but
+   cannot *complete* — what it is handed carries no page content it could fill
+   in — so a direct edit under \`wiki/\` is denied, and this is the way:
+
+       ow write wiki/fenix.md --file <the file you wrote>
+
+   \`ow write\` validates and completes under every harness, and is never the
+   wrong answer. If a direct edit is refused, that is the regime rather than a
+   mistake, and the refusal says which.
 
 4. **Say what it was, and that you are done with it** — in that order, in the
    same breath:

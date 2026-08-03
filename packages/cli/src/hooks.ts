@@ -2,9 +2,17 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { basename, join, relative, resolve } from "node:path";
 import {
   appendOperation,
+  configWriteReason,
   formatDenial,
+  OutsideProjectError,
+  assertWithin,
   gateWrite,
+  gatedPageRel,
+  resolveReal,
+  isConfigWrite,
+  looksLikePatch,
   pagesEqual,
+  patchPaths,
   readFrontmatter,
   recordWrite,
   registerInIndex,
@@ -123,6 +131,99 @@ export function detectShellWrite(command: string, _projectRoot: string): string 
   return null;
 }
 
+/** A denial, in the one envelope both Claude Code and Codex read. */
+function deny(reason: string): HookOutput {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: reason,
+    },
+  };
+}
+
+/**
+ * Codex's `apply_patch`, which is how Codex edits a file (3.1).
+ *
+ * **This gate refuses; it does not complete.** Under Claude Code the hook
+ * receives the whole `content` and answers `updatedInput` with the frontmatter
+ * the store owns filled in, so a page lands valid. A patch carries neither:
+ * `tool_input` is `{ command: <patch text> }`, and reconstructing the resulting
+ * file would mean applying the patch here — then handing back a *rewritten
+ * patch* whose context lines no longer match what the agent computed them
+ * against. That is a machine for producing patches that fail to apply, and it
+ * would fail *after* the gate said allow.
+ *
+ * So the honest Codex regime is: **the gate stops a bad page landing, and
+ * `ow write` is how a good one lands.** That is not a lesser gate — nothing
+ * unvalidated reaches `wiki/` either way — it is a different workflow, and the
+ * generated `AGENTS.md` says so rather than leaving a Codex user to discover it
+ * from a refusal.
+ *
+ * A patch this cannot parse is refused too. An unreadable patch is *unknown*,
+ * never "touches nothing", and a guard that fails open on malformed input is
+ * one that is stepped around with malformed input.
+ */
+function preApplyPatch(
+  tool_input: Record<string, unknown>,
+  projectRoot: string,
+): HookOutput | null {
+  const command = typeof tool_input["command"] === "string" ? tool_input["command"] : "";
+  if (!command) return null;
+
+  if (!looksLikePatch(command)) {
+    // Not the envelope Codex documents. Refusing on the guess that it might
+    // still be a patch would deny every unrelated custom tool call; letting it
+    // through is what the shape says it is.
+    return null;
+  }
+
+  const paths = patchPaths(command);
+  if (paths.length === 0) {
+    return deny(
+      "open-wiki: this patch could not be read, so what it would touch is unknown. " +
+        "Write pages with `ow write <path> --file <file>`, which validates them.",
+    );
+  }
+
+  // **Resolve before classifying, exactly as `gateWrite` does.** A path is not
+  // a string: `src/../wiki/evil.md` does not start with `wiki/` and lands in it
+  // anyway, and a first version of this arm classified the raw parser output
+  // with a `startsWith` of its own. A security review wrote the patch that
+  // walked straight through it.
+  //
+  // So this reuses the audited pair rather than reimplementing them —
+  // `assertWithin` for confinement and real-path resolution, `gatedPageRel` for
+  // what counts as a page — and its answers are the same ones the `Write`/`Edit`
+  // arm gives. Two classifiers for one question is how they come to disagree.
+  const realRoot = resolveReal(projectRoot);
+  const pages: string[] = [];
+  for (const raw of paths) {
+    let landsAt: string;
+    try {
+      landsAt = assertWithin(projectRoot, resolve(projectRoot, raw));
+    } catch (e) {
+      // `allow` is "no opinion", never "write anywhere" — `gateWrite`'s own
+      // rule, and a patch escaping the project is the case it was written for.
+      if (e instanceof OutsideProjectError) return deny(e.message);
+      throw e;
+    }
+    // The gate's own configuration first, for every harness (`adr:0013`, 3.3).
+    // A patch that edits away the gate reads as documentation in review.
+    if (isConfigWrite(landsAt, realRoot)) return deny(configWriteReason(raw));
+    if (gatedPageRel(projectRoot, landsAt)) pages.push(raw);
+  }
+
+  if (pages.length === 0) return null;
+
+  return deny(
+    `open-wiki: ${pages.join(", ")} ${pages.length === 1 ? "is a wiki page" : "are wiki pages"}, ` +
+      "and a patch carries no content this gate can validate or complete. " +
+      "Write it with `ow write <path> --file <file>` — the store checks the schema and fills " +
+      "the fields it owns. This is the documented path under every harness.",
+  );
+}
+
 export function runPreToolUse(
   input: PreToolUseInput,
   projectRoot: string,
@@ -144,6 +245,11 @@ export function runPreToolUse(
     }
     return null;
   }
+
+  // Codex edits files with `apply_patch`, whose hook input is command-shaped:
+  // `{ command: "<the raw patch text>" }`. There is no `file_path` to read and
+  // no resulting content to validate, so this arm answers on paths alone.
+  if (tool_name === "apply_patch") return preApplyPatch(tool_input, projectRoot);
 
   if (tool_name !== "Write" && tool_name !== "Edit") return null;
 

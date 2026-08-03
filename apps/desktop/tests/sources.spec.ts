@@ -767,30 +767,30 @@ describe("group 7, after review", () => {
 
   it("counts what it did not show, including inside a directory past the cap (7.5)", () => {
     // Skipping an over-cap directory outright meant none of its descendants
-    // were ever counted, so `truncated` said 1 where the answer was 501 — a
+    // were ever counted, so `truncated` said 1 where the answer was 6 — a
     // number whose only job is to be right about what was not shown.
+    //
+    // **Through the injected cap, not the real one.** This wrote 2,500 files to
+    // reach `MAX_BROWSE_ENTRIES`, which took ~800ms locally and 8s, then 37s, on
+    // the Windows CI runner under coverage — variance that made a timeout a
+    // guess rather than a fix. `browseSource`'s own comment already said why the
+    // bounds are injectable: "so the suite does not write forty thousand files
+    // to prove arithmetic". This test was the one that ignored it. The logic
+    // exercised is identical — a directory whose contents fall past the cap —
+    // and `caps what the real product enforces` below still pins the constants.
     source("many.zip", { text: false });
     const contents = join(root, "raw", "many.zip", "contents");
     mkdirSync(contents, { recursive: true });
-    for (let i = 0; i < MAX_BROWSE_ENTRIES; i++) {
-      writeFileSync(join(contents, `f${String(i).padStart(5, "0")}.txt`), "x");
-    }
+    for (let i = 0; i < 4; i++) writeFileSync(join(contents, `f${i}.txt`), "x");
     const deeper = join(contents, "zzz-more");
     mkdirSync(deeper, { recursive: true });
-    for (let i = 0; i < 500; i++) writeFileSync(join(deeper, `g${i}.txt`), "x");
+    for (let i = 0; i < 5; i++) writeFileSync(join(deeper, `g${i}.txt`), "x");
 
-    const browse = browseSource(root, "many.zip");
-    expect(browse.entries).toHaveLength(MAX_BROWSE_ENTRIES);
-    // 1 for the directory itself plus its 500 files.
-    expect(browse.truncated).toBe(501);
-    // 2,500 synchronous file writes: ~800ms on a developer's machine and ~8s on
-    // the Windows CI runner under V8 coverage instrumentation, which crossed the
-    // 5s default and reddened a branch that had changed nothing on this path.
-    // The assertions are untouched — only the clock is, and 15s is the same
-    // allowance `wiring.spec.ts` and `socket.spec.ts` already give their slow
-    // cases. The cost is inherent to what the test is for: the bug it guards
-    // only appears past the cap, so the files have to actually exist.
-  }, 15_000);
+    const browse = browseSource(root, "many.zip", { entries: 4 });
+    expect(browse.entries).toHaveLength(4);
+    // 1 for the directory itself plus its 5 files.
+    expect(browse.truncated).toBe(6);
+  });
 
   it("keeps the original date when a source is marked twice (7.1)", () => {
     // `runSourceMark`'s contract, and this is "the same act through the other

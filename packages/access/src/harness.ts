@@ -57,6 +57,25 @@ export interface GateProfile {
    * not is worse off than someone who knows they are not.
    */
   readonly describes: string;
+  /**
+   * Whether this gate can *complete* a page as well as refuse one.
+   *
+   * Claude Code's `PreToolUse` receives the whole `content` and can answer
+   * `updatedInput`, so the store fills the frontmatter it owns and the page
+   * lands valid. Neither of the others can. Codex's `apply_patch` carries a
+   * patch rather than a file, and handing back a rewritten patch would mean
+   * context lines that no longer match what the agent computed them against —
+   * a machine for producing patches that fail to apply, *after* the gate said
+   * allow. opencode's `permission.ask` sees the paths a tool wants and not the
+   * content at all.
+   *
+   * **The refusal is the same strength everywhere; the convenience is not.**
+   * Nothing unvalidated reaches `wiki/` under any of them. Under two of them
+   * `ow write` is how a page lands rather than one way among several, and that
+   * is a real difference in what a user does day to day — so the convention
+   * text says it rather than letting them discover it from a denial.
+   */
+  readonly completes: boolean;
 }
 
 export interface HarnessProfile {
@@ -86,6 +105,7 @@ const CLAUDE: HarnessProfile = {
     // from its settings file. See `install.ts` for the whole account.
     configFile: ".claude/settings.json",
     describes: "a PreToolUse hook that refuses a bad page before the write lands",
+    completes: true,
   },
 };
 
@@ -109,6 +129,8 @@ const CODEX: HarnessProfile = {
     mechanism: "hook",
     configFile: ".codex/hooks.json",
     describes: "a PreToolUse hook that refuses a bad page before the write lands",
+    // `apply_patch` carries a patch, not a file. See `GateProfile.completes`.
+    completes: false,
   },
 };
 
@@ -130,6 +152,7 @@ const OPENCODE: HarnessProfile = {
     mechanism: "plugin",
     configFile: ".opencode/plugin/open-wiki.ts",
     describes: "a plugin that refuses a bad page through permission.ask before the write lands",
+    completes: false,
   },
 };
 

@@ -12,7 +12,7 @@ import {
   type ScaffoldSkillsResult,
   type StaleSkill,
 } from "@open-wiki/access";
-import { writeEntryFiles, writeHooks } from "../install.js";
+import { writeEntryFiles, writeGate } from "../install.js";
 
 export interface InitOptions {
   projectRoot?: string;
@@ -32,7 +32,8 @@ export interface InitOptions {
 export interface InitResult {
   projectRoot: string;
   skills: ScaffoldSkillsResult;
-  hooks: string;
+  /** The gate files written, one per harness that has an interception. */
+  hooks: string[];
   /** The entry files written, one per distinct filename these harnesses need. */
   entryFiles: string[];
   /** What the project records after this run. */
@@ -111,7 +112,11 @@ export function runInit(opts: InitOptions): InitResult {
     writeSettings(projectRoot, { ...current, language });
   }
   const entryFiles = writeEntryFiles(projectRoot, language, harnesses);
-  const hooks = writeHooks(projectRoot).written;
+  // Only the harnesses this project carries (3.1). This was `writeHooks`
+  // unconditionally, so a Codex-only project got a `.claude/settings.json`
+  // written into it — a file for a harness nobody asked for, which is the
+  // mirror image of the bug this plan exists to end.
+  const hooks = writeGate(projectRoot, harnesses).written;
 
   let registeredName: string | undefined;
   if (opts.name) {

@@ -211,7 +211,7 @@ function skillList(sharing: readonly HarnessProfile[]): string {
  * Group 3.1 extends this list in the same commit that starts writing those
  * files. It is one line so that the text and the fact cannot drift.
  */
-const GATES_INSTALLED: readonly Harness[] = ["claude"];
+export const GATES_INSTALLED: readonly Harness[] = ["claude", "codex", "opencode"];
 
 /**
  * What this project's write gate is, in the words of the profile.
@@ -228,7 +228,9 @@ const GATES_INSTALLED: readonly Harness[] = ["claude"];
 function gateParagraph(sharing: readonly HarnessProfile[]): string {
   const lines = sharing.map((p) => {
     if (p.gate && GATES_INSTALLED.includes(p.id)) {
-      return `- **${p.label}** — ${p.gate.describes}. A page that breaks the schema is refused with a reason; fix it and write again.`;
+      return p.gate.completes
+        ? `- **${p.label}** — ${p.gate.describes}. A page that breaks the schema is refused with a reason, and one that is merely incomplete is completed: the store fills the fields it owns before the write lands.`
+        : `- **${p.label}** — ${p.gate.describes}. **It refuses; it does not complete.** What it is handed carries no page content it could fill in — a patch, or a path — so a direct edit under \`wiki/\` is denied and the denial says this. Write pages with \`ow write <path> --file <file>\`, which validates and completes them.`;
     }
     if (p.gate) {
       return `- **${p.label}** — **no gate is installed yet.** This harness can refuse a write (${p.gate.configFile}), and this build does not scaffold it. Nothing stops a bad page landing here: write through \`ow write\`, which validates, and \`ow check\` reports what got past.`;
