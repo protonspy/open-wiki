@@ -9,6 +9,7 @@ import {
   creationScreenFor,
   directoryAfterChoosing,
   directoryFor,
+  kebabCase,
   openExisting,
   type CreationScreen,
 } from "./open-existing.js";
@@ -278,10 +279,18 @@ function NewProject({
     }
   }, [onError]);
 
+  /**
+   * What this project is actually called (R3.6).
+   *
+   * The registry takes letters, digits, dot, dash and underscore — so `test 123`
+   * was refused after the path beside it had already been proposed as
+   * `…\test-123`, which is the form saying one thing and doing another.
+   */
+  const projectName = kebabCase(name);
+
   const create = useCallback(async () => {
-    const trimmedName = name.trim();
     const trimmedDirectory = directory.trim();
-    if (!trimmedName || !trimmedDirectory) {
+    if (!projectName || !trimmedDirectory) {
       onError("a project needs a name and a directory");
       return;
     }
@@ -293,14 +302,14 @@ function NewProject({
     try {
       // Through the scaffolder of 2.1, the same one `ow init` and the first run
       // use — so a project is the same project whichever door it came through.
-      await bridge().createProject(trimmedName, trimmedDirectory, language, harnesses);
+      await bridge().createProject(projectName, trimmedDirectory, language, harnesses);
       onCreated();
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [name, directory, language, harnesses, onCreated, onError]);
+  }, [projectName, directory, language, harnesses, onCreated, onError]);
 
   return (
     <section className="launcher__new">
@@ -321,6 +330,13 @@ function NewProject({
           onChange={(event) => setName(event.target.value)}
         />
       </label>
+      {/* R3.6 — said before it happens rather than discovered afterwards. */}
+      {projectName && projectName !== name.trim() ? (
+        <p className="empty">
+          Created as <code>{projectName}</code> — the name is an identifier, so it takes the same
+          shape as the folder.
+        </p>
+      ) : null}
       <label>
         Directory
         {/* R3.1 and R3.2 together: the chooser for the ordinary case, the box

@@ -38,3 +38,8 @@
 - [x] 7.1 (Unit) Show the list and both doors on an empty registry, reaching the guided first run from **New project** — R2.1, R2.7
 - [x] 7.2 (Unit) Take the second Open door back out of the first run, leaving it the steps that create — R2.7
 - [x] 7.3 (Unit) Name the proposed folder in kebab-case — R3.4
+
+## 8 · The name the registry will take
+
+- [x] 8.1 (Unit) Create under the kebab-case of the typed name on both doors, using the one name for creating, storing the credential and opening — R3.6
+- [x] 8.2 (Unit) Show which name will be used, while it can still be changed — R3.6

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { bridge } from "./bridge.js";
 import { canLeave, nextStep, STEPS, stepNumber, type StepId } from "./first-run.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
-import { directoryAfterChoosing, directoryFor } from "./open-existing.js";
+import { directoryAfterChoosing, directoryFor, kebabCase } from "./open-existing.js";
 import { Button } from "./ui/Button.js";
 import { Segmented } from "./ui/Segmented.js";
 
@@ -60,6 +60,17 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
     setDirectory((current) => directoryFor(current, { defaultRoot, name, touched }));
   }, [defaultRoot, name, touched]);
 
+  /**
+   * What this project is actually called (R3.6).
+   *
+   * **Derived once and used by all three calls below**, because they address the
+   * project by name: creating it, storing its credential, and opening it. Two of
+   * them resolving a name the registry never got is not a cosmetic bug — the
+   * credential would be stored against nothing and the window would refuse to
+   * open, on the last step of somebody's first run.
+   */
+  const projectName = kebabCase(name);
+
   /** Step 2 → the project exists. Everything after it configures that project. */
   const create = useCallback(async () => {
     setBusy(true);
@@ -67,14 +78,14 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
     try {
       // Through the scaffolder of 2.1 — the same one `ow init` and the launcher
       // use, so a project is the same project whichever door it came through.
-      await bridge().createProject(name.trim(), directory.trim(), language, harnesses);
+      await bridge().createProject(projectName, directory.trim(), language, harnesses);
       setStep("transcription");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [name, directory, language, harnesses]);
+  }, [projectName, directory, language, harnesses]);
 
   /** R3.1, and R3.3: a cancelled chooser leaves what is in the box alone. */
   const chooseDirectory = useCallback(async () => {
@@ -96,7 +107,7 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
     setBusy(true);
     setError(null);
     try {
-      const result = await bridge().saveCredentialFor(name.trim(), {
+      const result = await bridge().saveCredentialFor(projectName, {
         provider,
         ...(provider === "groq" ? { apiKey: key } : {}),
       });
@@ -115,16 +126,16 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
     } finally {
       setBusy(false);
     }
-  }, [name, provider, key]);
+  }, [projectName, provider, key]);
 
   const open = useCallback(async () => {
     try {
-      await bridge().openProject(name.trim());
+      await bridge().openProject(projectName);
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [name, onDone]);
+  }, [projectName, onDone]);
 
   return (
     <section className="first-run">
@@ -146,6 +157,15 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
               onChange={(e) => setName(e.target.value)}
             />
           </label>
+          {/* R3.6 — said before it happens, not discovered afterwards. The name
+              is an identifier: it keys the registry, `.mcp.json` and every
+              `ow` that resolves this project by name. */}
+          {projectName && projectName !== name.trim() ? (
+            <p className="empty">
+              Created as <code>{projectName}</code> — the name is an identifier, so it takes the
+              same shape as the folder.
+            </p>
+          ) : null}
           <label className="field">
             Directory
             {/* `specs/opening-an-existing-project`, R3.1 — wherever a directory
@@ -242,7 +262,7 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
         {step === "project" ? (
           <Button
             variant="primary"
-            disabled={!canLeave("project", { name, directory, harnesses })}
+            disabled={!canLeave("project", { name: projectName, directory, harnesses })}
             onClick={() => setStep(nextStep("project") ?? "done")}
           >
             Next
@@ -252,7 +272,7 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
         {step === "harness" ? (
           <Button
             variant="primary"
-            disabled={!canLeave("harness", { name, directory, harnesses })}
+            disabled={!canLeave("harness", { name: projectName, directory, harnesses })}
             onClick={() => setStep(nextStep("harness") ?? "done")}
           >
             Next

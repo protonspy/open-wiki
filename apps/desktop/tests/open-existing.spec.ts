@@ -240,6 +240,34 @@ describe("the launcher offers both doors (R2.1, R3.1)", () => {
     }
   });
 
+  it("creates under the kebab-case of the typed name, on both doors (R3.6)", () => {
+    // `test 123` proposed `…\test-123` and was then refused by the registry —
+    // a form saying one thing and doing another. The name is an identifier: it
+    // keys the registry, `.mcp.json` names it, and `ow` resolves projects by it.
+    for (const source of [launcher, firstRun]) {
+      expect(source).toMatch(/kebabCase\(name\)/);
+      expect(source).toMatch(/createProject\(projectName/);
+      // Never the raw box — that is the call that threw.
+      expect(source).not.toMatch(/createProject\(name\.trim\(\)/);
+    }
+  });
+
+  it("addresses the project by one name through the whole first run (R3.6)", () => {
+    // Creating, storing the credential and opening all name the project. Two of
+    // them resolving a name the registry never got is not cosmetic: the
+    // credential would be stored against nothing and the window would refuse to
+    // open, on the last step of somebody's first run.
+    expect(firstRun).toMatch(/saveCredentialFor\(projectName/);
+    expect(firstRun).toMatch(/openProject\(projectName\)/);
+  });
+
+  it("says which name it will use, while it can still be changed", () => {
+    for (const source of [launcher, firstRun]) {
+      expect(source).toMatch(/Created as/);
+      expect(source).toMatch(/projectName !== name\.trim\(\)/);
+    }
+  });
+
   it("takes on what is already in the default location before listing (R2.6)", () => {
     // `knownProjects` renders the registry as it stands; `discoverProjects`
     // fills it from the default location first. A project cloned straight into

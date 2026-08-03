@@ -93,8 +93,23 @@ describe("the first run, as it ships (6.3)", () => {
   it("names the project and never its path", () => {
     // 2.2 and 8.2's rule: the registry resolves a name, refuses an unknown one,
     // and degrades to a refusal for a directory that moved.
-    expect(source).toContain("saveCredentialFor(name.trim()");
-    expect(source).toContain("openProject(name.trim())");
+    //
+    // This asserted the literal `name.trim()` until R3.6 made a project's name
+    // the kebab-case of what was typed. That string was a proxy for the rule
+    // rather than the rule, so what is asserted now is the rule: both address
+    // the project by name, and the directory reaches neither.
+    expect(source).toContain("saveCredentialFor(projectName");
+    expect(source).toContain("openProject(projectName)");
+    expect(source).not.toMatch(/saveCredentialFor\(directory/);
+    expect(source).not.toMatch(/openProject\(directory/);
+  });
+
+  it("uses one name for creating, configuring and opening (R3.6)", () => {
+    // Three calls name the same project. Two of them resolving a name the
+    // registry never got would store the credential against nothing and refuse
+    // to open the window, on the last step of somebody's first run.
+    expect(source).toContain("const projectName = kebabCase(name)");
+    expect(source).toContain("createProject(projectName");
   });
 
   it("says what skipping means rather than calling it Cancel", () => {
