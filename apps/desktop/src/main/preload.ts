@@ -47,6 +47,8 @@ const api = {
   sourceDetail: (id: string) => ipcRenderer.invoke(CHANNELS.sourceDetail, id),
   sourcesOfPage: (slug: string) => ipcRenderer.invoke(CHANNELS.sourcesOfPage, slug),
   retitle: (id: string, title: string) => ipcRenderer.invoke(CHANNELS.retitle, id, title),
+  replaceWord: (page: string, avoid: string, use: string) =>
+    ipcRenderer.invoke(CHANNELS.replaceWord, page, avoid, use),
   markSource: (id: string, processed: boolean) =>
     ipcRenderer.invoke(CHANNELS.markSource, id, processed),
   browseSource: (id: string) => ipcRenderer.invoke(CHANNELS.browseSource, id),

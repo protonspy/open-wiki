@@ -4,6 +4,7 @@ import {
   type Language,
   type Operation,
   type ProjectSettings,
+  type ReplaceResult,
 } from "@open-wiki/access";
 import type { Finding, SourceState } from "@open-wiki/access/read";
 import type { PageView, ProjectInfo, WikiIndex } from "./api.js";
@@ -24,6 +25,7 @@ import {
   renamePage,
   retitleSource,
   markSourceProcessed,
+  replaceWord,
   savePage,
   savePageToday,
   undoOperation,
@@ -212,6 +214,7 @@ export interface DesktopApi {
 
   sourceDetail(id: string): SourceRow;
   markSource(id: string, processed: boolean): void;
+  replaceWord(page: string, avoid: string, use: string): ReplaceResult;
   browseSource(id: string): SourceBrowse;
   revealSource(id: string): void;
   sourcesOfPage(slug: string): PageSource[];
@@ -335,6 +338,7 @@ export function createApi(deps: Deps): DesktopApi {
     sourcesOfPage: (slug) => sourcesOfPage(root(), slug),
     retitle: (id, title) => retitleSource(root(), id, title),
     markSource: (id, processed) => markSourceProcessed(root(), id, processed, savePageToday()),
+    replaceWord: (page, avoid, use) => replaceWord(root(), page, avoid, use, savePageToday),
     browseSource: (id) => browseSource(root(), id),
     revealSource: (id) => deps.reveal?.(revealPath(root(), id)),
     findings: () => findings(root()),
@@ -449,6 +453,8 @@ export async function dispatch(
       return api.retitle(String(args[0] ?? ""), String(args[1] ?? ""));
     case CHANNELS.markSource:
       return api.markSource(String(args[0] ?? ""), Boolean(args[1]));
+    case CHANNELS.replaceWord:
+      return api.replaceWord(String(args[0] ?? ""), String(args[1] ?? ""), String(args[2] ?? ""));
     case CHANNELS.browseSource:
       return api.browseSource(String(args[0] ?? ""));
     case CHANNELS.revealSource:

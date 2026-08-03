@@ -80,6 +80,8 @@ export { isStoreOnlyChange, pagesEqual, STORE_MANAGED_FIELDS } from "./store/sta
 
 // The write gate (group 9)
 export { gateWrite, type GateDecision, type GateInput } from "./gate/gate.js";
+export { replaceWordInPage, type ReplaceResult } from "./write/replace-word.js";
+export { blankLiterals, literalSpans, withinSpans, termPattern } from "./store/prose.js";
 export { isConfigWrite, configWriteReason } from "./gate/guard.js";
 export { formatDenial } from "./gate/errors.js";
 

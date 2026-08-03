@@ -4,6 +4,7 @@ import { listPages, readIndex, isIndexed, CODEWIKI_DIR, type PageRef } from "../
 import { readFrontmatter, validatePage } from "../store/page.js";
 import { linkableSlugs, resolveWikilinks } from "../store/wikilinks.js";
 import { extractProvenanceLinks, resolveProvenance } from "../store/provenance.js";
+import { blankLiterals, termPattern } from "../store/prose.js";
 import { readManifestAt } from "../sources/manifest.js";
 import {
   duplicateSourceIds,
@@ -116,6 +117,13 @@ export function checkLinks(projectRoot: string, pages: LoadedPage[]): Finding[] 
         // The target comes off the issue rather than being cut back out of the
         // sentence, which produced garbage the moment the wording changed.
         line: issue.target ? lineInPage(page, `[[${issue.target}`) : undefined,
+        // desktop-ui 5.6 — what *Create the page* would create.
+        //
+        // Through `safe()` like `message` and `fix` above it. A wikilink's text
+        // is unbounded and unscrubbed on the page, and these fields are printed
+        // by `ow check --json` and served over the socket — a security review
+        // carried a two-megabyte target and a cursor escape straight through.
+        ...(issue.target ? { target: safe(issue.target) } : {}),
       });
     }
   }
@@ -329,6 +337,9 @@ export function checkProvenance(
         page: page.path,
         message: `${page.path}: ${safe(issue.reason)}`,
         fix: "Upload the source it names, or correct the citation. A citation that opens nothing is worse than none — if the source cannot be produced, the claim comes out with it.",
+        // desktop-ui 5.6 — what *Open at 58:04* would open, and where.
+        ...(issue.endsAt ? { endsAt: safe(issue.endsAt) } : {}),
+        ...(issue.sourceId ? { source: safe(issue.sourceId) } : {}),
       });
     }
   }
@@ -444,14 +455,19 @@ export function checkVocabulary(pages: LoadedPage[]): Finding[] {
   for (const page of pages) {
     // Code is literal, and a wikilink to an alias is a legitimate way to reach
     // the page — neither is prose using the wrong word.
-    const prose = page.body
-      .replace(/```[\s\S]*?```/g, "")
-      .replace(/`[^`\n]*`/g, "")
-      .replace(/\[\[[^\]]*\]\]/g, "");
+    //
+    // **The rule is `blankLiterals`, shared with the rewrite** that desktop-ui
+    // 5.6's *Replace* button performs. Two copies would let the button change a
+    // word this check never complained about — a variable inside a fence, a
+    // link that resolves — and leave the finding standing afterwards.
+    const prose = blankLiterals(page.body);
 
     for (const [alias, owner] of canonical) {
       if (owner.path === page.path) continue; // its own definition
-      const pattern = new RegExp(`(?<![\\w-])${escapeForRegExp(alias)}(?![\\w-])`, "i");
+      // The same boundary the rewrite matches on, for the same reason the
+      // regions are shared: a button replacing a different span than the check
+      // counted would leave the finding standing afterwards.
+      const pattern = termPattern(alias);
       if (!pattern.test(prose)) continue;
       findings.push({
         code: "glossary.synonym",
@@ -460,14 +476,14 @@ export function checkVocabulary(pages: LoadedPage[]): Finding[] {
         message: `${page.path} says "${safe(alias)}", where this project's term is "${safe(owner.title)}"`,
         fix: `Use "${safe(owner.title)}", or link it as [[${owner.slug}]]. One name per concept is what keeps three names from appearing within a week.`,
         line: lineInPage(page, alias),
+        // desktop-ui 5.6 — what *Replace* would rewrite, both halves.
+        // Both halves scrubbed and bounded: they come verbatim out of another
+        // page's `aliases` and `title`.
+        replace: { avoid: safe(alias), use: safe(owner.title) },
       });
     }
   }
   return findings;
-}
-
-function escapeForRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // `[path/to/file.ts:12-40]()` — the codewiki citation form the skill scaffolds.

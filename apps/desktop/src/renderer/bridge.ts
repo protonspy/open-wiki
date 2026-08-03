@@ -13,6 +13,7 @@ import type {
   IndexResult,
   RenameResult,
   SaveInput,
+  ReplaceResult,
   SaveResult,
 } from "../main/edit.js";
 import type { DropOutcome } from "../main/ingest.js";
@@ -70,6 +71,8 @@ export interface OwBridge {
   retitle(id: string, title: string): Promise<void>;
   /** Declare a source read by hand, or withdraw it (plan 7.1). */
   markSource(id: string, processed: boolean): Promise<void>;
+  /** Rewrite an avoided synonym as the project's term (desktop-ui 5.6). */
+  replaceWord(page: string, avoid: string, use: string): Promise<ReplaceResult>;
   /** The files a source holds, an unpacked archive as a tree (plan 7.5). */
   browseSource(id: string): Promise<SourceBrowse>;
   /** Show a source's file in the system file manager (plan 7.4). */

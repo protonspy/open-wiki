@@ -63,6 +63,39 @@ export interface Finding {
   source?: string;
   /** The 1-based line of `page` the finding sits on, where there is one. */
   line?: number;
+  /**
+   * The slug a broken wikilink names (`wikilink.broken`).
+   *
+   * **Carried, not cut back out of `message`.** `checks.ts` learned that once
+   * already, at this very site: a caller that reconstructs a value from the
+   * sentence produces garbage the first time somebody rewords the sentence, and
+   * a *Create the page* button built that way creates a page called
+   * "Cutover window, which is not a page".
+   *
+   * That is the whole of what these three fields are for (desktop-ui 5.6). They
+   * are an **interface**: `ow check --json` prints them, MCP serves them and a
+   * CI job reads them, which is why the shape is a decision written down
+   * (`adr:0023`) rather than three fields somebody added.
+   */
+  target?: string;
+  /**
+   * The last instant the recording actually contains, when a citation named one
+   * past it (`provenance.unresolved`).
+   *
+   * An instant in the same format `@open-wiki/audio`'s `formatInstant` writes
+   * and `parseInstant` reads, because a second spelling of a time is how two
+   * parts of this product come to disagree about which moment a claim was made
+   * at.
+   */
+  endsAt?: string;
+  /**
+   * The word to stop using and the term to use instead (`glossary.synonym`).
+   *
+   * Both halves, because a caller that has only the avoided word would have to
+   * find the canonical one again — and `avoid` is what a rewrite matches, which
+   * is not always what `message` shows: the check matches case-insensitively.
+   */
+  replace?: { avoid: string; use: string };
 }
 
 /**
