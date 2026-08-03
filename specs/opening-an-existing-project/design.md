@@ -53,6 +53,21 @@ or arriving from R2.4 with a directory already picked all set `touched`, and
 `touched` is never unset — including when the box is cleared, because a field
 somebody emptied is not an invitation to refill it.
 
+The folder is `kebabCase` of the name (R3.4): what somebody types is prose —
+`Meu Projeto (2024)` — and what a path wants is one predictable token, the shape
+a page's slug and a source's id already take. Accents are folded rather than
+dropped, so `Ação` is `acao` and not `a-o`; Portuguese is an ordinary content
+language here (`adr:0008`), not an edge case.
+
+**Which screen creates** (R2.7) is `creationScreenFor`: the guided first run
+while the registry holds nothing — including before the list has arrived, since
+that is a state every new machine passes through and guessing wrong flashes the
+compact form at exactly the person the guided run is for — and the compact form
+once a project exists. The guided run keeps the transcription credential step,
+which the compact form never asked for, and that is the whole reason it is
+reached rather than retired. It no longer carries an **Open** door of its own:
+with the home shown whatever the list holds, one door on one screen is enough.
+
 **Taking on what is already there** (R2.6) is `discoverProjects` in
 `settings.ts`, reached by the launcher's own load through `launcher:discover` —
 its own channel, because `launcher:projects` is a read, this one writes to the

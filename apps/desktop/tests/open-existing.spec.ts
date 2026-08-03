@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AdoptOutcome } from "../src/main/settings.js";
 import {
+  creationScreenFor,
   directoryAfterChoosing,
   directoryFor,
+  kebabCase,
   openExisting,
   proposedDirectory,
   type OpenExistingBridge,
@@ -106,6 +108,58 @@ describe("proposedDirectory (R3.4)", () => {
     expect(proposedDirectory("C:\\Users\\prode\\WikiProjects", "")).toBe("");
     expect(proposedDirectory("C:\\Users\\prode\\WikiProjects", "   ")).toBe("");
     expect(proposedDirectory("", "fenix")).toBe("");
+    // A name that survives no folder name is the same case: `...` is prose, not
+    // a directory.
+    expect(proposedDirectory("C:\\Users\\prode\\WikiProjects", "...")).toBe("");
+  });
+
+  it("names the folder in kebab-case, not in prose", () => {
+    expect(proposedDirectory("C:\\Users\\prode\\WikiProjects", "Meu Projeto (2024)")).toBe(
+      "C:\\Users\\prode\\WikiProjects\\meu-projeto-2024",
+    );
+  });
+});
+
+describe("kebabCase (R3.4)", () => {
+  it("lowercases and joins what somebody typed", () => {
+    expect(kebabCase("Meu Projeto")).toBe("meu-projeto");
+    expect(kebabCase("fenix")).toBe("fenix");
+  });
+
+  it("collapses the runs punctuation leaves behind", () => {
+    expect(kebabCase("Meu  Projeto (2024)!")).toBe("meu-projeto-2024");
+    expect(kebabCase("--fenix--")).toBe("fenix");
+  });
+
+  it("folds accents rather than dropping them", () => {
+    // `Ação` is an ordinary project name here, not an edge case: the content
+    // language of this product is often Portuguese (`adr:0008`). Dropping the
+    // accented characters would have made this `a-o`.
+    expect(kebabCase("Ação")).toBe("acao");
+    expect(kebabCase("Reunião Semanal")).toBe("reuniao-semanal");
+    expect(kebabCase("Café")).toBe("cafe");
+  });
+
+  it("answers nothing for a name with nothing to keep", () => {
+    expect(kebabCase("")).toBe("");
+    expect(kebabCase("   ")).toBe("");
+    expect(kebabCase("...")).toBe("");
+  });
+});
+
+describe("creationScreenFor (R2.7)", () => {
+  it("guides the first one, and only the first one", () => {
+    // The guided run is the one path that offers the transcription credential,
+    // so it is reached rather than retired — but somebody making their second
+    // project has answered those questions already.
+    expect(creationScreenFor([])).toBe("first-run");
+    expect(creationScreenFor([{ name: "fenix" }])).toBe("form");
+  });
+
+  it("treats a list that has not arrived as nothing known", () => {
+    // The state a brand-new machine passes through. Guessing "form" would flash
+    // the wrong screen at exactly the person the guided run exists for.
+    expect(creationScreenFor(null)).toBe("first-run");
   });
 });
 
@@ -149,14 +203,23 @@ describe("the launcher offers both doors (R2.1, R3.1)", () => {
     }
   });
 
-  it("offers it on the first run too, where the registry is empty", () => {
-    // The defect this closes: `Launcher` returns `<FirstRun />` as soon as the
-    // registry is empty, so the button beside **New project** was in a branch
-    // that screen never reaches. An empty registry is precisely the state of a
-    // machine whose projects were all made somewhere else — which is who needs
-    // this most, and who could not see it.
-    expect(firstRun).toMatch(/openExisting\(bridge\(\)\)/);
-    expect(firstRun).toMatch(/Open a project I already have…/);
+  it("offers it on an empty registry, from the home rather than the first run", () => {
+    // This assertion used to be its opposite — a second Open door *inside* the
+    // first run — because `Launcher` returned `<FirstRun />` outright as soon as
+    // the registry was empty, putting the real doors on a screen nobody with an
+    // empty registry ever saw. R2.7 fixed the cause instead: the home is shown
+    // whatever the list holds, so the first run needs no door of its own and is
+    // back to being only the steps that create (R2.7).
+    expect(launcher).toMatch(/openExisting\(bridge\(\)\)/);
+    expect(launcher).not.toMatch(/return <FirstRun/);
+    expect(firstRun).not.toMatch(/openExisting/);
+  });
+
+  it("reaches the guided first run from New project while nothing is known (R2.7)", () => {
+    // It keeps the transcription credential step, which the compact form does
+    // not ask for — so it is reached, not retired.
+    expect(launcher).toMatch(/creationScreenFor\(/);
+    expect(launcher).toMatch(/creating === "first-run"/);
   });
 
   it("proposes the default location on both doors (R3.4)", () => {
@@ -195,14 +258,12 @@ describe("the launcher offers both doors (R2.1, R3.1)", () => {
     expect(doors).toBeLessThan(list);
   });
 
-  it("keeps the first run's escape hatch on the step that can use it", () => {
-    // Rendered inside the `project` step, not after it: the directory a refused
-    // choice carries back (R2.4) is the field on that step, and an offer that
-    // appears three steps later is an offer nobody takes.
-    const projectStep = firstRun.slice(
-      firstRun.indexOf('step === "project"'),
-      firstRun.indexOf('step === "harness"'),
-    );
-    expect(projectStep).toMatch(/openExistingProject/);
+  it("leaves the first run only the steps that create", () => {
+    // R2.7. Two doors on two screens was one door too many the moment the home
+    // stopped being replaceable.
+    expect(firstRun).not.toMatch(/Open a project I already have/);
+    expect(firstRun).not.toMatch(/openExistingProject/);
+    // What it keeps is the reason it is still reached at all.
+    expect(firstRun).toMatch(/saveCredentialFor|provider/);
   });
 });
