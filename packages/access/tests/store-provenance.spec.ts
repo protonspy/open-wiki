@@ -1,9 +1,10 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveProvenance } from "../src/store/provenance.js";
 import { registerSource } from "../src/sources/register.js";
+import { sourceDirIndex } from "../src/sources/locate.js";
 
 function tempProject() {
   const root = mkdtempSync(join(tmpdir(), "ow-prov-"));
@@ -151,6 +152,114 @@ describe("resolveProvenance (5.4)", () => {
         );
         expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"])).toEqual([]);
       }
+    });
+
+    it("measures against the map of a recording filed into a folder (8.3)", () => {
+      // The failure this closes is the quiet one. Joining `raw/<id>` meant a
+      // filed recording appeared to have no time map, so the in-range check
+      // silently did not run and a citation past the end of it passed `ow
+      // check` — a check failing open, which is worse than the citation.
+      writeTimeMap("fenix-weekly-2026-07-31", TWENTY_MINUTES_NS);
+      mkdirSync(join(root, "raw", "2026", "q3"), { recursive: true });
+      renameSync(
+        join(root, "raw", "fenix-weekly-2026-07-31"),
+        join(root, "raw", "2026", "q3", "fenix-weekly-2026-07-31"),
+      );
+      expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#14:32"])).toEqual([]);
+      const issues = resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#44:32"]);
+      expect(issues).toHaveLength(1);
+      expect(issues[0]!.reason).toContain("20:00");
+    });
+  });
+
+  describe("resolving from a walk the caller already did", () => {
+    // `ow check` resolves a source per citation, per page. Resolving each one
+    // on its own walked `raw/` per citation; the index is one walk for the run.
+    // What is pinned here is that the two answer identically — an index that
+    // disagreed with `sourceExists` would be a check reporting different
+    // findings depending on which caller ran it.
+
+    it("refuses a path-shaped id that lands on a filed source, both ways round", () => {
+      // The disagreement a review caught, and the reason the two call shapes
+      // are pinned against each other rather than each against a fixture.
+      //
+      // A source filed into `raw/2026/q3/` has the id `weekly` — a source is
+      // its id wherever it sits (`adr:0022`). `2026/q3/weekly` is a *location*,
+      // and a citation naming one is the thing that model exists to stop. But
+      // joining it onto `raw/` landed on the real directory, so `sourceExists`
+      // said yes while the index, built from the walk, said no.
+      //
+      // What made it a blocker is which caller got which answer: the write gate
+      // resolves without an index and the check always builds one, so the gate
+      // accepted a page `ow check` refused a moment later — the same page, the
+      // same project, two verdicts.
+      mkdirSync(join(root, "raw", "2026", "q3"), { recursive: true });
+      renameSync(
+        join(root, "raw", "fenix-weekly-2026-07-31"),
+        join(root, "raw", "2026", "q3", "fenix-weekly-2026-07-31"),
+      );
+      const byLocation = ["rec://2026/q3/fenix-weekly-2026-07-31#14:32"];
+      const byId = ["rec://fenix-weekly-2026-07-31#14:32"];
+
+      for (const dirs of [undefined, sourceDirIndex(root)]) {
+        const issues = resolveProvenance(root, byLocation, dirs);
+        expect(issues, String(dirs !== undefined)).toHaveLength(1);
+        expect(issues[0]!.reason).toContain("points at no source");
+        // And the id itself still resolves, filed or not — which is the whole
+        // point of the addressing model and not collateral of the refusal.
+        expect(resolveProvenance(root, byId, dirs)).toEqual([]);
+      }
+    });
+
+    it("answers the same as resolving each id on its own", () => {
+      const links = [
+        "src://arquitetura-fenix.pdf#p12",
+        "src://ghost.pdf#p1",
+        "rec://fenix-weekly-2026-07-31#14:32",
+        "src://../../etc#p1",
+      ];
+      expect(resolveProvenance(root, links, sourceDirIndex(root))).toEqual(
+        resolveProvenance(root, links),
+      );
+    });
+
+    it("confines a directory handed in, not only one it resolved itself", () => {
+      // The index can only hold what the walk produced, so this cannot happen
+      // today — but `dirs` is a parameter of an exported function, and a caller
+      // that built one from a setting or a citation would otherwise reach a
+      // file outside `raw/` with nothing refusing it. It reads as no map, which
+      // is how every other failure here reads.
+      mkdirSync(join(root, "elsewhere"), { recursive: true });
+      writeFileSync(
+        join(root, "elsewhere", "timemap.json"),
+        JSON.stringify({
+          version: 1,
+          compressedDurationNs: 1,
+          segments: [
+            { compressedStartNs: 0, durationNs: 1, recordedStartNs: 0, wallStartMs: 1_000_000 },
+          ],
+          chunks: [],
+        }),
+        "utf8",
+      );
+      const escaping = new Map([["fenix-weekly-2026-07-31", join(root, "elsewhere")]]);
+      // The instant is past the end of the planted map, so an unconfined read
+      // would report it; a refused one falls back to the weaker check and says
+      // nothing.
+      expect(
+        resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"], escaping),
+      ).toEqual([]);
+    });
+
+    it("answers the same for a source filed into a folder", () => {
+      mkdirSync(join(root, "raw", "2026"), { recursive: true });
+      renameSync(
+        join(root, "raw", "arquitetura-fenix.pdf"),
+        join(root, "raw", "2026", "arquitetura-fenix.pdf"),
+      );
+      const links = ["src://arquitetura-fenix.pdf#p12"];
+      expect(resolveProvenance(root, links, sourceDirIndex(root))).toEqual([]);
+      expect(resolveProvenance(root, links)).toEqual([]);
     });
   });
 });

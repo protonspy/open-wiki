@@ -303,6 +303,46 @@ describe("the integrity checks (group 7)", () => {
       expect(findings.map((f) => f.source)).toEqual(["broken.md"]);
     });
 
+    it("finds a source filed into a folder, rather than not seeing it at all (8.3)", () => {
+      // Before 8.3 this read one level of `raw/`, so a filed source was
+      // invisible to every check — which is quieter than being wrong.
+      mkdirSync(join(root, "raw", "2026", "filed.md"), { recursive: true });
+      writeFileSync(
+        join(root, "raw", "2026", "filed.md", "manifest.json"),
+        JSON.stringify({ id: "filed.md", title: "filed", kind: "file", original: "filed.md" }),
+        "utf8",
+      );
+      index(root, []);
+      changelog(root, []);
+
+      const findings = checkProject(root).findings.filter((f) => f.code === "source.uncited");
+      expect(findings.map((f) => f.source)).toContain("filed.md");
+    });
+
+    it("reports two directories claiming one id as an error (8.3)", () => {
+      // `src://weekly#p1` cannot mean two sources, and settling that by
+      // silently choosing is the answer `adr:0016` refused for pages.
+      for (const rel of [
+        ["2026", "weekly"],
+        ["archive", "weekly"],
+      ]) {
+        mkdirSync(join(root, "raw", ...rel), { recursive: true });
+        writeFileSync(
+          join(root, "raw", ...rel, "manifest.json"),
+          JSON.stringify({ id: "weekly", title: "weekly", kind: "file", original: "weekly" }),
+          "utf8",
+        );
+      }
+      index(root, []);
+      changelog(root, []);
+
+      const findings = checkProject(root).findings.filter((f) => f.code === "source.duplicate-id");
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.severity).toBe("error");
+      expect(findings[0]!.message).toContain("2 sources");
+      expect(findings[0]!.fix).toMatch(/organisation/i);
+    });
+
     it("never reports the inbox as an uncited source", () => {
       mkdirSync(join(root, "raw", "_inbox"), { recursive: true });
       writeFileSync(join(root, "raw", "_inbox", "dropped.md"), "x", "utf8");

@@ -11,7 +11,7 @@ import { join } from "node:path";
  * The `open-wiki-version` frontmatter marker lets `ow init` report staleness
  * instead of overwriting — the open question in that record.
  */
-export const SKILLS_VERSION = "0.3.0";
+export const SKILLS_VERSION = "0.4.0";
 
 const WIKI_SKILL = `---
 name: wiki
@@ -140,6 +140,20 @@ Run this loop until \`ow source list --unprocessed\` comes back empty:
    people stop reading. Use \`ow source unmark <id>\` if you need to look again.
 
 5. **Run \`ow check\`**, and fix what it names.
+
+**A source is never corrected in place.** The bytes under \`raw/\` are frozen —
+every citation into them resolves by position, and nothing can check that the
+lines still say what they said. So a corrected file is a *new* source, and the
+old one is marked as replaced:
+
+    ow source supersede <old-id> <new-id>
+
+Every citation into the old source keeps resolving, at something that now says
+it was replaced and by what. Deleting the old one is allowed and is the last
+step rather than the mechanism: it breaks every citation into it, \`ow check\`
+reports each, and that is the honest cost of removing evidence somebody built
+on. \`ow graph superseded\` answers what has been replaced, pages and sources
+both.
 
 Use the verbs. Writing \`manifest.json\` with your own tools meets no schema at
 all — \`raw/\` is not gated the way \`wiki/\` is — and the file you overwrite is

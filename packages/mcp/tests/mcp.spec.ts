@@ -196,7 +196,7 @@ describe("MCP read tools — path confinement (9.9)", () => {
         id: "notes.txt",
         title: "T".repeat(9000),
         kind: "file",
-        original: "notes.txt",
+        original: "o".repeat(9000),
         description: "d".repeat(9000),
       }),
       "utf8",
@@ -206,6 +206,73 @@ describe("MCP read tools — path confinement (9.9)", () => {
     expect(manifest.title.length).toBeLessThan(9000);
     expect(manifest.description!.length).toBeLessThan(9000);
     expect(manifest.description).toMatch(/9000 characters, truncated/);
+    // `original` is served by `ow_sources` beside the title and is free text
+    // out of the same file. The first `boundedManifest` missed it while its own
+    // doc claimed every field was cut.
+    expect(manifest.original.length).toBeLessThan(9000);
+    expect(manifest.original).toMatch(/9000 characters, truncated/);
+  });
+
+  it("bounds a field the schema gained later, not only the two it was written for", () => {
+    // `superseded-by` (task 8.5) went out of here unbounded, because this
+    // bounded a list of field names rather than the manifest. A security review
+    // found it. The bound lives in `boundedManifest` now, so this pins the
+    // property — every free-text field is cut — rather than a third name.
+    writeFileSync(
+      join(root, "raw", "notes.txt", "manifest.json"),
+      JSON.stringify({
+        id: "notes.txt",
+        title: "t",
+        kind: "file",
+        original: "notes.txt",
+        status: "superseded",
+        "superseded-by": "s".repeat(9000),
+      }),
+      "utf8",
+    );
+
+    const manifest = listSourcesState(root)[0]!.manifest;
+    expect(manifest["superseded-by"]!.length).toBeLessThan(9000);
+    expect(manifest["superseded-by"]).toMatch(/9000 characters, truncated/);
+  });
+
+  it("serves a filed source's own text, not a stray file at raw/<id>/ (8.3)", () => {
+    // The spoof this closes. `readManifest` resolved through the walk while
+    // `sourceTextPath` joined `raw/<id>` — so a repository could ship a bare
+    // `raw/weekly/text.md`, with no manifest at all, and have it served as the
+    // text of the real, filed `raw/archive/2026/weekly`. The manifest would
+    // name one source and the text come from another, under a citation reading
+    // as sound. `duplicateSourceIds` cannot see it either: the walk registers
+    // only directories that hold a manifest.
+    mkdirSync(join(root, "raw", "archive", "2026", "weekly"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "archive", "2026", "weekly", "manifest.json"),
+      JSON.stringify({ id: "weekly", title: "Weekly", kind: "recording", original: "" }),
+      "utf8",
+    );
+    writeFileSync(
+      join(root, "raw", "archive", "2026", "weekly", "text.md"),
+      "the real transcript\n",
+      "utf8",
+    );
+    mkdirSync(join(root, "raw", "weekly"), { recursive: true });
+    writeFileSync(join(root, "raw", "weekly", "text.md"), "planted by the clone\n", "utf8");
+
+    expect(readSourceText(root, "weekly")).toBe("the real transcript\n");
+    expect(listSourcesState(root).find((s) => s.id === "weekly")?.hasText).toBe(true);
+  });
+
+  it("finds a filed source's text at all (8.3)", () => {
+    mkdirSync(join(root, "raw", "2026", "filed.md"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "2026", "filed.md", "manifest.json"),
+      JSON.stringify({ id: "filed.md", title: "Filed", kind: "file", original: "filed.md" }),
+      "utf8",
+    );
+    writeFileSync(join(root, "raw", "2026", "filed.md", "text.md"), "# Filed\n", "utf8");
+
+    expect(readSourceText(root, "filed.md")).toBe("# Filed\n");
+    expect(listSourcesState(root).find((s) => s.id === "filed.md")?.hasText).toBe(true);
   });
 
   it("marks a source that has been registered but not yet normalised", () => {

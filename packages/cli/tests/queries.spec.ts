@@ -1,7 +1,16 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { registerSource, supersedeSource } from "@open-wiki/access";
 import { runGraph } from "../src/commands/graph.js";
 import { runSearch } from "../src/commands/search.js";
 import { runWrite, relativePath } from "../src/commands/write.js";
@@ -70,9 +79,10 @@ describe("ow graph (9.12)", () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
   it("walks supersession, carrying what supersedes each page and when", () => {
-    expect(JSON.parse(runGraph(root, "superseded"))).toEqual([
-      { slug: "monolith", "superseded-by": "fenix", updated: DATE },
-    ]);
+    expect(JSON.parse(runGraph(root, "superseded"))).toEqual({
+      pages: [{ slug: "monolith", "superseded-by": "fenix", updated: DATE }],
+      sources: [],
+    });
   });
 
   it("lists the pages the index actually reaches", () => {
@@ -87,7 +97,7 @@ describe("ow graph (9.12)", () => {
     const graph = JSON.parse(runGraph(root, undefined));
     expect([...graph.pages].sort()).toEqual(["fenix", "monolith"]);
     expect(graph.orphans).toEqual(["monolith"]);
-    expect(graph.superseded.map((s: { slug: string }) => s.slug)).toEqual(["monolith"]);
+    expect(graph.superseded.pages.map((s: { slug: string }) => s.slug)).toEqual(["monolith"]);
   });
 
   it("skips a page whose frontmatter will not parse rather than failing the query", () => {
@@ -95,7 +105,7 @@ describe("ow graph (9.12)", () => {
     writeFileSync(join(root, "wiki", "bare.md"), "# Bare\n\nNo frontmatter.\n", "utf8");
     const graph = JSON.parse(runGraph(root, undefined));
     expect(graph.pages).toContain("broken");
-    expect(graph.superseded.map((s: { slug: string }) => s.slug)).toEqual(["monolith"]);
+    expect(graph.superseded.pages.map((s: { slug: string }) => s.slug)).toEqual(["monolith"]);
   });
 
   it("records a supersession with no target as one, rather than dropping it", () => {
@@ -113,12 +123,116 @@ describe("ow graph (9.12)", () => {
       ],
       "Superseded by nothing named.\n",
     );
-    const walk = JSON.parse(runGraph(root, "superseded")) as Array<Record<string, string>>;
-    expect(walk.find((e) => e.slug === "orphaned-supersession")).toEqual({
+    const walk = JSON.parse(runGraph(root, "superseded")) as {
+      pages: Array<Record<string, string>>;
+    };
+    expect(walk.pages.find((e) => e.slug === "orphaned-supersession")).toEqual({
       slug: "orphaned-supersession",
       "superseded-by": "",
       updated: DATE,
     });
+  });
+});
+
+describe("ow graph superseded — sources as well as pages (8.6)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  const OLD = "timeline.md";
+  const NEW = "timeline-corrected.md";
+
+  function sources(root: string): Array<Record<string, string>> {
+    return (JSON.parse(runGraph(root, "superseded")) as { sources: Array<Record<string, string>> })
+      .sources;
+  }
+
+  it("carries what replaced each source and when", () => {
+    const old = registerSource(root, {
+      name: OLD,
+      kind: "file",
+      content: Buffer.from("a"),
+    }).id;
+    const fixed = registerSource(root, {
+      name: NEW,
+      kind: "file",
+      content: Buffer.from("b"),
+    }).id;
+    supersedeSource(root, old, fixed, DATE);
+    expect(sources(root)).toEqual([{ id: old, "superseded-by": fixed, superseded: DATE }]);
+  });
+
+  it("says nothing about a source nobody replaced", () => {
+    registerSource(root, { name: OLD, kind: "file", content: Buffer.from("a") });
+    expect(sources(root)).toEqual([]);
+  });
+
+  it("finds a source filed into a folder, because a source is its id wherever it sits", () => {
+    // The walk of 8.3. Reading one level of `raw/` would answer "nothing was
+    // superseded" for a project that files its sources — the quiet kind of
+    // wrong this whole group exists to remove.
+    const old = registerSource(root, { name: OLD, kind: "file", content: Buffer.from("a") }).id;
+    const fixed = registerSource(root, { name: NEW, kind: "file", content: Buffer.from("b") }).id;
+    supersedeSource(root, old, fixed, DATE);
+    mkdirSync(join(root, "raw", "2026", "q3"), { recursive: true });
+    renameSync(join(root, "raw", old), join(root, "raw", "2026", "q3", old));
+    expect(sources(root).map((s) => s["id"])).toEqual([old]);
+  });
+
+  it("reports a supersession a clone brought, however incompletely it was written", () => {
+    // `raw/` is not gated the way `wiki/` is and a manifest arrives with a
+    // clone, so a pointer with no status is as likely as the pair. Both read as
+    // superseded — the alternative is answering "nothing was replaced" about
+    // evidence somebody withdrew.
+    mkdirSync(join(root, "raw", "half"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "half", "manifest.json"),
+      JSON.stringify({ title: "Half a record", kind: "file", "superseded-by": "whatever" }),
+      "utf8",
+    );
+    expect(sources(root)).toEqual([
+      { id: "half", "superseded-by": "whatever", superseded: "" },
+    ]);
+  });
+
+  it("bounds the pointer, because a planted manifest prints straight into the agent", () => {
+    // `superseded-by` is free text out of a file that arrived with a clone, and
+    // this JSON is read by a harness. A megabyte-long replacement id would
+    // crowd out everything else the query answers.
+    mkdirSync(join(root, "raw", "planted"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "planted", "manifest.json"),
+      JSON.stringify({
+        title: "t",
+        kind: "file",
+        status: "superseded",
+        "superseded-by": "s".repeat(9000),
+      }),
+      "utf8",
+    );
+    const pointer = sources(root)[0]!["superseded-by"]!;
+    expect(pointer.length).toBeLessThan(9000);
+    expect(pointer).toMatch(/9000 characters, truncated/);
+  });
+
+  it("skips a manifest it cannot read rather than losing the answer about the rest", () => {
+    const old = registerSource(root, { name: OLD, kind: "file", content: Buffer.from("a") }).id;
+    const fixed = registerSource(root, { name: NEW, kind: "file", content: Buffer.from("b") }).id;
+    supersedeSource(root, old, fixed, DATE);
+    mkdirSync(join(root, "raw", "broken"), { recursive: true });
+    writeFileSync(join(root, "raw", "broken", "manifest.json"), "{ not json", "utf8");
+    expect(sources(root).map((s) => s["id"])).toEqual([old]);
+  });
+
+  it("answers about both halves under the whole structure, not only under the query", () => {
+    const old = registerSource(root, { name: OLD, kind: "file", content: Buffer.from("a") }).id;
+    const fixed = registerSource(root, { name: NEW, kind: "file", content: Buffer.from("b") }).id;
+    supersedeSource(root, old, fixed, DATE);
+    const graph = JSON.parse(runGraph(root, undefined)) as {
+      superseded: { pages: unknown[]; sources: Array<Record<string, string>> };
+    };
+    expect(graph.superseded.pages).toEqual([]);
+    expect(graph.superseded.sources.map((s) => s["id"])).toEqual([old]);
   });
 });
 
@@ -208,8 +322,10 @@ describe("graph and search over a page filed under a subdirectory (adr:0016)", (
   it("walks supersession without throwing ENOENT", () => {
     // Both commands resolved a slug as wiki/<slug>.md, so any project filing a
     // page the way the plan's layout describes got a stack, not a sentence.
-    const parsed = JSON.parse(runGraph(root, "superseded"));
-    expect(parsed).toEqual([
+    const parsed = JSON.parse(runGraph(root, "superseded")) as {
+      pages: Array<Record<string, string>>;
+    };
+    expect(parsed.pages).toEqual([
       { slug: "checkout", "superseded-by": "topic:pay", updated: "2026-08-01" },
     ]);
   });

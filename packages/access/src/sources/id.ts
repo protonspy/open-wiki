@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { INBOX } from "./manifest.js";
+import { INBOX, sourceDirOf } from "./locate.js";
 
 /**
  * A source's directory name is derived from what the source is, and frozen
@@ -75,8 +75,18 @@ export function isDerivedId(id: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z]{1,8})?$/.test(id);
 }
 
-/** True when a source directory with this id already exists under `raw/`. */
+/**
+ * True when a source with this id already exists **anywhere** under `raw/`.
+ *
+ * Anywhere, since task 8.3. An id names one source wherever it is filed, so
+ * checking only `raw/<id>` would let a new upload take an id that a *filed*
+ * source already holds — manufacturing the duplicate that the model's one rule
+ * exists to report rather than create. The top level is still checked too,
+ * because a directory being assembled has no `manifest.json` yet, is invisible
+ * to the walk, and has nonetheless taken its name.
+ */
 export function isIdTaken(projectRoot: string, id: string): boolean {
   if (id === INBOX) return false; // the inbox is a doorway, not a source
-  return existsSync(join(projectRoot, "raw", id));
+  if (existsSync(join(projectRoot, "raw", id))) return true;
+  return sourceDirOf(projectRoot, id) !== undefined;
 }

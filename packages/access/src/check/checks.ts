@@ -1,10 +1,16 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { listPages, readIndex, isIndexed, CODEWIKI_DIR, type PageRef } from "../store/index.js";
 import { readFrontmatter, validatePage } from "../store/page.js";
 import { linkableSlugs, resolveWikilinks } from "../store/wikilinks.js";
 import { extractProvenanceLinks, resolveProvenance } from "../store/provenance.js";
-import { listSources, readManifest } from "../sources/manifest.js";
+import { readManifestAt } from "../sources/manifest.js";
+import {
+  duplicateSourceIds,
+  listSourceRefs,
+  sourceDirIndex,
+  type SourceRef,
+} from "../sources/locate.js";
 import { isDerivedId } from "../sources/id.js";
 import { assertWithin } from "../paths.js";
 import type { Finding } from "./findings.js";
@@ -157,6 +163,9 @@ export function checkRecords(
   projectRoot: string,
   pages: LoadedPage[],
   citedSources: ReadonlySet<string>,
+  // The walk, when the caller has already done it. `checkProject` shares one
+  // across every check that needs it and the source count it reports.
+  refs?: readonly SourceRef[],
 ): Finding[] {
   const findings: Finding[] = [];
   const changelogPath = join(projectRoot, "wiki", "changelog.md");
@@ -200,6 +209,21 @@ export function checkRecords(
     });
   }
 
+  // Two directories claiming one id. `src://weekly#p1` cannot mean two
+  // sources, and the answer is a finding rather than silently choosing between
+  // them — the same one `adr:0016` gave for two pages sharing a slug, which is
+  // the decision task 8.3 applies a second time.
+  for (const { id, dirs } of duplicateSourceIds(projectRoot)) {
+    const where = dirs.map((d) => relative(projectRoot, d).split(sep).join("/")).join(", ");
+    findings.push({
+      code: "source.duplicate-id",
+      severity: "error",
+      source: id,
+      message: `the id "${safe(id)}" names ${dirs.length} sources (${safe(where)}), so src://${safe(id)} is ambiguous`,
+      fix: "Rename all but one of the directories, and fix the citations that pointed at it. A folder under raw/ is organisation; the directory name is the id.",
+    });
+  }
+
   // A source nobody has finished with. This is the case that disappears from
   // view on its own: nothing links to it, so nobody trips over it.
   //
@@ -208,9 +232,14 @@ export function checkRecords(
   // discarded — which leaves no trace on the filesystem at all — as a permanent
   // finding, and a check that cries wolf is a check people stop reading. So a
   // declared source is out, whether or not anything cites it.
-  for (const id of listSources(projectRoot)) {
+  //
+  // One walk for the loop, with each source's directory carried into the
+  // manifest read. Resolving by id per source walked `raw/` once per source,
+  // which is the regression `checkLinks` already hoists `linkableSlugs` out of
+  // its own loop to avoid.
+  for (const { id, dir } of refs ?? listSourceRefs(projectRoot)) {
     if (citedSources.has(id)) continue;
-    if (declaredProcessed(projectRoot, id)) continue;
+    if (declaredProcessed(dir, id)) continue;
     findings.push({
       code: "source.uncited",
       severity: "warning",
@@ -265,19 +294,35 @@ function markFix(id: string): string {
  * answer — it reports a source that may already have been read, which costs a
  * glance, where `true` would hide one nobody has opened.
  */
-function declaredProcessed(projectRoot: string, id: string): boolean {
+function declaredProcessed(dir: string, id: string): boolean {
   try {
-    return readManifest(projectRoot, id).processed !== undefined;
+    // Read from the directory the walk already found, not resolved again by id:
+    // resolving here walked the whole of `raw/` once per source.
+    return readManifestAt(dir, id).processed !== undefined;
   } catch {
     return false;
   }
 }
 
-/** 7.3 — provenance links that resolve to no source, or to no instant in one. */
-export function checkProvenance(projectRoot: string, pages: LoadedPage[]): Finding[] {
+/**
+ * 7.3 — provenance links that resolve to no source, or to no instant in one.
+ *
+ * `dirs` is one walk of `raw/` for the whole run. Without it each citation
+ * resolved its own id, and resolving an id walks the tree — so a project with
+ * P pages and L citations each walked `raw/` P×L times, for a check the skill
+ * tells the agent to run every loop iteration. It is the third instance of the
+ * same regression on this branch, after `listSourceStates` and `checkRecords`,
+ * and the same fix `checkLinks` already applies to `linkableSlugs`.
+ */
+export function checkProvenance(
+  projectRoot: string,
+  pages: LoadedPage[],
+  dirs?: ReadonlyMap<string, string>,
+): Finding[] {
   const findings: Finding[] = [];
+  const index = dirs ?? sourceDirIndex(projectRoot);
   for (const page of pages) {
-    for (const issue of resolveProvenance(projectRoot, linksOf(page))) {
+    for (const issue of resolveProvenance(projectRoot, linksOf(page), index)) {
       findings.push({
         code: "provenance.unresolved",
         severity: "error",
@@ -651,12 +696,17 @@ export function readWiki(projectRoot: string): LoadedPage[] {
 export function checkProject(projectRoot: string): CheckReport {
   const pages = loadPages(projectRoot);
   const cited = citedSourceIds(pages);
+  // One walk of `raw/` for the run, shared by the checks that resolve a source
+  // and by the count below. Each of them walked on its own before, which for
+  // `checkProvenance` meant a walk per citation.
+  const refs = listSourceRefs(projectRoot);
+  const dirs = sourceDirIndex(projectRoot, refs);
 
   const findings = [
     ...checkSchema(pages),
     ...checkLinks(projectRoot, pages),
-    ...checkRecords(projectRoot, pages, cited),
-    ...checkProvenance(projectRoot, pages),
+    ...checkRecords(projectRoot, pages, cited, refs),
+    ...checkProvenance(projectRoot, pages, dirs),
     ...checkVocabulary(pages),
     ...checkCodewiki(projectRoot, pages),
   ];
@@ -664,6 +714,6 @@ export function checkProject(projectRoot: string): CheckReport {
   return {
     findings: sortFindings(findings),
     pages: pages.length,
-    sources: listSources(projectRoot).length,
+    sources: refs.length,
   };
 }

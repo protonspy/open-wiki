@@ -5,6 +5,7 @@ import {
   readManifest,
   readWiki,
   safe,
+  supersedeSource,
   updateManifest,
 } from "@open-wiki/access";
 
@@ -106,6 +107,39 @@ export function runSourceDescribe(
         ...(written.processed !== undefined ? { processed: written.processed } : {}),
       },
     };
+  } catch (err) {
+    return { ok: false, reason: refusal(id, err) };
+  }
+}
+
+/**
+ * `ow source supersede <id> <replacement-id>` — record that a source was
+ * replaced (plan 8.5).
+ *
+ * The bytes under `raw/` are frozen, so a correction is never an edit: it is a
+ * new source that supersedes the old. Every citation into the old one keeps
+ * resolving, at something that now says it was replaced and by what — which is
+ * the outcome supersession exists to produce, against a citation that silently
+ * resolves to evidence somebody already withdrew.
+ *
+ * The date is the CLI's own `today()`, local time, for the reason `mark` uses
+ * it: a source superseded and a page written in one session should carry the
+ * same date.
+ *
+ * There is no `unsupersede` verb. `updateManifest` can withdraw the record —
+ * the desktop's own correction path (task 7.1) needs that — but a mistaken
+ * supersession is corrected by superseding at the right id, and inventing a
+ * verb for a case nobody has is the filler this project's own rules warn about.
+ */
+export function runSourceSupersede(
+  projectRoot: string,
+  id: string,
+  replacementId: string,
+  date: string,
+): SourceMarkOutcome {
+  try {
+    supersedeSource(projectRoot, id, replacementId, date);
+    return { ok: true, result: { id, changed: true } };
   } catch (err) {
     return { ok: false, reason: refusal(id, err) };
   }

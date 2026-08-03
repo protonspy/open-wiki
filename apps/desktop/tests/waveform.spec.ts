@@ -113,6 +113,29 @@ describe("waveformOf (5.5)", () => {
     expect(ffmpeg.args).toContain("1");
   });
 
+  it("draws a recording that has been filed into a folder (8.3)", async () => {
+    // The quietest of the five sites that still joined `raw/<id>`.
+    // `readManifest` walked and confirmed `kind: recording`, while the
+    // directory beside it was joined and pointed at nothing — so ffmpeg failed
+    // and this returned `null`, which is exactly what it returns for "not
+    // transcribed yet". A processed recording that never drew a waveform, with
+    // nothing able to tell the two cases apart.
+    rmSync(join(root, "raw", "weekly"), { recursive: true, force: true });
+    mkdirSync(join(root, "raw", "2026", "q3", "weekly"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "2026", "q3", "weekly", "manifest.json"),
+      JSON.stringify({ id: "weekly", title: "Weekly", kind: "recording", original: "" }),
+      "utf8",
+    );
+
+    const ffmpeg = fakeFfmpeg(new Array(2000).fill(8000));
+    const peaks = await waveformOf(root, "weekly", { run: ffmpeg.run, scratch: root });
+
+    expect(peaks).toHaveLength(WAVE_COLUMNS);
+    // The audio it read is the filed one, not a path under `raw/weekly`.
+    expect(ffmpeg.args.join(" ")).toContain(join("2026", "q3", "weekly", "mic.opus"));
+  });
+
   it("has nothing to draw for a file source", async () => {
     // A PDF has no sound, and asking ffmpeg about it would be a spawn per
     // citation to be told so.

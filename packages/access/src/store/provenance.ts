@@ -9,7 +9,7 @@ import {
   type TimeMap,
 } from "@open-wiki/audio/timemap";
 import { assertWithin } from "../paths.js";
-import { sourceExists } from "../sources/manifest.js";
+import { resolvedSourceDir, sourceExists } from "../sources/manifest.js";
 import type { PageIssue } from "./page.js";
 
 /**
@@ -56,7 +56,11 @@ function parseLink(link: string): ParsedLink | null {
  * The in-range check against `timemap.json` is pending the recording time map
  * (plan 4.7); it activates there, where the map's format is decided.
  */
-export function resolveProvenance(projectRoot: string, sources: string[]): PageIssue[] {
+export function resolveProvenance(
+  projectRoot: string,
+  sources: string[],
+  dirs?: ReadonlyMap<string, string>,
+): PageIssue[] {
   const issues: PageIssue[] = [];
   for (const link of sources) {
     const parsed = parseLink(link);
@@ -64,7 +68,7 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
       issues.push({ field: "provenance", reason: `"${link}" is not a provenance link` });
       continue;
     }
-    if (!sourceExists(projectRoot, parsed.id)) {
+    if (!exists(projectRoot, parsed.id, dirs)) {
       issues.push({
         field: "provenance",
         reason: `"${link}" points at no source (no raw/${parsed.id})`,
@@ -87,7 +91,7 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
         });
         continue;
       }
-      const map = readTimeMap(projectRoot, parsed.id);
+      const map = readTimeMap(projectRoot, parsed.id, dirs);
       if (map && !containsInstant(map, instantNs)) {
         issues.push({
           field: "provenance",
@@ -99,6 +103,32 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
     }
   }
   return issues;
+}
+
+/**
+ * Whether a source with this id is on disk.
+ *
+ * `dirs` is one walk of `raw/`, handed in by a caller that resolves many ids —
+ * `ow check` resolves one per citation, per page, and `sourceExists` walks the
+ * whole tree per call, so the check ran a full walk for every citation in the
+ * project. The index answers the same question from the same walk
+ * `duplicateSourceIds` and `checkRecords` already do.
+ *
+ * **The two agree because they are now one rule**, not because two rules were
+ * argued to coincide. `sourceExists` asks `sourceDirOf`, the index is built
+ * from the same walk, so `dirs.has(id)` and `sourceExists(id)` are the same
+ * question asked twice.
+ *
+ * They did not agree in the first version of this, and the earlier comment
+ * here claimed they did. `sourceExists` also treated a literal `raw/<id>` join
+ * as authoritative, so a path-shaped id like `2026/q3/weekly` — which the walk
+ * names nothing for, because the id is `weekly` wherever it sits — landed on a
+ * filed source's real directory and answered true. The gate, which calls this
+ * without an index, then accepted a page that `ow check`, which always passes
+ * one, refused immediately after.
+ */
+function exists(projectRoot: string, id: string, dirs?: ReadonlyMap<string, string>): boolean {
+  return dirs ? dirs.has(id) : sourceExists(projectRoot, id);
 }
 
 /**
@@ -121,10 +151,30 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
  * harm than the thing it looks for. An escaped id has already been reported by
  * `sourceExists` above.
  */
-function readTimeMap(projectRoot: string, id: string): TimeMap | null {
+function readTimeMap(
+  projectRoot: string,
+  id: string,
+  dirs?: ReadonlyMap<string, string>,
+): TimeMap | null {
   try {
-    const rawDir = join(projectRoot, "raw");
-    const file = assertWithin(rawDir, join(rawDir, id, TIMEMAP_FILE));
+    // Found, not joined (task 8.3). Joining meant a *filed* recording appeared
+    // to have no time map, so the in-range check silently did not run — and a
+    // citation past the end of that recording passed `ow check` when it should
+    // have been refused. Failing quietly is the outcome this check exists to
+    // prevent, so it must not be how the check itself fails.
+    // Confined on **both** branches. The index can only hold directories the
+    // walk produced, so today this cannot fail — but `dirs` is a parameter of a
+    // function exported from the package, and a caller that built one from a
+    // setting, a citation or a merge of two maps would reintroduce the
+    // unconfined read `resolvedSourceDir` exists to stop, silently, because
+    // nothing here would have refused it. The check is one comparison; the
+    // review that has to notice its absence is not.
+    const found = dirs?.get(id);
+    const dir =
+      found !== undefined
+        ? assertWithin(join(projectRoot, "raw"), found)
+        : resolvedSourceDir(projectRoot, id);
+    const file = join(dir, TIMEMAP_FILE);
     if (!existsSync(file)) return null;
     const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     return isTimeMap(parsed) ? parsed : null;

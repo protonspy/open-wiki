@@ -215,6 +215,22 @@ describe("findings (7.6)", () => {
 });
 
 describe("locateCitation (8.6)", () => {
+  it("opens a source that has been filed into a folder (8.3)", () => {
+    // A citation into a filed source passed `ow check` — which resolves through
+    // the walk — and then opened as "there is no source named …" the moment
+    // anybody clicked it. A source that is there, reported absent: the same
+    // confidently-wrong answer `adr:0016` had to fix once for pages.
+    mkdirSync(join(root, "raw", "2026", "q3", "arch.pdf"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "2026", "q3", "arch.pdf", "manifest.json"),
+      JSON.stringify({ id: "arch.pdf", title: "Arch", kind: "file", original: "arch.pdf" }),
+      "utf8",
+    );
+    writeFileSync(join(root, "raw", "2026", "q3", "arch.pdf", "source.pdf"), "%PDF");
+
+    expect(locateCitation(root, "arch.pdf", "p12")).toMatchObject({ kind: "document", page: 12 });
+  });
+
   it("opens a document at its page", () => {
     source("a.pdf", { original: "a.pdf" });
     writeFileSync(join(root, "raw", "a.pdf", "source.pdf"), "%PDF");

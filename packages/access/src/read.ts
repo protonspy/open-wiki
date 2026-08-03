@@ -16,6 +16,11 @@ export { resolveReal, isWithin, assertWithin, OutsideProjectError } from "./path
 // process serves the same manifest text `ow source list` does, to the same kind
 // of reader.
 export { boundedText, MAX_LISTED } from "./format.js";
+// Resolving an id to where the source actually sits (task 8.3). Reads only, and
+// the MCP process needs it: joining `raw/<id>` there while `readManifest` walked
+// meant the two answered about two different directories for one id.
+export { listSourceRefs, duplicateSourceIds, type SourceRef } from "./sources/locate.js";
+export { sourceDir, requireSourceDir, resolvedSourceDir } from "./sources/manifest.js";
 export {
   listEntityPages,
   listPages,
@@ -64,7 +69,9 @@ export { resolveProvenance, extractProvenanceLinks } from "./store/provenance.js
 export { isStoreOnlyChange, pagesEqual, STORE_MANAGED_FIELDS } from "./store/staleness.js";
 export {
   readManifest,
+  readManifestAt,
   parseManifest,
+  boundedManifest,
   listSources,
   sourceExists,
   MissingSourceError,
