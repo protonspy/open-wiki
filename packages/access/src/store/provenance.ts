@@ -8,8 +8,7 @@ import {
   TIMEMAP_FILE,
   type TimeMap,
 } from "@open-wiki/audio/timemap";
-import { assertWithin } from "../paths.js";
-import { sourceExists } from "../sources/manifest.js";
+import { resolvedSourceDir, sourceExists } from "../sources/manifest.js";
 import type { PageIssue } from "./page.js";
 
 /**
@@ -123,8 +122,12 @@ export function resolveProvenance(projectRoot: string, sources: string[]): PageI
  */
 function readTimeMap(projectRoot: string, id: string): TimeMap | null {
   try {
-    const rawDir = join(projectRoot, "raw");
-    const file = assertWithin(rawDir, join(rawDir, id, TIMEMAP_FILE));
+    // Found, not joined (task 8.3). Joining meant a *filed* recording appeared
+    // to have no time map, so the in-range check silently did not run — and a
+    // citation past the end of that recording passed `ow check` when it should
+    // have been refused. Failing quietly is the outcome this check exists to
+    // prevent, so it must not be how the check itself fails.
+    const file = join(resolvedSourceDir(projectRoot, id), TIMEMAP_FILE);
     if (!existsSync(file)) return null;
     const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     return isTimeMap(parsed) ? parsed : null;

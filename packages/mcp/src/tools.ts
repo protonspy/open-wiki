@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   assertWithin,
   boundedText,
+  resolvedSourceDir,
   OutsideProjectError,
   listEntityPages,
   readIndex,
@@ -147,10 +148,26 @@ function pagePath(projectRoot: string, slug: string): string {
   return assertWithin(wikiDir, join(projectRoot, found ?? `wiki/${slug}.md`));
 }
 
-/** The confined path of a source's `text.md`; throws if the id escapes `raw/`. */
+/**
+ * The confined path of a source's `text.md`; throws if the id escapes `raw/`.
+ *
+ * **Looked up, not assumed**, for the reason spelled out above `pagePath` — and
+ * this is that lesson's second half, missed when the first was learned. A source
+ * is its id wherever it sits under `raw/`
+ * (`adr:0022-a-source-is-its-id-wherever-it-sits`, plan task 8.3), so joining
+ * `raw/<id>/text.md` resolves a *filed* source to a directory that is not it.
+ *
+ * That is worse than not finding it. `readManifest` resolves through the walk
+ * while this joined, so the two answered about different directories — and
+ * because this required no `manifest.json` at the joined path, a repository
+ * could ship a bare `raw/weekly/text.md` and have it served as the text of a
+ * real, filed `raw/archive/2026/weekly`. The manifest would say one source and
+ * the text would come from another, under a citation that looks sound. A
+ * security review found it; the duplicate-id check could not, because the walk
+ * only ever registers directories that hold a manifest.
+ */
 function sourceTextPath(projectRoot: string, id: string): string {
-  const rawDir = join(projectRoot, "raw");
-  return assertWithin(rawDir, join(rawDir, id, "text.md"));
+  return join(resolvedSourceDir(projectRoot, id), "text.md");
 }
 
 /** Best-effort frontmatter for a page; `null` when it has none or will not parse. */

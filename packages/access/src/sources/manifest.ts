@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { listSourceRefs, sourceDirOf } from "./locate.js";
 import { isDate } from "../dates.js";
 import { assertWithin, OutsideProjectError } from "../paths.js";
 
@@ -13,14 +14,14 @@ import { assertWithin, OutsideProjectError } from "../paths.js";
  */
 
 /**
- * The doorway under `raw/` (plan 3.7). Its name lives here — the leaf every
- * source module already imports — because it is load-bearing in four places at
- * once: the scaffolder creates it, `listSources` must skip it, `isIdTaken` must
- * not treat it as a taken id, and the inbox itself reads it. Four copies of one
- * string mean a rename breaks the quietest of them, and the quietest is
- * `listSources` starting to return `_inbox` as a citable source.
+ * The doorway under `raw/` (plan 3.7).
+ *
+ * It moved to `locate.ts` at task 8.3 and is re-exported here so every existing
+ * importer is unaffected: the walk that must skip it now sits *below* this
+ * module rather than above it, and leaving the constant here would have made
+ * the two import each other.
  */
-export const INBOX = "_inbox";
+export { INBOX } from "./locate.js";
 
 export type SourceKind = "file" | "recording";
 
@@ -64,6 +65,41 @@ export interface SourceManifest {
    * is where that line is drawn, because that is where this application writes.
    */
   description?: string;
+  /**
+   * `"superseded"` once this source has been replaced, absent while it stands
+   * (plan 8.5).
+   *
+   * **The page's vocabulary, not a second one.** `status`, `superseded-by` and
+   * a date are the three fields the glossary's supersession entry names, and
+   * task 5.2 already writes them on a page. A source gets the same three, so a
+   * reader who learned one has learned the other — which is also why
+   * `specs/source-status` deliberately did *not* call the processed declaration
+   * `status`.
+   *
+   * The bytes under `raw/` are frozen, so a correction cannot be an edit: it is
+   * a new source that supersedes the old, and every citation into the old one
+   * keeps resolving — at something that now says it was replaced, and by what.
+   */
+  status?: "superseded";
+  /**
+   * The id of the source that replaced this one; `""` when the record says it
+   * was replaced but not by what.
+   *
+   * Empty is reachable only from a manifest this application did not write. It
+   * is kept rather than refused because reading a half-written supersession as
+   * *active* is the silent resolution to withdrawn evidence that this whole
+   * field exists to prevent — so the two disagree in the loud direction.
+   */
+  "superseded-by"?: string;
+  /**
+   * The date the supersession was recorded, absent when the record does not say.
+   *
+   * A field named for the event, holding the day it happened — the same idiom
+   * as `processed`, rather than a page's `updated`. `updated` on a manifest
+   * would read as "when this file last changed", which correcting a title or
+   * writing a description would falsify immediately.
+   */
+  superseded?: string;
 }
 
 export class TakenIdError extends Error {
@@ -136,6 +172,17 @@ export function parseManifest(id: string, text: string): SourceManifest {
   // truncate somebody else's data on a file that arrived with a clone —
   // destroying it on the read path, where nothing asked for a write at all.
   const description = record["description"];
+  // Supersession is read as **one** fact from up to three keys, and either of
+  // the two that can carry it is enough. A manifest arrives with a clone, so
+  // `status` without a pointer and a pointer without `status` both occur; the
+  // safe reading of each is *superseded*, because the alternative is a citation
+  // resolving silently to evidence somebody withdrew. An unrecognised `status`
+  // is not a claim of supersession and degrades to active, the same direction —
+  // and by the same argument — as a malformed `processed`.
+  const supersededBy = record["superseded-by"];
+  const pointer = typeof supersededBy === "string" ? supersededBy.trim() : "";
+  const superseded = record["status"] === "superseded" || pointer !== "";
+  const date = record["superseded"];
   return {
     id,
     title,
@@ -143,6 +190,13 @@ export function parseManifest(id: string, text: string): SourceManifest {
     original: typeof original === "string" ? original : "",
     ...(isDate(processed) ? { processed } : {}),
     ...(typeof description === "string" ? { description } : {}),
+    ...(superseded
+      ? {
+          status: "superseded" as const,
+          "superseded-by": pointer,
+          ...(isDate(date) ? { superseded: date } : {}),
+        }
+      : {}),
   };
 }
 
@@ -155,9 +209,66 @@ export function parseManifest(id: string, text: string): SourceManifest {
  * a source that resolved to somewhere else inside the project would still not
  * be a source.
  */
-function manifestPath(projectRoot: string, id: string): string {
+/**
+ * Where a source's files are: found by the walk, or `raw/<id>` when nothing
+ * matches — confined against `raw/` either way.
+ *
+ * **The one place this rule is written.** Task 8.3 needed it at six call sites
+ * — this module twice, `writeSourceText`, MCP's `sourceTextPath`, the desktop's
+ * `locateCitation` and `waveformOf`, and `readTimeMap` — and the first version
+ * hand-rolled it at each, in two slightly different confinement shapes. A
+ * review pointed out that this is precisely the lesson the same branch had
+ * already learned twice, in `boundedText` and `readManifestAt`: a rule copied
+ * per caller is a rule the next caller does not get. Two of the six were found
+ * by review rather than by me, which is the evidence for it.
+ *
+ * The fallback is not laziness. "Not found" and "escapes `raw/`" are different
+ * failures that must both fail, and routing the miss back through
+ * `assertWithin` keeps `OutsideProjectError` as the thing an escaping id
+ * raises — callers catch it by name — while leaving a merely-absent id to
+ * whatever "no such source" answer each caller gives. It also serves a source
+ * mid-registration, which has no `manifest.json` yet and so is invisible to the
+ * walk while its directory is nonetheless the right one.
+ */
+export function resolvedSourceDir(projectRoot: string, id: string): string {
   const rawDir = join(projectRoot, "raw");
-  return assertWithin(rawDir, join(rawDir, id, "manifest.json"));
+  return assertWithin(rawDir, sourceDirOf(projectRoot, id) ?? join(rawDir, id));
+}
+
+/**
+ * The confined path of a source's manifest; throws if the id escapes `raw/`.
+ *
+ * An id is not a path. It reaches here straight out of a page's prose — a
+ * citation like `src://../../elsewhere#p1` parses as an id — so confining is
+ * this module's job and not the caller's.
+ */
+function manifestPath(projectRoot: string, id: string): string {
+  return join(resolvedSourceDir(projectRoot, id), "manifest.json");
+}
+
+/**
+ * Where the source with this id sits, or `undefined`.
+ *
+ * Re-exported here because this is the module every source reader already
+ * imports; the walk itself lives in `locate.ts`.
+ */
+export function sourceDir(projectRoot: string, id: string): string | undefined {
+  return sourceDirOf(projectRoot, id);
+}
+
+/**
+ * The directory of the source with this id, or `MissingSourceError`.
+ *
+ * What a writer wants: every path under a source is built from this rather than
+ * from `raw/<id>`, which stopped being where a source necessarily lives at 8.3.
+ */
+export function requireSourceDir(projectRoot: string, id: string): string {
+  // Through the one rule, so an escaping id raises `OutsideProjectError` before
+  // this turns a miss into the softer `MissingSourceError` — they are different
+  // failures and the callers tell them apart.
+  const resolved = resolvedSourceDir(projectRoot, id);
+  if (sourceDirOf(projectRoot, id) === undefined) throw new MissingSourceError(id);
+  return resolved;
 }
 
 /**
@@ -166,6 +277,29 @@ function manifestPath(projectRoot: string, id: string): string {
  */
 export function readManifest(projectRoot: string, id: string): SourceManifest {
   const file = manifestPath(projectRoot, id);
+  if (!existsSync(file)) throw new MissingSourceError(id);
+  return parseManifest(id, readFileSync(file, "utf8"));
+}
+
+/**
+ * Read a manifest from a directory already resolved.
+ *
+ * For a caller that has walked once and is iterating: `readManifest` resolves
+ * the id itself, so calling it per source turned one walk into one walk *per
+ * source*. `checkRecords` and `listSourceStates` both do exactly that, which
+ * made a listing quadratic in the size of `raw/` — the regression `checkLinks`
+ * already hoists `linkableSlugs` out of its own loop to avoid.
+ *
+ * **Precondition, unchecked: `dir` must have come from `listSourceRefs`.** This
+ * confines nothing itself — it reads the path it is given — and it is safe only
+ * because the walk cannot produce a path outside `raw/`, skipping symlinked
+ * directories at every level. A security review flagged that the signature says
+ * none of this, so: a caller that builds `dir` from a setting, a citation or any
+ * other lookup reintroduces an unconfined read, and should use `readManifest`
+ * or `resolvedSourceDir` instead.
+ */
+export function readManifestAt(dir: string, id: string): SourceManifest {
+  const file = join(dir, "manifest.json");
   if (!existsSync(file)) throw new MissingSourceError(id);
   return parseManifest(id, readFileSync(file, "utf8"));
 }
@@ -188,18 +322,9 @@ export function sourceExists(projectRoot: string, id: string): boolean {
  * `manifest.json`.
  */
 export function listSources(projectRoot: string): string[] {
-  const raw = join(projectRoot, "raw");
-  if (!existsSync(raw)) return [];
-  const ids: string[] = [];
-  for (const entry of readdirSync(raw, { withFileTypes: true })) {
-    if (entry.name === INBOX) continue;
-    // `withFileTypes` describes the entry itself, so a dangling symlink is
-    // reported rather than stat'd. `statSync` on one throws ENOENT, which used
-    // to abort the whole listing — and `ow check` with it.
-    if (!entry.isDirectory()) continue;
-    const dir = join(raw, entry.name);
-    if (!existsSync(join(dir, "manifest.json"))) continue;
-    ids.push(entry.name);
-  }
-  return ids;
+  // At any depth since task 8.3 — a folder is organisation and the id is the
+  // name. This read one level of `raw/`, which made every filed source
+  // invisible to the listing, the checks, the CLI and MCP, exactly as reading
+  // one level of `wiki/` once did before `adr:0016`.
+  return listSourceRefs(projectRoot).map((ref) => ref.id);
 }

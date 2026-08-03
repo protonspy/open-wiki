@@ -49,6 +49,7 @@ describe("the wiki skill teaches the loop (5.1)", () => {
       "ow source list --unprocessed",
       "ow source describe",
       "ow source mark",
+      "ow source supersede",
       "ow check",
     ]) {
       expect(text, verb).toContain(verb);
@@ -74,6 +75,16 @@ describe("the wiki skill teaches the loop (5.1)", () => {
     const text = skill("wiki");
     expect(text).toMatch(/costs the whole read again/i);
     expect(text).toContain("fnd348r34nr483r.txt");
+  });
+
+  it("says a correction is a new source rather than an edit (8.5)", () => {
+    // The bytes under `raw/` are frozen because a citation into them resolves
+    // by position and nothing can check the lines still say what they said. An
+    // agent that "fixes" a source in place leaves every citation into it
+    // resolving, passing every check, and pointing at something else.
+    const text = skill("wiki");
+    expect(text).toMatch(/never corrected in place/i);
+    expect(text).toContain("ow graph superseded");
   });
 
   it("tells the agent to use the verbs rather than write manifest.json itself", () => {

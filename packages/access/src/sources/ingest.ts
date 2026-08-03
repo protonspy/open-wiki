@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { registerSource } from "./register.js";
 import { withdrawProcessed } from "./update.js";
-import { assertWithin } from "../paths.js";
+import { resolvedSourceDir } from "./manifest.js";
 
 /**
  * Upload a Markdown or plain-text source (plan 3.2): register it under
@@ -29,7 +29,17 @@ export function normaliseText(text: string): string {
 
 /** Write `text.md` into an existing source directory, normalised. */
 export function writeSourceText(projectRoot: string, id: string, text: string): void {
-  const file = assertWithin(projectRoot, join(projectRoot, "raw", id, "text.md"));
+  // Found rather than joined, because a source filed into a folder is not at
+  // the path its id spells (task 8.3).
+  //
+  // **Falling back to `raw/<id>` is deliberate and not laziness.** This also
+  // runs *mid-registration* and over directories the audio pipeline is still
+  // assembling — a source with no `manifest.json` yet is not a source the walk
+  // can find, and refusing here would break the door it is part of. The
+  // fallback is confined against `raw/`, which is stricter than what it
+  // replaced: that check was rooted at the *project*, so `../wiki/index`
+  // passed it.
+  const file = join(resolvedSourceDir(projectRoot, id), "text.md");
   // The bytes of a source never change, so `text.md` landing is the only way
   // readable content arrives at a source somebody has already finished with
   // (`specs/source-status`, R3.1). Withdrawn *first*, so an interrupted run

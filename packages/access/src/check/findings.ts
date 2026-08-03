@@ -24,6 +24,8 @@ export const FINDING_CODES = [
   "changelog.missing-page",
   "changelog.unrecorded-page",
   "source.uncited",
+  // 8.3 — a source is its id wherever it sits, so an id names exactly one
+  "source.duplicate-id",
   // 7.3 — provenance
   "provenance.unresolved",
   // 7.4 — vocabulary

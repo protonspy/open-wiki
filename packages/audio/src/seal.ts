@@ -57,6 +57,20 @@ export class OutsideRawError extends Error {
  * applies on the other side of the dependency, restated here because it runs
  * the other way. Exactly one segment: `raw/<id>`, never `raw/<id>/nested` and
  * never `raw/` itself.
+ *
+ * **It resolves `raw/<id>` and does not walk**, which since task 8.3 is only
+ * true of a source nobody has filed into a folder. That is deliberate, and the
+ * dependency order is the reason: `@open-wiki/access` imports this package and
+ * never the reverse, so the walk that finds a filed source is not reachable
+ * from here — and inverting that for the recording pipeline would be a large
+ * change to serve a rare case.
+ *
+ * What it costs is bounded and loud. A recording filed into a folder *before*
+ * its transcription finishes cannot be transcribed, and fails with ENOENT
+ * rather than doing something quieter; a recording is created at `raw/<id>` and
+ * filed, if ever, once it is done. Should that stop being true, the fix is for
+ * the desktop — which imports both packages — to resolve the directory through
+ * access and pass it in, not for this to learn to walk.
  */
 export function sourceDir(projectRoot: string, id: string): string {
   const rawDir = resolve(projectRoot, "raw");

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { boundedText } from "../format.js";
-import { assertWithin } from "../paths.js";
-import { listSources, readManifest, type SourceKind } from "./manifest.js";
+import { readManifestAt, requireSourceDir, type SourceKind } from "./manifest.js";
+import { listSourceRefs } from "./locate.js";
 
 /**
  * Each source's state (plan 6.1): received, text ready, cited on a page.
@@ -60,6 +60,21 @@ export interface SourceState {
    * again**, and opening it is the expensive part.
    */
   description?: string;
+  /**
+   * Present once this source has been replaced by another (plan 8.5): the
+   * replacement's id, and the day it was recorded.
+   *
+   * **Beside `stage` for the same reason `processed` is** — supersession is a
+   * judgement, not a place in the pipeline, and a superseded source still has
+   * whatever stage its files give it. Carried here rather than left to a second
+   * read because this is the view every reader already builds, and a
+   * supersession nobody sees is the silent resolution to withdrawn evidence
+   * that recording it exists to prevent.
+   *
+   * `by` is `""` when the record says it was replaced but not by what, which is
+   * only reachable from a manifest this application did not write.
+   */
+  superseded?: { by: string; date?: string };
   /** True once `text.md` exists, whatever the stage says. */
   textReady: boolean;
   /** The pages citing this source, as project-relative paths. */
@@ -76,9 +91,9 @@ interface Journal {
   error?: string;
 }
 
-function readJournal(projectRoot: string, id: string): Journal | null {
+function readJournal(dir: string): Journal | null {
   try {
-    const file = assertWithin(projectRoot, join(projectRoot, "raw", id, "journal.json"));
+    const file = join(dir, "journal.json");
     if (!existsSync(file) || !statSync(file).isFile()) return null;
     return JSON.parse(readFileSync(file, "utf8")) as Journal;
   } catch {
@@ -97,17 +112,22 @@ export function sourceState(
   projectRoot: string,
   id: string,
   citedBy: readonly string[] = [],
+  resolvedDir?: string,
 ): SourceState {
-  const manifest = readManifest(projectRoot, id);
-  // Confined against `raw/`, not merely the project: an id like `../wiki` stays
-  // inside the project and is still not a source. `readManifest` already roots
-  // at `raw/`; this has to agree with it or the two disagree about what an id
-  // may name.
-  const rawDir = join(projectRoot, "raw");
-  const dir = assertWithin(rawDir, join(rawDir, id));
+  // Where the source actually sits, which since task 8.3 is not necessarily
+  // `raw/<id>`: a folder is organisation and the id is the name. Resolved once
+  // and reused, so this and the manifest cannot end up describing two different
+  // directories — and confined against `raw/`, not merely the project, because
+  // an id like `../wiki` stays inside the project and still names no source.
+  //
+  // `resolvedDir` is what a caller iterating over sources passes in. Without
+  // it, resolving here *and* inside `readManifest` meant two full walks of
+  // `raw/` per source, so listing N sources walked the tree 2N+1 times.
+  const dir = resolvedDir ?? requireSourceDir(projectRoot, id);
+  const manifest = readManifestAt(dir, id);
   const textReady = existsSync(join(dir, "text.md"));
 
-  const journal = readJournal(projectRoot, id);
+  const journal = readJournal(dir);
   const chunks = journal?.chunks ?? [];
   const done = chunks.filter((c) => c.done).length;
   const failed = chunks.find((c) => c.error)?.error ?? journal?.error;
@@ -135,6 +155,18 @@ export function sourceState(
     ...(manifest.processed !== undefined ? { processed: manifest.processed } : {}),
     ...(manifest.description !== undefined
       ? { description: boundedText(manifest.description) }
+      : {}),
+    // Carried on every stage, like `processed`: being replaced says nothing
+    // about how far the pipeline got with the bytes that are still there.
+    ...(manifest.status === "superseded"
+      ? {
+          superseded: {
+            // Bounded for the same reason the title is: this reaches a screen
+            // and an agent's output out of a file that arrived with a clone.
+            by: boundedText(manifest["superseded-by"] ?? ""),
+            ...(manifest.superseded !== undefined ? { date: manifest.superseded } : {}),
+          },
+        }
       : {}),
     textReady,
     citedBy: [...citedBy],
@@ -183,9 +215,12 @@ export function listSourceStates(
   citations: ReadonlyMap<string, string[]> = new Map(),
 ): SourceState[] {
   const states: SourceState[] = [];
-  for (const id of listSources(projectRoot)) {
+  // One walk for the whole listing, and the directory it found handed to each
+  // state. Calling `sourceState` by id alone made this walk `raw/` twice per
+  // source — quadratic in a tree whose size grows with the number of sources.
+  for (const ref of listSourceRefs(projectRoot)) {
     try {
-      states.push(sourceState(projectRoot, id, citations.get(id) ?? []));
+      states.push(sourceState(projectRoot, ref.id, citations.get(ref.id) ?? [], ref.dir));
     } catch {
       // `listSources` only checks that `manifest.json` exists. One that will
       // not parse, or a source deleted between the listing and the read, must

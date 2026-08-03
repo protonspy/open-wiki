@@ -56,6 +56,10 @@ const OF_CODE: Record<FindingCode, Family> = {
   "wikilink.broken": LINKS,
   "page.orphan": LINKS,
   "page.duplicate-slug": LINKS,
+  // With links rather than records: a duplicate id is the same ambiguity as
+  // `page.duplicate-slug` — one name resolving to two things — and a reader
+  // fixing one is doing the same job as a reader fixing the other.
+  "source.duplicate-id": LINKS,
   "changelog.missing-page": RECORDS,
   "changelog.unrecorded-page": RECORDS,
   "source.uncited": RECORDS,

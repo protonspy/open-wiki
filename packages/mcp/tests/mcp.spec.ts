@@ -208,6 +208,45 @@ describe("MCP read tools — path confinement (9.9)", () => {
     expect(manifest.description).toMatch(/9000 characters, truncated/);
   });
 
+  it("serves a filed source's own text, not a stray file at raw/<id>/ (8.3)", () => {
+    // The spoof this closes. `readManifest` resolved through the walk while
+    // `sourceTextPath` joined `raw/<id>` — so a repository could ship a bare
+    // `raw/weekly/text.md`, with no manifest at all, and have it served as the
+    // text of the real, filed `raw/archive/2026/weekly`. The manifest would
+    // name one source and the text come from another, under a citation reading
+    // as sound. `duplicateSourceIds` cannot see it either: the walk registers
+    // only directories that hold a manifest.
+    mkdirSync(join(root, "raw", "archive", "2026", "weekly"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "archive", "2026", "weekly", "manifest.json"),
+      JSON.stringify({ id: "weekly", title: "Weekly", kind: "recording", original: "" }),
+      "utf8",
+    );
+    writeFileSync(
+      join(root, "raw", "archive", "2026", "weekly", "text.md"),
+      "the real transcript\n",
+      "utf8",
+    );
+    mkdirSync(join(root, "raw", "weekly"), { recursive: true });
+    writeFileSync(join(root, "raw", "weekly", "text.md"), "planted by the clone\n", "utf8");
+
+    expect(readSourceText(root, "weekly")).toBe("the real transcript\n");
+    expect(listSourcesState(root).find((s) => s.id === "weekly")?.hasText).toBe(true);
+  });
+
+  it("finds a filed source's text at all (8.3)", () => {
+    mkdirSync(join(root, "raw", "2026", "filed.md"), { recursive: true });
+    writeFileSync(
+      join(root, "raw", "2026", "filed.md", "manifest.json"),
+      JSON.stringify({ id: "filed.md", title: "Filed", kind: "file", original: "filed.md" }),
+      "utf8",
+    );
+    writeFileSync(join(root, "raw", "2026", "filed.md", "text.md"), "# Filed\n", "utf8");
+
+    expect(readSourceText(root, "filed.md")).toBe("# Filed\n");
+    expect(listSourcesState(root).find((s) => s.id === "filed.md")?.hasText).toBe(true);
+  });
+
   it("marks a source that has been registered but not yet normalised", () => {
     // A manifest with no text.md alongside it — the ingest ran, the extraction
     // did not. `hasText: false` is what tells the agent not to cite into it yet.

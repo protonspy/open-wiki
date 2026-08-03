@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  assertWithin,
   checkProject,
   citedSourcePages,
   extractProvenanceLinks,
   listSourceStates,
   readWiki,
+  resolvedSourceDir,
   sourceExists,
   sourceState,
   type Finding,
@@ -171,10 +171,14 @@ export type SourceLocation =
   | { kind: "missing"; reason: string };
 
 export function locateCitation(projectRoot: string, id: string, fragment: string): SourceLocation {
-  const rawDir = join(projectRoot, "raw");
   let dir: string;
   try {
-    dir = assertWithin(rawDir, join(rawDir, id));
+    // Found, not joined (task 8.3). Joining meant a citation into a *filed*
+    // source passed `ow check` — which resolves through the walk — and then
+    // opened as "there is no source named …" the moment somebody clicked it.
+    // A source that is there, reported absent, is the confidently-wrong answer
+    // `adr:0016` already had to fix once for pages.
+    dir = resolvedSourceDir(projectRoot, id);
   } catch {
     return { kind: "missing", reason: `"${id}" does not name a source` };
   }

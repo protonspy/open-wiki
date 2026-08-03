@@ -191,7 +191,9 @@ describe("e2e: agent builds and cites a page (9.15)", () => {
       const graph = JSON.parse(runGraph(fresh, undefined));
       expect(graph.pages).toEqual([]);
       expect(graph.orphans).toEqual([]);
-      expect(graph.superseded).toEqual([]);
+      // A project with no `raw/` at all answers about sources too, rather than
+      // throwing on a directory the walk never found.
+      expect(graph.superseded).toEqual({ pages: [], sources: [] });
     } finally {
       rmSync(fresh, { recursive: true, force: true });
     }

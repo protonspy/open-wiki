@@ -7,7 +7,12 @@ import { runSearch } from "./commands/search.js";
 import { runConsultAdd } from "./commands/consult.js";
 import { parseCheckArgs, runCheck, CHECK_FAILED_TO_RUN } from "./commands/check.js";
 import { parseExportArgs, runExport } from "./commands/export.js";
-import { runSourceDescribe, runSourceList, runSourceMark } from "./commands/source.js";
+import {
+  runSourceDescribe,
+  runSourceList,
+  runSourceMark,
+  runSourceSupersede,
+} from "./commands/source.js";
 import { askRunningApp, handleRequest } from "@open-wiki/access/socket";
 import { safe } from "@open-wiki/access";
 import { today } from "./date.js";
@@ -37,6 +42,7 @@ Usage:
   ow source mark <id>                                  record that this source has been read
   ow source unmark <id>                                withdraw that record
   ow source describe <id> <text>                       record what this source is about
+  ow source supersede <id> <replacement-id>            record that a source was replaced
   ow export [--out <path>] [--no-sources] [--survey]   write the project as one zip, outside it
   ow consult add <name>                                add a read-only consult of another project
   ow mcp --project <name> --read-only                  run the read-only MCP server`;
@@ -178,8 +184,19 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
         process.stdout.write(`described "${safe(id)}"\n`);
         return 0;
       }
+      if (sub === "supersede") {
+        const id = argv[2];
+        const replacement = argv[3];
+        if (!id) return fail("ow source supersede needs the source that was replaced");
+        if (!replacement) return fail("ow source supersede needs the id of the source replacing it");
+        const outcome = runSourceSupersede(projectRoot, id, replacement, today());
+        if (!outcome.ok) return fail(outcome.reason);
+        process.stdout.write(`superseded "${safe(id)}" by "${safe(replacement)}"\n`);
+        return 0;
+      }
       return fail(
-        "ow source list [--unprocessed] | ow source mark <id> | ow source unmark <id> | ow source describe <id> <text>",
+        "ow source list [--unprocessed] | ow source mark <id> | ow source unmark <id> | " +
+          "ow source describe <id> <text> | ow source supersede <id> <replacement-id>",
       );
     }
 

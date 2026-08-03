@@ -1,12 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { isDate } from "../dates.js";
-import { assertWithin } from "../paths.js";
 import { atomicWrite } from "../write/atomic-write.js";
 import {
   MissingSourceError,
   parseManifest,
   readManifest,
+  requireSourceDir,
+  sourceExists,
   type SourceManifest,
 } from "./manifest.js";
 
@@ -63,6 +64,18 @@ export interface ManifestChange {
    * document this deliberately is not.
    */
   description?: string | null;
+  /**
+   * The source that replaced this one and the day it was recorded, or `null` to
+   * withdraw the record. Omitted leaves it alone.
+   *
+   * **One field for three keys, deliberately.** `status`, `superseded-by` and
+   * the date are the shape task 5.2 gave a page, and they are only meaningful
+   * together: a caller that could set the pointer without the status could
+   * leave a manifest asserting two different things about one fact. They move
+   * as a unit here for the same reason `processed` carries its own date rather
+   * than pairing with a boolean.
+   */
+  superseded?: { by: string; date: string } | null;
 }
 
 /**
@@ -110,12 +123,21 @@ export function updateManifest(
     }
   }
 
+  if (change.superseded !== undefined && change.superseded !== null) {
+    validateSupersession(projectRoot, id, change.superseded);
+  }
+
   // Confined against `raw/` and not merely the project, because an id like
   // `../wiki` stays inside the project and still names no source. This is the
   // path actually written, and it is resolved before anything is read so the
   // read and the write cannot be looking at two different files.
-  const rawDir = join(projectRoot, "raw");
-  const file = assertWithin(rawDir, join(rawDir, id, "manifest.json"));
+  // Found rather than joined, because a source filed into a folder is not at
+  // the path its id spells (task 8.3) — and writing to `raw/<id>/manifest.json`
+  // for a filed source would have *created* a second directory carrying the
+  // same id, which is the one failure the addressing model has to report
+  // rather than manufacture.
+  const dir = requireSourceDir(projectRoot, id);
+  const file = join(dir, "manifest.json");
   if (!existsSync(file)) throw new MissingSourceError(id);
 
   // Read the file's own object, not just the fields this module models.
@@ -161,12 +183,107 @@ export function updateManifest(
   if (change.description === null) delete next["description"];
   else if (change.description !== undefined) next["description"] = change.description;
 
+  // Supersession is normalised only when the view says the source *is*
+  // superseded — writing back all three keys so a pointer that arrived without
+  // a `status`, or the reverse, stops being two fields that disagree.
+  //
+  // When the view says it is not, nothing is deleted. `status` is the one
+  // modelled name whose unrecognised values are not necessarily this
+  // application's garbage: `status: "draft"` in a manifest that arrived with a
+  // clone is somebody's vocabulary, and scrubbing it the way `processed` is
+  // scrubbed would destroy data on a write that asked to change a title.
+  if (current.status === "superseded") {
+    next["status"] = "superseded";
+    next["superseded-by"] = current["superseded-by"] ?? "";
+    if (current.superseded !== undefined) next["superseded"] = current.superseded;
+    else delete next["superseded"];
+  }
+  if (change.superseded === null) {
+    // All three together, so none is left asserting on its own.
+    delete next["status"];
+    delete next["superseded-by"];
+    delete next["superseded"];
+  } else if (change.superseded !== undefined) {
+    next["status"] = "superseded";
+    next["superseded-by"] = change.superseded.by;
+    next["superseded"] = change.superseded.date;
+  }
+
   // `atomicWrite` does temp-plus-rename with a random name — a fixed `.tmp` is
   // both a name an attacker can plant at and a file two concurrent updates of
   // one source would share, the loser's cleanup deleting the winner's in-flight
   // file.
-  atomicWrite(projectRoot, join("raw", id, "manifest.json"), `${JSON.stringify(next, null, 2)}\n`);
+  // The path resolved above, made project-relative — never `raw/<id>` rebuilt,
+  // which for a filed source names a directory that does not exist and would be
+  // created by the write.
+  atomicWrite(projectRoot, relative(projectRoot, file), `${JSON.stringify(next, null, 2)}\n`);
   return parseManifest(id, JSON.stringify(next));
+}
+
+/**
+ * What a supersession has to satisfy before it is written.
+ *
+ * **This refuses a replacement that names no source, and `supersedePage`
+ * deliberately does not.** The divergence is the point rather than an
+ * oversight: a page's replacement may legitimately not exist yet — the agent
+ * writes the new page next — and a dangling `superseded-by` there is a check
+ * finding, reported by something that walks every page. Nothing walks a
+ * manifest for one. A source's replacement, meanwhile, is bytes that have
+ * already been uploaded, because `raw/` is frozen and a correction *is* a new
+ * source; so the id is knowable at the moment of the write, and refusing it
+ * here is the only place a wrong one is ever caught.
+ */
+function validateSupersession(
+  projectRoot: string,
+  id: string,
+  superseded: { by: string; date: string },
+): void {
+  const { by, date } = superseded;
+  // Refused by shape first, with its own message: an id is not a path, and
+  // `sourceExists` would answer the far vaguer "names no source" for something
+  // that could never have named one (plan 9.13 — a refusal an agent cannot act
+  // on becomes an attempt it repeats).
+  if (by.trim() === "" || by === "." || by === ".." || /[\\/]/.test(by)) {
+    throw new Error(
+      `"${by}" is not a source id — a replacement is named by its id, which is a single directory name under raw/`,
+    );
+  }
+  if (by === id) {
+    throw new Error(`a source cannot supersede itself — "${id}" is both sides of this record`);
+  }
+  if (!isDate(date)) {
+    throw new Error(
+      `"${date}" is not a date — a supersession is recorded as YYYY-MM-DD, the day it was made`,
+    );
+  }
+  if (!sourceExists(projectRoot, by)) {
+    throw new MissingSourceError(by);
+  }
+}
+
+/**
+ * Record that `replacementId` replaced the source `id`, on `date` (plan 8.5).
+ *
+ * A correction is a new source that supersedes the old, and never an edit: the
+ * bytes under `raw/` are frozen, because a codewiki citation into them resolves
+ * by *position* and nothing can check that the lines still say what they said.
+ * So every citation into the replaced source keeps resolving — at something
+ * that now says it was replaced, and by what. Deleting outright stays allowed
+ * and stays the last step rather than the mechanism: it breaks every citation
+ * into that source, and that is the honest cost of removing evidence somebody
+ * built on.
+ *
+ * Through `updateManifest`, which is the one thing that writes a manifest
+ * (`specs/source-status`, R2.1) — this names the act, it does not perform a
+ * second kind of write.
+ */
+export function supersedeSource(
+  projectRoot: string,
+  id: string,
+  replacementId: string,
+  date: string,
+): SourceManifest {
+  return updateManifest(projectRoot, id, { superseded: { by: replacementId, date } });
 }
 
 /**
