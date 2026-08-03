@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { writeSettings, type ProjectSettings } from "./config/settings.js";
 import { writeIgnore } from "./ignore.js";
 import { assertWithin } from "./paths.js";
-import { scaffoldSkills } from "./skills.js";
+import { scaffoldSkills, type ScaffoldSkillsResult } from "./skills.js";
 import { INBOX } from "./sources/manifest.js";
 import { CHANGELOG_SEED, INDEX_SEED } from "./store/index.js";
 
@@ -35,7 +35,7 @@ export class DirectoryOccupiedError extends Error {
 export interface ScaffoldResult {
   createdDirs: string[];
   settings: ProjectSettings;
-  skills: { written: string[]; skipped: string[] };
+  skills: ScaffoldSkillsResult;
   /** The wiki's own pages this run wrote — empty on a project that had them. */
   wiki: { written: string[] };
 }
@@ -60,7 +60,10 @@ function isEmptyOrProject(dir: string): boolean {
  * already occupied by something else, and calls the settings of 2.7, the ignore
  * entries of 2.8 and the skills of 9.3 rather than reimplementing any of them.
  */
-export function scaffold(projectRoot: string): ScaffoldResult {
+export function scaffold(
+  projectRoot: string,
+  options: { refreshSkills?: boolean } = {},
+): ScaffoldResult {
   if (existsSync(projectRoot) && !isEmptyOrProject(projectRoot)) {
     throw new DirectoryOccupiedError(projectRoot);
   }
@@ -75,7 +78,7 @@ export function scaffold(projectRoot: string): ScaffoldResult {
 
   const settings = writeSettings(projectRoot, {});
   writeIgnore(projectRoot);
-  const skills = scaffoldSkills(projectRoot);
+  const skills = scaffoldSkills(projectRoot, { refresh: options.refreshSkills === true });
   return { createdDirs, settings, skills, wiki: seedWiki(projectRoot) };
 }
 

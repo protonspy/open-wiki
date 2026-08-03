@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { boundedText } from "../format.js";
 import { assertWithin } from "../paths.js";
 import { listSources, readManifest, type SourceKind } from "./manifest.js";
 
@@ -50,6 +51,15 @@ export interface SourceState {
    * cited and never declared.
    */
   processed?: string;
+  /**
+   * What the source is about, written by whoever read it (plan 8.1).
+   *
+   * Carried here because this is what the agent's loop reads. The whole point
+   * of writing a description is that the next reader — another agent, the
+   * sources pane, a consulting project — gets it **without opening the source
+   * again**, and opening it is the expensive part.
+   */
+  description?: string;
   /** True once `text.md` exists, whatever the stage says. */
   textReady: boolean;
   /** The pages citing this source, as project-relative paths. */
@@ -102,13 +112,30 @@ export function sourceState(
   const done = chunks.filter((c) => c.done).length;
   const failed = chunks.find((c) => c.error)?.error ?? journal?.error;
 
+  // **The free text is bounded here, once, for every reader.**
+  //
+  // `readManifest` is the file and keeps whatever length it finds — truncating
+  // on the read path would destroy somebody's data on a manifest that arrived
+  // with a `git clone` and that nobody asked to write. `sourceState` is the
+  // *view*, and a multi-megabyte description is one source crowding every other
+  // out of whoever is looking.
+  //
+  // It sits here rather than in each caller because there turned out to be
+  // four — `ow source list`, the desktop's `sources()`, its `sourceRows` and
+  // its `sourceDetail` — and two successive security reviews each found one the
+  // previous fix had missed. A rule copied per caller is a rule the next caller
+  // does not get. The MCP tools bound separately because they serve
+  // `readManifest` directly and never build a `SourceState`.
   const base = {
     id,
-    title: manifest.title,
+    title: boundedText(manifest.title),
     kind: manifest.kind,
     // Carried on every stage, because the question it answers — has anybody
     // finished with this — is orthogonal to how far the pipeline got.
     ...(manifest.processed !== undefined ? { processed: manifest.processed } : {}),
+    ...(manifest.description !== undefined
+      ? { description: boundedText(manifest.description) }
+      : {}),
     textReady,
     citedBy: [...citedBy],
   };

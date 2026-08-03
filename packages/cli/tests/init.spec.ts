@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectRegistry, readSettings } from "@open-wiki/access";
-import { runInit } from "../src/commands/init.js";
+import { runInit, staleSkillsNotice } from "../src/commands/init.js";
 
 /**
  * `ow init` (plan 9.3, 9.4, 9.5): the scaffolder of 2.1 makes the project, and
@@ -62,6 +62,53 @@ describe("ow init (9.3–9.5)", () => {
     const again = runInit({ projectRoot: root });
     expect(again.skills.skipped.length).toBeGreaterThan(0);
     expect(again.skills.written).toEqual([]);
+  });
+
+  describe("skills that have aged in the project (5.3)", () => {
+    const OLD = "---\nname: wiki\nopen-wiki-version: 0.1.0\n---\nthe old convention\n";
+    const wikiSkill = (): string => join(root, ".claude", "skills", "wiki", "SKILL.md");
+
+    it("reports an aged skill and leaves it alone", () => {
+      runInit({ projectRoot: root });
+      writeFileSync(wikiSkill(), OLD, "utf8");
+
+      const again = runInit({ projectRoot: root });
+      expect(again.skills.outdated.map((s) => s.dir)).toEqual(["wiki"]);
+      expect(readFileSync(wikiSkill(), "utf8")).toBe(OLD);
+    });
+
+    it("says what to do about it, and that doing it overwrites the file", () => {
+      const notice = staleSkillsNotice([{ dir: "wiki", found: "0.1.0", expected: "0.3.0" }]);
+      expect(notice).toContain("wiki: 0.1.0");
+      expect(notice).toContain("--refresh-skills");
+      expect(notice).toMatch(/overwrites the files/i);
+    });
+
+    it("says nothing at all when nothing has aged", () => {
+      expect(staleSkillsNotice([])).toBe("");
+    });
+
+    it("renders an unreadable skill as such rather than as a missing marker", () => {
+      const notice = staleSkillsNotice([
+        { dir: "wiki", found: "unreadable", expected: "0.3.0" },
+        { dir: "codewiki", found: null, expected: "0.3.0" },
+      ]);
+      expect(notice).toContain("wiki: could not be read");
+      expect(notice).toContain("codewiki: no version marker");
+    });
+
+    it("rewrites it with --refresh-skills, and then says nothing is out of date", () => {
+      // The bug this pins: the run that fixed the file also reported it as
+      // stale, telling the caller to re-run the flag it had just been given.
+      runInit({ projectRoot: root });
+      writeFileSync(wikiSkill(), OLD, "utf8");
+
+      const refreshed = runInit({ projectRoot: root, refreshSkills: true });
+      expect(refreshed.skills.written).toContain("wiki");
+      expect(refreshed.skills.outdated).toEqual([]);
+      expect(staleSkillsNotice(refreshed.skills.outdated)).toBe("");
+      expect(readFileSync(wikiSkill(), "utf8")).toContain("ow source list --unprocessed");
+    });
   });
 
   it("records the chosen language in the settings and the generated CLAUDE.md", () => {

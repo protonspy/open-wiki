@@ -55,7 +55,25 @@ export interface ManifestChange {
    * the declaration. Omitted leaves whatever is there alone.
    */
   processed?: string | null;
+  /**
+   * What the source is about, or `null` to clear it. Omitted leaves it alone.
+   *
+   * Replaces rather than appends: it is one statement about the source, made by
+   * whoever last read it, and a description that accreted would become the
+   * document this deliberately is not.
+   */
+  description?: string | null;
 }
+
+/**
+ * The longest description this application will write.
+ *
+ * Not a storage limit — it is where the plan's line sits. "If what the agent
+ * has to say about a source needs sections, it is a wiki page citing that
+ * source, and writing pages is the entire product." A couple of thousand
+ * characters is a paragraph or two; past that, the refusal is the reminder.
+ */
+export const MAX_DESCRIPTION = 2000;
 
 /**
  * Apply a change to a source's manifest and return what was written. Throws
@@ -76,6 +94,20 @@ export function updateManifest(
     throw new Error(
       `"${change.processed}" is not a date — a processed declaration is YYYY-MM-DD, the day it was made`,
     );
+  }
+  if (typeof change.description === "string") {
+    if (change.description.trim() === "") {
+      // Storing whitespace would leave a source that reports having a
+      // description and says nothing, which is worse than having none — the
+      // sources pane shows a blank line where "nobody has read this" belongs.
+      throw new Error("a description cannot be blank — pass null to clear it instead");
+    }
+    if (change.description.length > MAX_DESCRIPTION) {
+      throw new Error(
+        `that description is ${change.description.length} characters, over the ${MAX_DESCRIPTION}-character bound — ` +
+          `if what there is to say about this source needs that much room, it is a wiki page citing the source, not a note beside it`,
+      );
+    }
   }
 
   // Confined against `raw/` and not merely the project, because an id like
@@ -122,6 +154,12 @@ export function updateManifest(
   // can disagree.
   if (change.processed === null) delete next["processed"];
   else if (change.processed !== undefined) next["processed"] = change.processed;
+
+  // Same rule for the description: modelled, so the validated view owns it and
+  // the passthrough does not get to carry back a value `parseManifest` dropped.
+  if (current.description === undefined) delete next["description"];
+  if (change.description === null) delete next["description"];
+  else if (change.description !== undefined) next["description"] = change.description;
 
   // `atomicWrite` does temp-plus-rename with a random name — a fixed `.tmp` is
   // both a name an attacker can plant at and a file two concurrent updates of

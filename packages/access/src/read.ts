@@ -11,6 +11,11 @@
  * settings reads `ow.json`. Neither writes a page, so both belong here.
  */
 export { resolveReal, isWithin, assertWithin, OutsideProjectError } from "./paths.js";
+// Pure string arithmetic with no filesystem in it, so it belongs in this barrel
+// on the same terms the settings do — and it is needed here because the MCP
+// process serves the same manifest text `ow source list` does, to the same kind
+// of reader.
+export { boundedText, MAX_LISTED } from "./format.js";
 export {
   listEntityPages,
   listPages,

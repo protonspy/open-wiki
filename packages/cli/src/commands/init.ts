@@ -8,6 +8,8 @@ import {
   scaffold,
   writeSettings,
   type Language,
+  type ScaffoldSkillsResult,
+  type StaleSkill,
 } from "@open-wiki/access";
 import { writeClaudeMd, writeHooks } from "../install.js";
 
@@ -15,14 +17,43 @@ export interface InitOptions {
   projectRoot?: string;
   language?: string;
   name?: string;
+  /** Rewrite skills this build has moved on from — see `--refresh-skills`. */
+  refreshSkills?: boolean;
 }
 
 export interface InitResult {
   projectRoot: string;
-  skills: { written: string[]; skipped: string[] };
+  skills: ScaffoldSkillsResult;
   hooks: string;
   claudeMd: string;
   registeredName?: string;
+}
+
+/**
+ * What to say about skills that have aged in the project they were written into
+ * (plan 5.3).
+ *
+ * `adr:0015` made the convention ship as a skill and left this open. It bites
+ * now: a project scaffolded before the source loop existed keeps a wiki skill
+ * that never mentions `ow source`, and a skill is read as current every
+ * session — so the agent follows an instruction set the product has moved past,
+ * with nothing anywhere saying so.
+ *
+ * `ow init` overwrites nothing, so the upgrade path has to be a sentence rather
+ * than a silent fix. This is that sentence.
+ */
+export function staleSkillsNotice(outdated: readonly StaleSkill[]): string {
+  if (outdated.length === 0) return "";
+  const lines = outdated.map((s) => {
+    const found = s.found === "unreadable" ? "could not be read" : (s.found ?? "no version marker");
+    return `    ${s.dir}: ${found} — this build ships ${s.expected}`;
+  });
+  return [
+    `  skills out of date (${outdated.length}):`,
+    ...lines,
+    "    Re-run with --refresh-skills to rewrite them. That overwrites the files,",
+    "    edits and all; copy anything of your own out first.",
+  ].join("\n");
 }
 
 /**
@@ -36,7 +67,7 @@ export function runInit(opts: InitOptions): InitResult {
   const projectRoot = resolve(opts.projectRoot ?? process.cwd());
   let skills;
   try {
-    skills = scaffold(projectRoot).skills;
+    skills = scaffold(projectRoot, { refreshSkills: opts.refreshSkills === true }).skills;
   } catch (err) {
     if (err instanceof DirectoryOccupiedError) {
       throw new Error(

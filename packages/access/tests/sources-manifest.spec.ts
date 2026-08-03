@@ -186,6 +186,41 @@ describe("parseManifest — a manifest arrives with a clone, so its shape is che
   });
 });
 
+describe("parseManifest — what the agent learned about a source (plan 8.1)", () => {
+  it("reads a description", () => {
+    // `fnd348r34nr483r.txt` is a real filename that says nothing, and `adr:0011`
+    // freezes the id from it permanently. The agent is the only party that can
+    // say what the file is about, because saying so requires having read it.
+    const m = parseManifest(
+      "fnd348r34nr483r.txt",
+      '{"title":"A","kind":"file","description":"The Q3 incident timeline."}',
+    );
+    expect(m.description).toBe("The Q3 incident timeline.");
+  });
+
+  it("leaves it absent when nobody has said anything", () => {
+    expect(parseManifest("a.pdf", '{"title":"A","kind":"file"}').description).toBeUndefined();
+  });
+
+  it("degrades a description that is not a string rather than refusing the source", () => {
+    for (const value of ["{}", "42", "true", "[]", "null"]) {
+      const m = parseManifest("a.pdf", `{"title":"A","kind":"file","description":${value}}`);
+      expect(m.description, value).toBeUndefined();
+      expect(m.title, value).toBe("A");
+    }
+  });
+
+  it("keeps a long description a clone brought, rather than truncating somebody's data", () => {
+    // The bound is a rule about what *this* application writes — see
+    // `updateManifest` — not a licence to silently discard what it finds.
+    const long = "x".repeat(5000);
+    expect(
+      parseManifest("a.pdf", JSON.stringify({ title: "A", kind: "file", description: long }))
+        .description,
+    ).toBe(long);
+  });
+});
+
 describe("parseManifest — the one declared fact (source-status R1)", () => {
   it("reads the declaration, which is the date it was made", () => {
     const m = parseManifest("a.pdf", '{"title":"A","kind":"file","processed":"2026-08-02"}');

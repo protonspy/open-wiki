@@ -9,8 +9,8 @@ import {
 } from "@open-wiki/access";
 
 /**
- * `ow source mark|unmark <id>` and `ow source list` — plan tasks 4.2, 4.3 and
- * 4.4 of `plans/sources-stored-not-parsed.md`.
+ * `ow source list|mark|unmark|describe` — plan tasks 4.2, 4.3, 4.4 and 8.2 of
+ * `plans/sources-stored-not-parsed.md`.
  *
  * This is the surface **the agent's own loop** works through: `list` says what
  * nobody has finished with, `mark` records the judgement that closes one.
@@ -75,6 +75,43 @@ export function runSourceMark(
 }
 
 /**
+ * `ow source describe <id> <text>` — record what a source is about (plan 8.2).
+ *
+ * **The CLI is the sanctioned path**, and that is the point of the task rather
+ * than a convenience: `raw/` is not gated the way `wiki/` is, so an agent
+ * writing `manifest.json` with its own tools would meet no schema at all — no
+ * bound, no blank check, nothing stopping it from replacing the file with
+ * whatever it composed. Here it meets `updateManifest`.
+ *
+ * Written in the same breath as marking the source read (plan 5.5). Reading the
+ * file is the expensive part and it has already happened; a description written
+ * then costs nothing, and one written later costs the whole read again.
+ *
+ * Always reports `changed: true`, unlike `runSourceMark`: a description
+ * *replaces*, so there is no "already said that" to distinguish and no original
+ * date to preserve. Do not read the shared result type as promising parity.
+ */
+export function runSourceDescribe(
+  projectRoot: string,
+  id: string,
+  description: string,
+): SourceMarkOutcome {
+  try {
+    const written = updateManifest(projectRoot, id, { description });
+    return {
+      ok: true,
+      result: {
+        id,
+        changed: true,
+        ...(written.processed !== undefined ? { processed: written.processed } : {}),
+      },
+    };
+  } catch (err) {
+    return { ok: false, reason: refusal(id, err) };
+  }
+}
+
+/**
  * One refusal, in the shape the gate refuses a page write (plan 9.13) — an
  * agent that learned to read one has learned both.
  *
@@ -109,5 +146,8 @@ export function runSourceList(projectRoot: string, unprocessedOnly: boolean): st
   const citations = citedSourcePages(readWiki(projectRoot));
   const states = listSourceStates(projectRoot, citations);
   const listed = unprocessedOnly ? states.filter((s) => s.processed === undefined) : states;
+  // The free text is already bounded: `sourceState` does it for every reader of
+  // a `SourceState`, which is where it belongs. This did it here first, and a
+  // review found the two desktop callers that copy would never have reached.
   return JSON.stringify(listed, null, 2);
 }

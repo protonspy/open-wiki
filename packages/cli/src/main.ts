@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { runInit } from "./commands/init.js";
+import { runInit, staleSkillsNotice } from "./commands/init.js";
 import { runWrite } from "./commands/write.js";
 import { runGateCommand } from "./commands/gate.js";
 import { runGraph } from "./commands/graph.js";
@@ -7,7 +7,7 @@ import { runSearch } from "./commands/search.js";
 import { runConsultAdd } from "./commands/consult.js";
 import { parseCheckArgs, runCheck, CHECK_FAILED_TO_RUN } from "./commands/check.js";
 import { parseExportArgs, runExport } from "./commands/export.js";
-import { runSourceList, runSourceMark } from "./commands/source.js";
+import { runSourceDescribe, runSourceList, runSourceMark } from "./commands/source.js";
 import { askRunningApp, handleRequest } from "@open-wiki/access/socket";
 import { safe } from "@open-wiki/access";
 import { today } from "./date.js";
@@ -26,6 +26,7 @@ export function usage(): string {
 
 Usage:
   ow init [--language <en|pt-BR|es>] [--name <name>]   scaffold a project and install the gate
+       [--refresh-skills]                              …rewriting skills this build has moved past
   ow write <path> [--content <text> | --file <path>]   write a page through the gate (no-hook path)
   ow gate pre|post                                     the hook handlers (read JSON on stdin)
   ow read <slug>                                       print a page, through the running app when there is one
@@ -35,6 +36,7 @@ Usage:
   ow source list [--unprocessed]                       the sources, as JSON; --unprocessed is the queue
   ow source mark <id>                                  record that this source has been read
   ow source unmark <id>                                withdraw that record
+  ow source describe <id> <text>                       record what this source is about
   ow export [--out <path>] [--no-sources] [--survey]   write the project as one zip, outside it
   ow consult add <name>                                add a read-only consult of another project
   ow mcp --project <name> --read-only                  run the read-only MCP server`;
@@ -65,6 +67,7 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
             `  hooks: ${result.hooks}`,
             `  claude.md: ${result.claudeMd}`,
             result.registeredName ? `  registered as: ${result.registeredName}` : "",
+            staleSkillsNotice(result.skills.outdated),
           ]
             .filter(Boolean)
             .join("\n") + "\n",
@@ -162,7 +165,22 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
         process.stdout.write(`${changed ? "marked" : "already"} "${safe(id)}" ${what}\n`);
         return 0;
       }
-      return fail("ow source list [--unprocessed] | ow source mark <id> | ow source unmark <id>");
+      if (sub === "describe") {
+        const id = argv[2];
+        // The rest of the line, joined. A description is prose and a shell has
+        // already split it on spaces; requiring quotes would make the common
+        // call the one that silently records only its first word.
+        const text = argv.slice(3).join(" ").trim();
+        if (!id) return fail("ow source describe needs a source id");
+        if (!text) return fail("ow source describe needs the description after the id");
+        const outcome = runSourceDescribe(projectRoot, id, text);
+        if (!outcome.ok) return fail(outcome.reason);
+        process.stdout.write(`described "${safe(id)}"\n`);
+        return 0;
+      }
+      return fail(
+        "ow source list [--unprocessed] | ow source mark <id> | ow source unmark <id> | ow source describe <id> <text>",
+      );
     }
 
     case "consult": {
@@ -188,11 +206,13 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
 export function parseInitArgs(args: string[]): {
   language?: string;
   name?: string;
+  refreshSkills?: boolean;
 } {
-  const opts: { language?: string; name?: string } = {};
+  const opts: { language?: string; name?: string; refreshSkills?: boolean } = {};
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--language") opts.language = args[++i];
     else if (args[i] === "--name") opts.name = args[++i];
+    else if (args[i] === "--refresh-skills") opts.refreshSkills = true;
   }
   return opts;
 }
