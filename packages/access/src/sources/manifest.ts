@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { listSourceRefs, sourceDirOf } from "./locate.js";
 import { isDate } from "../dates.js";
 import { boundedText } from "../format.js";
-import { assertWithin, OutsideProjectError } from "../paths.js";
+import { assertWithin } from "../paths.js";
 
 /**
  * Read a source — any entry in `raw/`, an uploaded file or a recording
@@ -365,16 +365,36 @@ export function readManifestAt(dir: string, id: string): SourceManifest {
   return parseManifest(id, readFileSync(file, "utf8"));
 }
 
-/** True when a source directory with this id exists under `raw/`. */
+/**
+ * True when a source with this id exists under `raw/`.
+ *
+ * **The walk decides, and the `raw/<id>` fallback does not.** `resolvedSourceDir`
+ * falls back to that join so a *write* can address a source mid-registration,
+ * which has no `manifest.json` yet and is therefore invisible to the walk. An
+ * existence question has no such case — what it tests for is exactly the
+ * `manifest.json` the walk looks for — and answering it from the join made the
+ * two disagree wherever the join lands somewhere the walk would not name:
+ *
+ * - **A path-shaped id that coincides with a filed source.** `2026/q3/weekly`
+ *   is not an id — the id is `weekly`, wherever it sits (`adr:0022`) — but
+ *   joining it onto `raw/` landed on the real directory, so this returned true
+ *   for a citation naming a source by its *location*, the one thing the
+ *   addressing model exists to stop a citation from doing.
+ * - **A symlinked source directory**, which `listSourceRefs` skips at every
+ *   level precisely so `raw/` cannot enumerate content from elsewhere on disk.
+ * - **The `_inbox` doorway**, which the walk excludes because it is not a
+ *   source.
+ *
+ * A code review found the first of those as a *disagreement between callers*
+ * rather than as a wrong answer: `checkProvenance` resolves through the index
+ * built from the walk, and the write gate calls `resolveProvenance` without one
+ * — so the gate accepted a page that `ow check` refused a moment later. That is
+ * the worse failure, and the fix is one rule rather than a second fallback:
+ * both sides now ask the walk, and the walk is what `listSources`, the
+ * duplicate-id finding and every resolution already agree on.
+ */
 export function sourceExists(projectRoot: string, id: string): boolean {
-  try {
-    return existsSync(manifestPath(projectRoot, id));
-  } catch (e) {
-    // An id that escapes `raw/` names no source. The caller gets `false` and
-    // renders "points at no source", which is both true and the whole answer.
-    if (e instanceof OutsideProjectError) return false;
-    throw e;
-  }
+  return sourceDirOf(projectRoot, id) !== undefined;
 }
 
 /**

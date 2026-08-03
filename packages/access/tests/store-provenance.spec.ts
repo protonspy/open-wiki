@@ -179,6 +179,38 @@ describe("resolveProvenance (5.4)", () => {
     // disagreed with `sourceExists` would be a check reporting different
     // findings depending on which caller ran it.
 
+    it("refuses a path-shaped id that lands on a filed source, both ways round", () => {
+      // The disagreement a review caught, and the reason the two call shapes
+      // are pinned against each other rather than each against a fixture.
+      //
+      // A source filed into `raw/2026/q3/` has the id `weekly` — a source is
+      // its id wherever it sits (`adr:0022`). `2026/q3/weekly` is a *location*,
+      // and a citation naming one is the thing that model exists to stop. But
+      // joining it onto `raw/` landed on the real directory, so `sourceExists`
+      // said yes while the index, built from the walk, said no.
+      //
+      // What made it a blocker is which caller got which answer: the write gate
+      // resolves without an index and the check always builds one, so the gate
+      // accepted a page `ow check` refused a moment later — the same page, the
+      // same project, two verdicts.
+      mkdirSync(join(root, "raw", "2026", "q3"), { recursive: true });
+      renameSync(
+        join(root, "raw", "fenix-weekly-2026-07-31"),
+        join(root, "raw", "2026", "q3", "fenix-weekly-2026-07-31"),
+      );
+      const byLocation = ["rec://2026/q3/fenix-weekly-2026-07-31#14:32"];
+      const byId = ["rec://fenix-weekly-2026-07-31#14:32"];
+
+      for (const dirs of [undefined, sourceDirIndex(root)]) {
+        const issues = resolveProvenance(root, byLocation, dirs);
+        expect(issues, String(dirs !== undefined)).toHaveLength(1);
+        expect(issues[0]!.reason).toContain("points at no source");
+        // And the id itself still resolves, filed or not — which is the whole
+        // point of the addressing model and not collateral of the refusal.
+        expect(resolveProvenance(root, byId, dirs)).toEqual([]);
+      }
+    });
+
     it("answers the same as resolving each id on its own", () => {
       const links = [
         "src://arquitetura-fenix.pdf#p12",

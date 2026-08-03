@@ -114,10 +114,18 @@ export function resolveProvenance(
  * project. The index answers the same question from the same walk
  * `duplicateSourceIds` and `checkRecords` already do.
  *
- * The two agree by construction: the index holds exactly the directories that
- * hold a `manifest.json`, which is what `sourceExists` tests for, and an id
- * that escapes `raw/` is in neither — `assertWithin` rejects it there, and the
- * walk cannot produce a name outside the tree it walked.
+ * **The two agree because they are now one rule**, not because two rules were
+ * argued to coincide. `sourceExists` asks `sourceDirOf`, the index is built
+ * from the same walk, so `dirs.has(id)` and `sourceExists(id)` are the same
+ * question asked twice.
+ *
+ * They did not agree in the first version of this, and the earlier comment
+ * here claimed they did. `sourceExists` also treated a literal `raw/<id>` join
+ * as authoritative, so a path-shaped id like `2026/q3/weekly` — which the walk
+ * names nothing for, because the id is `weekly` wherever it sits — landed on a
+ * filed source's real directory and answered true. The gate, which calls this
+ * without an index, then accepted a page that `ow check`, which always passes
+ * one, refused immediately after.
  */
 function exists(projectRoot: string, id: string, dirs?: ReadonlyMap<string, string>): boolean {
   return dirs ? dirs.has(id) : sourceExists(projectRoot, id);
