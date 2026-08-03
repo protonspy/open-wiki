@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::capture::{AudioFormat, CaptureError, CaptureSource, Poll};
+use crate::endpoint::CapturedEndpoint;
 
 /// A capture source drained by a thread of its own.
 ///
@@ -37,6 +38,10 @@ pub struct ThreadedSource {
     /// What the thread found when it tried to open the device. `None` while it
     /// has not answered yet.
     opened: Arc<Mutex<Option<Result<String, String>>>>,
+    /// The endpoint the thread actually opened (R3.3). Published once, when it
+    /// opened: the manifest records what each track *started* on, and a move
+    /// after that is a `device_change` rather than a different answer here.
+    endpoint: Arc<Mutex<CapturedEndpoint>>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -44,6 +49,12 @@ pub struct ThreadedSource {
 /// per packet this is seconds of slack, which is far more than the pump loop
 /// needs and still bounded.
 const QUEUE_DEPTH: usize = 2048;
+
+/// How long the capture thread waits after a poll that produced no audio.
+///
+/// Short enough to be invisible against a 500 ms engine buffer, long enough
+/// that a source answering instantly cannot spin a core.
+const IDLE_PAUSE_MS: u64 = 2;
 
 enum Command {
     Start,
@@ -80,7 +91,13 @@ impl ThreadedSource {
         let fault: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
         let opened: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));
+        let endpoint: Arc<Mutex<CapturedEndpoint>> = Arc::new(Mutex::new(CapturedEndpoint {
+            id: None,
+            name: device.clone(),
+            pinned: false,
+        }));
 
+        let thread_endpoint = Arc::clone(&endpoint);
         let thread_running = Arc::clone(&running);
         let thread_lost = Arc::clone(&lost);
         let thread_opened = Arc::clone(&opened);
@@ -95,6 +112,10 @@ impl ThreadedSource {
             let mut source = match open() {
                 Ok(source) => {
                     let name = source.device_name();
+                    // The endpoint is read here, on the thread that owns the
+                    // source — it is the only place that can, and the manifest
+                    // needs it (R3.3).
+                    *thread_endpoint.lock().unwrap_or_else(|e| e.into_inner()) = source.endpoint();
                     *thread_opened.lock().unwrap_or_else(|e| e.into_inner()) = Some(Ok(name));
                     source
                 }
@@ -136,6 +157,8 @@ impl ThreadedSource {
                     // of this thread.
                     Ok(poll) => {
                         thread_lost.store(source.discontinuities(), Ordering::Relaxed);
+                        let delivered =
+                            matches!(&poll, Poll::Frames { samples, .. } if !samples.is_empty());
                         // `try_send`, never `send`: a full queue must not block
                         // the drain, because a blocked drain is exactly how
                         // WASAPI comes to overwrite frames nobody collected.
@@ -152,6 +175,22 @@ impl ThreadedSource {
                                 source.stop();
                                 return;
                             }
+                        }
+                        // Nothing arrived, so pause before asking again.
+                        //
+                        // This loop has no pacing of its own on the path that
+                        // succeeds: a real device blocks inside `poll` waiting
+                        // on its event handle, and that wait *is* the cadence.
+                        // A source that answers instantly and has nothing to
+                        // give — a track whose endpoint was lost, above all —
+                        // would otherwise spin this thread at full tilt for the
+                        // rest of the recording.
+                        //
+                        // Only when nothing arrived. While audio is flowing the
+                        // drain stays prompt, which is the whole point of this
+                        // thread existing.
+                        if !delivered {
+                            thread::sleep(std::time::Duration::from_millis(IDLE_PAUSE_MS));
                         }
                     }
                     Err(_) => {
@@ -175,6 +214,7 @@ impl ThreadedSource {
             fault,
             deferred: None,
             opened,
+            endpoint,
             handle: Some(handle),
         }
     }
@@ -210,6 +250,13 @@ impl CaptureSource for ThreadedSource {
 
     fn device_name(&self) -> String {
         self.device.clone()
+    }
+
+    fn endpoint(&self) -> CapturedEndpoint {
+        self.endpoint
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn discontinuities(&self) -> u64 {
@@ -256,6 +303,20 @@ impl CaptureSource for ThreadedSource {
                     // it, and the recording carries on with no record that the
                     // device moved, which is the one thing 4.2 writes down.
                     self.deferred = Some(Poll::DeviceChanged { device });
+                    return Ok(Poll::Frames {
+                        wall_ns: 0,
+                        samples,
+                    });
+                }
+                // A loss is carried exactly like a change, and for the same
+                // reason: it has already been taken out of the channel, so
+                // returning the frames without holding it would drop the one
+                // thing R2.3 exists to write down.
+                Ok(Poll::DeviceLost { device }) => {
+                    if samples.is_empty() {
+                        return Ok(Poll::DeviceLost { device });
+                    }
+                    self.deferred = Some(Poll::DeviceLost { device });
                     return Ok(Poll::Frames {
                         wall_ns: 0,
                         samples,

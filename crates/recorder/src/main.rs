@@ -16,9 +16,10 @@ type Devices = (Box<dyn CaptureSource>, Box<dyn CaptureSource>);
 
 #[cfg(windows)]
 fn open_devices() -> Result<Devices, String> {
-    use recorder::capture::AudioFormat;
+    use recorder::capture::{AudioFormat, Which};
+    use recorder::endpoint::Endpoint;
     use recorder::pump::ThreadedSource;
-    use recorder::wasapi_source::{WasapiSource, Which};
+    use recorder::wasapi_source::WasapiSource;
     // 48 kHz stereo float is what the Windows mixer works in, so shared mode
     // converts nothing on the way in. ffmpeg downmixes later (4.6).
     let format = AudioFormat {
@@ -30,11 +31,13 @@ fn open_devices() -> Result<Devices, String> {
     // Draining only when a request arrives loses whatever the device buffered
     // in between, and the loss is invisible: the track is padded with silence
     // and every number the sidecar reports says the hour is fine.
+    // Both follow the Windows default here. The endpoints a project chose
+    // arrive on `start` (R1.2), which is where the parent knows them.
     let mut mic = ThreadedSource::spawn(format, move || {
-        WasapiSource::open(Which::Microphone, 48_000, 2)
+        WasapiSource::open(Which::Microphone, 48_000, 2, Endpoint::Default)
     });
     let mut system = ThreadedSource::spawn(format, move || {
-        WasapiSource::open(Which::Loopback, 48_000, 2)
+        WasapiSource::open(Which::Loopback, 48_000, 2, Endpoint::Default)
     });
 
     let wait = std::time::Duration::from_secs(5);

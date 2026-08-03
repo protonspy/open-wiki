@@ -21,7 +21,8 @@ use wasapi::{
     SampleType, StreamMode, WaveFormat,
 };
 
-use crate::capture::{AudioFormat, CaptureError, CaptureSource, Poll};
+use crate::capture::{AudioFormat, CaptureError, CaptureSource, Poll, Which};
+use crate::endpoint::{next_action, resolve, Action, CapturedEndpoint, Endpoint};
 use crate::rpc::DeviceInfo;
 
 /// 32-bit float, the format the mixer already works in, so shared mode
@@ -33,48 +34,38 @@ const BITS: usize = 32;
 /// that stopping is prompt.
 const BUFFER_DURATION_HNS: i64 = 5_000_000;
 
+/// How long a poll waits for the device to say it has something.
+///
+/// **This is also what paces the capture thread.** That thread has no sleep of
+/// its own on the success path — it calls `poll` in a loop and relies on this
+/// wait to block. Any path through `poll` that returns without waiting has to
+/// wait for itself instead, or the thread spins a core for the rest of the
+/// recording.
+const EVENT_WAIT_MS: u32 = 20;
+
 fn err(context: &str, e: impl std::fmt::Display) -> CaptureError {
     CaptureError(format!("{context}: {e}"))
 }
 
-/// Which end of the machine a source listens to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Which {
-    /// The microphone.
-    Microphone,
-    /// What the machine is playing — WASAPI loopback, which is a *render*
-    /// device opened for capture.
-    Loopback,
+/// Which endpoint to open: loopback listens to a **render** device.
+fn device_direction(which: Which) -> Direction {
+    match which {
+        Which::Microphone => Direction::Capture,
+        Which::Loopback => Direction::Render,
+    }
 }
 
-impl Which {
-    /// Which endpoint to open: loopback listens to a **render** device.
-    fn device_direction(self) -> Direction {
-        match self {
-            Which::Microphone => Direction::Capture,
-            Which::Loopback => Direction::Render,
-        }
-    }
-
-    /// Which direction to initialise the stream in — always capture, because
-    /// both of these read audio.
-    ///
-    /// These are two separate decisions and conflating them is what silently
-    /// disables loopback: the crate derives `AUDCLNT_STREAMFLAGS_LOOPBACK`
-    /// from the *pair* (device is Render, stream is Capture). Passing
-    /// (Render, Render) matches nothing, so the flag is never set, the client
-    /// initialises as a plain playback stream, and asking it for an
-    /// `IAudioCaptureClient` fails — taking the whole sidecar down at launch.
-    fn stream_direction(self) -> Direction {
-        Direction::Capture
-    }
-
-    fn track(self) -> &'static str {
-        match self {
-            Which::Microphone => "mic",
-            Which::Loopback => "system",
-        }
-    }
+/// Which direction to initialise the stream in — always capture, because both
+/// of these read audio.
+///
+/// These are two separate decisions and conflating them is what silently
+/// disables loopback: the crate derives `AUDCLNT_STREAMFLAGS_LOOPBACK` from the
+/// *pair* (device is Render, stream is Capture). Passing (Render, Render)
+/// matches nothing, so the flag is never set, the client initialises as a plain
+/// playback stream, and asking it for an `IAudioCaptureClient` fails — taking
+/// the whole sidecar down at launch.
+fn stream_direction(_which: Which) -> Direction {
+    Direction::Capture
 }
 
 /// Call once per process before anything else here. Safe to call twice.
@@ -90,10 +81,12 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, CaptureError> {
     let enumerator = DeviceEnumerator::new().map_err(|e| err("could not enumerate devices", e))?;
     let mut out = Vec::new();
 
-    for (direction, kind) in [
-        (Direction::Capture, "capture"),
-        (Direction::Render, "loopback"),
-    ] {
+    // Driven from `Which`, not from a second list of direction/label pairs:
+    // the label a reply carries and the label a stored choice is matched
+    // against have to be the same string, and two lists is how they stop being.
+    for which in [Which::Microphone, Which::Loopback] {
+        let direction = device_direction(which);
+        let kind = which.kind();
         let default_id = enumerator
             .get_default_device(&direction)
             .ok()
@@ -137,6 +130,10 @@ struct Stream {
 /// A capture source backed by a real device.
 pub struct WasapiSource {
     which: Which,
+    /// Which endpoint this track was asked for — the *choice*, not the device
+    /// currently open. `reopen` branches on it, and the two are different
+    /// things the moment the default moves under a pinned track (R2.2).
+    endpoint: Endpoint,
     device_name: String,
     device_id: String,
     format: AudioFormat,
@@ -146,6 +143,11 @@ pub struct WasapiSource {
     /// Set when the default device changed and the stream was reopened, so the
     /// next poll reports it once.
     changed: Option<String>,
+    /// Set when the endpoint this track captures went away with nothing to
+    /// replace it (R2.3). Reported on every poll thereafter — the session
+    /// records it once — because it does not resolve and the track is silence
+    /// from here on.
+    lost: bool,
     /// A reopen failed and has to be tried again. Without this a single
     /// transient failure ends the track silently.
     needs_reopen: bool,
@@ -157,51 +159,95 @@ pub struct WasapiSource {
 }
 
 impl WasapiSource {
-    /// Open the default device for this end of the machine.
-    pub fn open(which: Which, sample_rate: u32, channels: u16) -> Result<Self, CaptureError> {
+    /// Open the endpoint this track was asked for (R1.2), falling back to the
+    /// Windows default only where nothing was chosen (R1.3).
+    ///
+    /// A chosen endpoint that is not on this machine is refused here, by name,
+    /// rather than answered with the default (R2.4) — see `endpoint::resolve`,
+    /// which is where that decision lives and is tested.
+    pub fn open(
+        which: Which,
+        sample_rate: u32,
+        channels: u16,
+        endpoint: Endpoint,
+    ) -> Result<Self, CaptureError> {
         init_com()?;
         let format = AudioFormat {
             sample_rate,
             channels,
         };
-        let (device, name, id) = default_device(which)?;
+        let (device, name, id) = open_endpoint(which, &endpoint)?;
         let stream = open_stream(&device, which, format)?;
         Ok(Self {
             which,
+            endpoint,
             device_name: name,
             device_id: id,
             format: stream.format,
             stream: Some(stream),
             pending: VecDeque::new(),
             changed: None,
+            lost: false,
             needs_reopen: false,
             discontinuities: 0,
             running: false,
         })
     }
 
-    /// Has the default device moved out from under us? (plan 4.2)
-    fn default_device_changed(&self) -> Option<(Device, String, String)> {
-        let (device, name, id) = default_device(self.which).ok()?;
-        (id != self.device_id).then_some((device, name, id))
+    /// Has the endpoint situation moved out from under us?
+    ///
+    /// A **pinned** track is not asking, and this is the cheap check on the
+    /// idle path — every 20 ms while loopback is silent — so it answers
+    /// without enumerating anything (R2.2).
+    fn endpoint_may_have_moved(&self) -> bool {
+        if self.endpoint.is_pinned() {
+            return false;
+        }
+        default_device(self.which).is_ok_and(|(_, _, id)| id != self.device_id)
     }
 
-    /// Reopen on whatever is default now. The frames lost in between are the
-    /// frames the old device was not producing anyway; the track is padded to
-    /// cover the gap by the session, which is what keeps the timeline honest.
+    /// Act on what `next_action` decided.
+    ///
+    /// The decision itself is not made here: it is `endpoint::next_action`, on
+    /// plain data, under test on every platform. What is left here is opening
+    /// what it named — which is the division this whole module is built on,
+    /// because nothing in this file can be tested at all.
     fn reopen(&mut self) -> Result<(), CaptureError> {
-        // Either the default moved, or this stream was invalidated on the
-        // device that is still default. Only handling the first left a track
-        // dead for the rest of the meeting whenever Windows invalidated the
-        // stream without changing the endpoint — a sleep/resume, a driver
-        // reset, a sample-rate change in the sound control panel.
-        let moved = self.default_device_changed();
-        let (device, name, id) = match moved {
-            Some(found) => found,
-            None if self.needs_reopen => default_device(self.which)?,
-            None => {
+        let devices = list_devices()?;
+        let action = next_action(
+            &self.endpoint,
+            &self.device_id,
+            &devices,
+            self.which,
+            self.needs_reopen,
+        );
+        let (device, name, id, moved) = match action {
+            Action::Keep => {
                 self.needs_reopen = false;
                 return Ok(());
+            }
+            // The endpoint this track captures is gone and there is no
+            // substitute for it (R2.3). Nothing is opened in its place; the
+            // stream is dropped so the dead client is not held, and the track
+            // is padded with silence by the session from here on.
+            Action::Lost => {
+                self.lost = true;
+                self.needs_reopen = false;
+                if let Some(old) = self.stream.take() {
+                    let _ = old.client.stop_stream();
+                }
+                return Ok(());
+            }
+            // The same endpoint, opened again. Not a move, so nothing is
+            // written down: the choice never changed.
+            Action::Reopen => {
+                let (device, name, id) = open_endpoint(self.which, &self.endpoint)?;
+                (device, name, id, false)
+            }
+            // The default moved and this track follows it (R2.1).
+            Action::MoveTo(id) => {
+                let (device, name, id) = open_by_id(self.which, &id)?;
+                (device, name, id, true)
             }
         };
         // Open the new stream **before** dropping the working one. Dropping
@@ -224,7 +270,10 @@ impl WasapiSource {
         self.device_name = name.clone();
         self.device_id = id;
         self.pending.clear();
-        self.changed = Some(name);
+        // Only a *move* is reported. Reopening the endpoint that was already
+        // chosen is recovery, and writing it into `device_changes` would tell
+        // a reader the microphone changed when it did not.
+        self.changed = moved.then_some(name);
         self.needs_reopen = false;
         if self.running {
             if let Some(stream) = self.stream.as_mut() {
@@ -235,10 +284,77 @@ impl WasapiSource {
     }
 }
 
+/// The device this choice names, opened.
+///
+/// `Default` asks Windows, which is what every caller did before there was a
+/// choice. `Pinned` is checked against the enumeration first, so a missing
+/// endpoint is refused by name (R2.4) rather than surfacing as whatever the
+/// enumerator says about an identifier it does not know.
+fn open_endpoint(
+    which: Which,
+    endpoint: &Endpoint,
+) -> Result<(Device, String, String), CaptureError> {
+    let Some(id) = endpoint.pinned_id() else {
+        return default_device(which);
+    };
+    let devices = list_devices()?;
+    let chosen = resolve(endpoint, &devices, which).map_err(CaptureError)?;
+    let (device, name, _) = open_by_id(which, id)?;
+    Ok((device, name, chosen.id.clone()))
+}
+
+/// One endpoint of this direction, by its identifier.
+///
+/// **Deliberately not `DeviceEnumerator::get_device`.** That method is unsound
+/// in `wasapi` 0.23.0: it writes
+///
+/// ```text
+/// let w_id = PCWSTR::from_raw(HSTRING::from(device_id).as_ptr());
+/// ```
+///
+/// where the `HSTRING` is an unnamed temporary, so it is dropped — and its
+/// heap buffer freed — at the end of that `let` statement, before `w_id` is
+/// handed to `GetDevice` on the next line. It is a use-after-free on every
+/// call, and the outcome is undefined rather than merely a panic: an access
+/// violation that takes the sidecar down mid-recording, or a corrupted
+/// identifier that opens a *different* endpoint, which is the one failure this
+/// whole spec exists to prevent.
+///
+/// So the identifier is matched against the enumeration instead, the same way
+/// `list_devices` reads endpoints. It costs one collection walk on open and on
+/// reopen, neither of which is hot.
+fn open_by_id(which: Which, id: &str) -> Result<(Device, String, String), CaptureError> {
+    let enumerator = DeviceEnumerator::new().map_err(|e| err("could not enumerate devices", e))?;
+    let collection = enumerator
+        .get_device_collection(&device_direction(which))
+        .map_err(|e| err("could not list devices", e))?;
+    let count = collection
+        .get_nbr_devices()
+        .map_err(|e| err("could not count devices", e))?;
+
+    for index in 0..count {
+        let Ok(device) = collection.get_device_at_index(index) else {
+            continue; // one unreadable device is not a reason to find none
+        };
+        let Ok(found) = device.get_id() else { continue };
+        if found != id {
+            continue;
+        }
+        let name = device
+            .get_friendlyname()
+            .unwrap_or_else(|_| "unknown".into());
+        return Ok((device, name, found));
+    }
+    Err(CaptureError(format!(
+        "the {} endpoint {id} is not on this machine",
+        which.track()
+    )))
+}
+
 fn default_device(which: Which) -> Result<(Device, String, String), CaptureError> {
     let enumerator = DeviceEnumerator::new().map_err(|e| err("could not enumerate devices", e))?;
     let device = enumerator
-        .get_default_device(&which.device_direction())
+        .get_default_device(&device_direction(which))
         .map_err(|e| err(&format!("no default {} device", which.track()), e))?;
     let name = device
         .get_friendlyname()
@@ -277,7 +393,7 @@ fn open_stream(device: &Device, which: Which, format: AudioFormat) -> Result<Str
         buffer_duration_hns,
     };
     client
-        .initialize_client(&wave, &which.stream_direction(), &mode)
+        .initialize_client(&wave, &stream_direction(which), &mode)
         .map_err(|e| err("could not initialise the stream", e))?;
 
     let event = client
@@ -310,6 +426,17 @@ impl CaptureSource for WasapiSource {
         self.device_name.clone()
     }
 
+    fn endpoint(&self) -> CapturedEndpoint {
+        CapturedEndpoint {
+            // The endpoint actually open, not the one asked for. A following
+            // track was never asked for one, and a track that has moved since
+            // it started is on its second (R2.1).
+            id: Some(self.device_id.clone()),
+            name: self.device_name.clone(),
+            pinned: self.endpoint.is_pinned(),
+        }
+    }
+
     fn discontinuities(&self) -> u64 {
         self.discontinuities
     }
@@ -319,6 +446,28 @@ impl CaptureSource for WasapiSource {
         // device, so the session records it at the right instant.
         if let Some(device) = self.changed.take() {
             return Ok(Poll::DeviceChanged { device });
+        }
+
+        // The endpoint this track captures is gone and nothing may replace it
+        // (R2.3). Said on every poll — the session records it once — and
+        // without re-enumerating: this runs on the capture thread's own loop,
+        // and a COM enumeration per poll would spin a core for the rest of the
+        // meeting looking for a device that is not there.
+        //
+        // It is terminal for the session. The endpoint coming back is not
+        // something the spec decided about, and re-adopting it silently would
+        // leave a hole in the track that nothing reports.
+        //
+        // The wait is not optional. This branch returns without reaching
+        // `wait_for_event` below, which is the only thing pacing the capture
+        // thread — without it a lost track spins a core for the rest of the
+        // meeting, which is the same failure this branch exists to avoid
+        // reaching by a COM enumeration, arrived at from the other side.
+        if self.lost {
+            std::thread::sleep(std::time::Duration::from_millis(u64::from(EVENT_WAIT_MS)));
+            return Ok(Poll::DeviceLost {
+                device: self.device_name.clone(),
+            });
         }
 
         // Retry a reopen that failed, before anything short-circuits on a
@@ -341,9 +490,9 @@ impl CaptureSource for WasapiSource {
         // Wait briefly for the device to say it has something. A timeout is
         // not an error: loopback signals nothing at all while the machine is
         // silent, which is the normal state for most of a meeting.
-        if stream.event.wait_for_event(20).is_err() {
+        if stream.event.wait_for_event(EVENT_WAIT_MS).is_err() {
             // The stream may have died with the device. Check before giving up.
-            if self.default_device_changed().is_some() {
+            if self.endpoint_may_have_moved() {
                 // A failure here is not fatal: `needs_reopen` makes the next
                 // poll try again rather than leaving the track dead.
                 let _ = self.reopen();

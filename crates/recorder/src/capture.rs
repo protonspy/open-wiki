@@ -1,10 +1,57 @@
 use std::fmt;
 
+use crate::endpoint::CapturedEndpoint;
+
 /// The shape of a device's audio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AudioFormat {
     pub sample_rate: u32,
     pub channels: u16,
+}
+
+/// Which end of the machine a source listens to.
+///
+/// It lives here rather than beside WASAPI because it is a fact about the
+/// recording — the microphone track and the system track — and not about the
+/// API underneath. Keeping it platform-neutral is what lets the endpoint
+/// choice of R1.2 and the follow/pin decision of R2.1-R2.2 be tested on every
+/// platform, which is the same argument `CaptureSource` itself is here for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Which {
+    /// The microphone.
+    Microphone,
+    /// What the machine is playing — WASAPI loopback, which is a *render*
+    /// device opened for capture.
+    Loopback,
+}
+
+impl Which {
+    /// The track this end of the machine is written to.
+    pub fn track(self) -> &'static str {
+        match self {
+            Which::Microphone => "mic",
+            Which::Loopback => "system",
+        }
+    }
+
+    /// How an endpoint of this direction is labelled in a `devices` reply
+    /// (R1.1). One authority, so the string an enumeration writes and the
+    /// string a choice is matched against cannot drift apart.
+    pub fn kind(self) -> &'static str {
+        match self {
+            Which::Microphone => "capture",
+            Which::Loopback => "loopback",
+        }
+    }
+
+    /// Read back the direction a `devices` reply labelled an endpoint with.
+    pub fn from_kind(kind: &str) -> Option<Self> {
+        match kind {
+            "capture" => Some(Which::Microphone),
+            "loopback" => Some(Which::Loopback),
+            _ => None,
+        }
+    }
 }
 
 /// What one poll of a device produced.
@@ -19,6 +66,14 @@ pub enum Poll {
     /// The default device changed and the source reopened itself on the new
     /// one (plan 4.2). The session records it and carries on.
     DeviceChanged { device: String },
+    /// The endpoint this track captures is gone and nothing replaces it
+    /// (R2.3). The track is padded with silence from here on, which is the
+    /// only honest outcome: a different endpoint under the same name would put
+    /// a different room in the recording.
+    ///
+    /// A source may report this on every poll for the rest of the session —
+    /// the endpoint does not come back — so the session records it once.
+    DeviceLost { device: String },
 }
 
 #[derive(Debug)]
@@ -65,6 +120,16 @@ pub trait CaptureSource {
     /// look like one that is merely silent.
     fn health(&self) -> Result<(), String> {
         Ok(())
+    }
+    /// The endpoint this source is capturing, and whether somebody chose it
+    /// (R3.3). The default answer is the device's own name in following mode,
+    /// which is what a source that has no notion of a choice is doing.
+    fn endpoint(&self) -> CapturedEndpoint {
+        CapturedEndpoint {
+            id: None,
+            name: self.device_name(),
+            pinned: false,
+        }
     }
 }
 

@@ -7,6 +7,8 @@
 //! way nobody notices — the time map above all — under test.
 pub mod capture;
 pub mod clock;
+pub mod endpoint;
+pub mod level;
 pub mod manifest;
 pub mod pump;
 pub mod rpc;

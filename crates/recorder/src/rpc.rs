@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::capture::Which;
+
 /// The sidecar's whole contract (plan 4.5, `adr:0005-wasapi-capture-in-a-minimal-sidecar`).
 ///
 /// Six methods, and the ADR is explicit that a seventh deserves a record that
@@ -65,15 +67,48 @@ pub struct StatusPayload {
     /// Set when a capture thread has stopped working.
     pub capture_fault: Option<String>,
     pub device_changes: usize,
+    /// Tracks whose chosen endpoint went away and was not replaced (R2.3). A
+    /// track named here is recording manufactured silence, and saying so while
+    /// the meeting is still running is the whole point — afterwards the
+    /// minutes are already lost.
+    pub lost_tracks: Vec<String>,
 }
 
+/// One endpoint the machine offers (R1.1).
+///
+/// The identifier is the endpoint's own, stable across reboots and across a
+/// device being unplugged and put back — which is what makes a choice worth
+/// storing at all. The name is for a person to read and is not stable: Windows
+/// renames endpoints when a driver updates, so nothing matches on it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeviceInfo {
     pub id: String,
     pub name: String,
     /// `capture` for a microphone, `loopback` for what the machine is playing.
+    /// Written from `Which::kind`, which is the one authority on the spelling.
     pub kind: String,
     pub default: bool,
+}
+
+impl DeviceInfo {
+    /// Is this endpoint one this end of the machine could capture?
+    pub fn is(&self, which: Which) -> bool {
+        self.kind == which.kind()
+    }
+}
+
+/// The endpoint with this identifier, whatever its direction.
+///
+/// Identifiers are unique across directions, so the direction is not part of
+/// the lookup — and a caller that has an id from settings does not necessarily
+/// know which end of the machine it belongs to.
+pub fn by_id<'a>(devices: &'a [DeviceInfo], id: &str) -> Option<&'a DeviceInfo> {
+    devices.iter().find(|d| d.id == id)
+}
+
+/// The Windows default endpoint for this end of the machine, if it has one.
+pub fn default_of(devices: &[DeviceInfo], which: Which) -> Option<&DeviceInfo> {
+    devices.iter().find(|d| d.is(which) && d.default)
 }
 
 /// Parse one line. A malformed line is an error response, never a panic and

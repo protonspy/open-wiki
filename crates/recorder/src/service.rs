@@ -84,6 +84,11 @@ impl<C: Clock> Service<C> {
                     self.mic.stop();
                     return error(format!("could not start system audio: {e}"));
                 }
+                // What each track is actually capturing, taken from the
+                // devices themselves rather than from what was asked for: a
+                // following track's endpoint is whatever Windows gave, and the
+                // manifest records what happened (R3.3).
+                session.capturing(self.mic.endpoint(), self.system.endpoint());
                 self.dir = Some(dir);
                 self.session = Some(session);
                 self.status()
@@ -152,6 +157,7 @@ impl<C: Clock> Service<C> {
                 system_frames: 0,
                 pauses: 0,
                 device_changes: 0,
+                lost_tracks: Vec::new(),
                 dropped_samples: 0,
                 discontinuities: 0,
                 capture_fault: None,
@@ -171,6 +177,7 @@ impl<C: Clock> Service<C> {
             system_frames: session.system().frames_written(),
             pauses: session.pauses().len(),
             device_changes: session.device_changes().len(),
+            lost_tracks: session.lost_tracks(),
             // What the recording lost, and whether either device has stopped
             // working. Silence that nobody flagged is the failure this whole
             // sidecar has to avoid presenting as a healthy hour.
@@ -196,17 +203,20 @@ pub fn manifest_of<C: Clock>(session: &Session<C>) -> RecordingManifest {
                 sample_rate: session.mic().sample_rate(),
                 channels: session.mic().channels(),
                 frames: session.mic().frames_written(),
+                endpoint: session.mic_endpoint().clone(),
             },
             system: TrackInfo {
                 file: "system.wav".into(),
                 sample_rate: session.system().sample_rate(),
                 channels: session.system().channels(),
                 frames: session.system().frames_written(),
+                endpoint: session.system_endpoint().clone(),
             },
         },
         first_frames: session.first_frames(),
         pauses: session.pauses().to_vec(),
         device_changes: session.device_changes().to_vec(),
+        device_losses: session.device_losses().to_vec(),
         time_map: session.time_map().clone(),
     }
 }
