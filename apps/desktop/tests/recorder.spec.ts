@@ -101,12 +101,105 @@ describe("RecorderSession (8.2, over the contract 4.5 defines)", () => {
     expect(await status).toMatchObject({ state: "recording", recorded_ms: 4200 });
   });
 
-  it("reads the device list", async () => {
+  it("reads the device list as endpoints rather than names (R1.1)", async () => {
+    // This used to flatten each entry to its `name`, which is why nothing
+    // above it could offer a choice: an endpoint is opened by its identifier,
+    // and Windows renames endpoints on a driver update.
     const fake = fakeTransport();
     const session = new RecorderSession(fake.transport);
     const devices = session.devices();
-    fake.answer({ ok: true, devices: [{ name: "Headset" }, { name: "Speakers" }] });
-    expect(await devices).toEqual(["Headset", "Speakers"]);
+    fake.answer({
+      ok: true,
+      devices: [
+        { id: "{mic-headset}", name: "Headset", kind: "capture", default: false },
+        { id: "{out-speakers}", name: "Speakers", kind: "loopback", default: true },
+      ],
+    });
+    expect(await devices).toEqual([
+      { id: "{mic-headset}", name: "Headset", kind: "capture", default: false },
+      { id: "{out-speakers}", name: "Speakers", kind: "loopback", default: true },
+    ]);
+  });
+
+  it("drops an endpoint nothing could be chosen by", async () => {
+    // An entry with no identifier cannot be opened, and one of an unknown
+    // direction cannot be offered for either track. Presenting either puts a
+    // row in the picker that fails when somebody clicks it.
+    const fake = fakeTransport();
+    const session = new RecorderSession(fake.transport);
+    const devices = session.devices();
+    fake.answer({
+      ok: true,
+      devices: [
+        { name: "No identifier", kind: "capture", default: true },
+        { id: "{odd}", name: "Odd direction", kind: "midi", default: false },
+        { id: "{mic-headset}", name: "Headset", kind: "capture", default: false },
+      ],
+    });
+    expect(await devices).toEqual([
+      { id: "{mic-headset}", name: "Headset", kind: "capture", default: false },
+    ]);
+  });
+
+  it("names an endpoint by its identifier when the machine gave it no name", async () => {
+    const fake = fakeTransport();
+    const session = new RecorderSession(fake.transport);
+    const devices = session.devices();
+    fake.answer({ ok: true, devices: [{ id: "{mic-headset}", kind: "capture" }] });
+    expect(await devices).toEqual([
+      { id: "{mic-headset}", name: "{mic-headset}", kind: "capture", default: false },
+    ]);
+  });
+
+  it("carries the chosen endpoints on start, and omits them when nothing was chosen", async () => {
+    // R1.2, R1.3. Omitting is what keeps every caller written before this
+    // field correct — the sidecar reads an absent endpoint as "follow the
+    // default" rather than as a refusal.
+    const fake = fakeTransport();
+    const session = new RecorderSession(fake.transport);
+    const started = session.start("Weekly", "C:/p/raw/x", { mic: "{mic-headset}" });
+    fake.answer({ ok: true, done: true });
+    await started;
+
+    const sent = JSON.parse(fake.sent[0] ?? "{}") as Record<string, unknown>;
+    expect(sent["mic"]).toBe("{mic-headset}");
+    expect(sent).not.toHaveProperty("system");
+  });
+
+  it("reads the level and the lost tracks off a status reply (R4.1, R2.3)", async () => {
+    const fake = fakeTransport();
+    const session = new RecorderSession(fake.transport);
+    const status = session.status();
+    fake.answer({
+      ok: true,
+      state: "recording",
+      recorded_ms: 1000,
+      mic_frames: 48000,
+      system_frames: 48000,
+      pauses: 0,
+      lost_tracks: ["system"],
+      mic_level: { peak: 0.5, rms: 0.2, silent: false },
+      system_level: { peak: 0, rms: 0, silent: true },
+    });
+
+    const read = await status;
+    expect(read.mic_level).toEqual({ peak: 0.5, rms: 0.2, silent: false });
+    expect(read.lost_tracks).toEqual(["system"]);
+  });
+
+  it("reads a level nothing reported as silence rather than as signal", async () => {
+    // `recorder.exe` ships with the installer, so one older than this window
+    // is an ordinary state rather than an error. A missing level must not
+    // arrive at a meter as `undefined`, and must not claim a dead track is
+    // fine — which is what `silent: false` would say.
+    const fake = fakeTransport();
+    const session = new RecorderSession(fake.transport);
+    const status = session.status();
+    fake.answer({ ok: true, state: "recording", recorded_ms: 0 });
+
+    const read = await status;
+    expect(read.mic_level).toEqual({ peak: 0, rms: 0, silent: true });
+    expect(read.lost_tracks).toEqual([]);
   });
 
   it("rejects what is waiting when the sidecar dies", async () => {

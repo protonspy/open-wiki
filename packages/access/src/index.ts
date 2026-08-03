@@ -17,6 +17,7 @@ export {
   readSettings,
   writeSettings,
   validateSettings,
+  resolveEndpoint,
   DEFAULT_SETTINGS,
   LANGUAGES,
   type Language,

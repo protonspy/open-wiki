@@ -74,7 +74,7 @@ import {
   type SaveDialog,
 } from "./export.js";
 import type { ExportResult } from "@open-wiki/access";
-import type { RecorderSession, RecorderStatus } from "./recorder.js";
+import type { RecorderDevice, RecorderSession, RecorderStatus } from "./recorder.js";
 import {
   findings,
   locateCitation,
@@ -179,6 +179,11 @@ export const IDLE_STATUS: RecorderStatus = {
   mic_frames: 0,
   system_frames: 0,
   pauses: 0,
+  lost_tracks: [],
+  // Nothing is being captured, so there is no level — and `silent: true` is
+  // how that is said. `false` would claim signal on a track that is not open.
+  mic_level: { peak: 0, rms: 0, silent: true },
+  system_level: { peak: 0, rms: 0, silent: true },
 };
 
 export interface StartedRecording {
@@ -208,6 +213,17 @@ export interface DesktopApi {
   recordResume(): Promise<void>;
   recordStop(): Promise<void>;
   recordStatus(): Promise<RecorderStatus>;
+  /**
+   * Every endpoint the machine offers, so a track can be pointed at one
+   * (R1.1). `RecorderClient.devices()` has existed since 8.2 and was reachable
+   * from nothing, which is why no picker could be built against it.
+   *
+   * `peek`, never `ensure` — the same rule `record:status` lives under. Asking
+   * what devices exist must not be what turns the microphone on, so where the
+   * sidecar is not already running this answers with the empty list rather
+   * than starting it to find out.
+   */
+  recordDevices(): Promise<RecorderDevice[]>;
 
   save(input: SaveInput): SaveResult;
   create(input: CreateInput): SaveResult;
@@ -336,6 +352,14 @@ export function createApi(deps: Deps): DesktopApi {
       return session ? session.status() : IDLE_STATUS;
     },
 
+    // `peek`, for the same reason as `recordStatus`: opening a picker must not
+    // be what takes the microphone. A window that has not recorded yet has no
+    // sidecar to ask, and answers with nothing rather than starting one.
+    async recordDevices() {
+      const session = deps.recorder?.peek();
+      return session ? session.devices() : [];
+    },
+
     save: (input) => savePage(root(), input, savePageToday),
     create: (input) => createPage(root(), input, savePageToday),
     rename: (from, to) => renamePage(root(), from, to),
@@ -439,6 +463,8 @@ export async function dispatch(
       return api.recordStop();
     case CHANNELS.recordStatus:
       return api.recordStatus();
+    case CHANNELS.recordDevices:
+      return api.recordDevices();
 
     case CHANNELS.save:
       return api.save(args[0] as SaveInput);

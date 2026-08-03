@@ -100,3 +100,14 @@ impl Meter {
         self.window.is_empty()
     }
 }
+
+impl Meter {
+    /// This meter as the protocol reports it (R4.1).
+    pub fn reading(&self) -> crate::rpc::TrackLevel {
+        crate::rpc::TrackLevel {
+            peak: self.peak(),
+            rms: self.rms(),
+            silent: self.silent(),
+        }
+    }
+}

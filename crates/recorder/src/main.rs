@@ -67,6 +67,47 @@ fn list_devices() -> Result<Vec<recorder::rpc::DeviceInfo>, String> {
     Err("the recorder captures through WASAPI and runs on Windows only".into())
 }
 
+/// Open one track on the endpoint `start` named (R1.2).
+///
+/// Both devices are opened on the Windows default when the process launches,
+/// before anybody has said what to record. This is what puts a track on the
+/// endpoint somebody chose, and it is reached only from `start` — the
+/// `peek`/`ensure` split exists so that polling never opens a device, and this
+/// must not become the hole in it.
+#[cfg(windows)]
+fn open_source(
+    which: recorder::capture::Which,
+    endpoint: &recorder::endpoint::Endpoint,
+) -> Result<Box<dyn CaptureSource>, String> {
+    use recorder::capture::AudioFormat;
+    use recorder::pump::ThreadedSource;
+    use recorder::wasapi_source::WasapiSource;
+
+    let format = AudioFormat {
+        sample_rate: 48_000,
+        channels: 2,
+    };
+    let chosen = endpoint.clone();
+    let mut source =
+        ThreadedSource::spawn(format, move || WasapiSource::open(which, 48_000, 2, chosen));
+    // Wait for the answer rather than returning a source that may be about to
+    // fail: a chosen endpoint that is not on this machine has to refuse the
+    // recording by name (R2.4), and it can only do that if the failure is in
+    // hand before `start` replies.
+    source
+        .wait_until_open(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("{}: {e}", which.track()))?;
+    Ok(Box::new(source))
+}
+
+#[cfg(not(windows))]
+fn open_source(
+    _which: recorder::capture::Which,
+    _endpoint: &recorder::endpoint::Endpoint,
+) -> Result<Box<dyn CaptureSource>, String> {
+    Err("the recorder captures through WASAPI and runs on Windows only".into())
+}
+
 fn main() {
     let (mic, system) = match open_devices() {
         Ok(pair) => pair,
@@ -81,7 +122,8 @@ fn main() {
         }
     };
 
-    let mut service = Service::new(SystemClock::new, mic, system, list_devices);
+    let mut service = Service::new(SystemClock::new, mic, system, list_devices)
+        .reopening_with(Box::new(open_source));
     let mut stdout = std::io::stdout();
 
     // stdin on a thread of its own, so the loop below is free to pump on a
