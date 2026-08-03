@@ -38,7 +38,11 @@ function tempProject(): string {
   return root;
 }
 
-function rawManifest(root: string, id: string, dir = join(root, "raw", id)): Record<string, unknown> {
+function rawManifest(
+  root: string,
+  id: string,
+  dir = join(root, "raw", id),
+): Record<string, unknown> {
   return JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as Record<string, unknown>;
 }
 
@@ -202,7 +206,10 @@ describe("parseManifest — reading a supersession this application did not writ
   });
 
   it("reads a status with no pointer as superseded by nothing it can name", () => {
-    const m = parseManifest(OLD, JSON.stringify({ title: "A", kind: "file", status: "superseded" }));
+    const m = parseManifest(
+      OLD,
+      JSON.stringify({ title: "A", kind: "file", status: "superseded" }),
+    );
     expect(m.status).toBe("superseded");
     expect(m["superseded-by"]).toBe("");
   });

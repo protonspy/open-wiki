@@ -190,9 +190,7 @@ describe("ow graph superseded — sources as well as pages (8.6)", () => {
       JSON.stringify({ title: "Half a record", kind: "file", "superseded-by": "whatever" }),
       "utf8",
     );
-    expect(sources(root)).toEqual([
-      { id: "half", "superseded-by": "whatever", superseded: "" },
-    ]);
+    expect(sources(root)).toEqual([{ id: "half", "superseded-by": "whatever", superseded: "" }]);
   });
 
   it("bounds the pointer, because a planted manifest prints straight into the agent", () => {

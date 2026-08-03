@@ -113,7 +113,6 @@ export function listSourcesState(projectRoot: string): SourceState[] {
   });
 }
 
-
 /** A source's `text.md` — the normalised text the citations point into. */
 export function readSourceText(projectRoot: string, id: string): string {
   // Confine first so an escaping id is refused before anything is read; then

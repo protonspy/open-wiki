@@ -188,7 +188,8 @@ export async function main(argv: string[], projectRoot: string = process.cwd()):
         const id = argv[2];
         const replacement = argv[3];
         if (!id) return fail("ow source supersede needs the source that was replaced");
-        if (!replacement) return fail("ow source supersede needs the id of the source replacing it");
+        if (!replacement)
+          return fail("ow source supersede needs the id of the source replacing it");
         const outcome = runSourceSupersede(projectRoot, id, replacement, today());
         if (!outcome.ok) return fail(outcome.reason);
         process.stdout.write(`superseded "${safe(id)}" by "${safe(replacement)}"\n`);

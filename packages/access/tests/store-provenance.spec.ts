@@ -246,9 +246,9 @@ describe("resolveProvenance (5.4)", () => {
       // The instant is past the end of the planted map, so an unconfined read
       // would report it; a refused one falls back to the weaker check and says
       // nothing.
-      expect(
-        resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"], escaping),
-      ).toEqual([]);
+      expect(resolveProvenance(root, ["rec://fenix-weekly-2026-07-31#99:59"], escaping)).toEqual(
+        [],
+      );
     });
 
     it("answers the same for a source filed into a folder", () => {

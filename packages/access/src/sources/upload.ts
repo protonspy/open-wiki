@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { registerSource } from "./register.js";
 import { writeSourceText } from "./ingest.js";
+import { isArchive, unpackArchive, type UnpackResult } from "./archive.js";
 
 /**
  * The largest file any door accepts. The inbox refuses on the `stat`, before
@@ -39,10 +40,30 @@ export type StoredAs =
   /** The bytes were preserved, and copied into `text.md`. */
   | "text"
   /** The bytes were preserved, and nothing was read. */
-  | "stored";
+  | "stored"
+  /** The bytes were preserved, and the archive was unpacked beside them (6.1). */
+  | "unpacked";
 
 export type IngestOutcome =
-  | { ok: true; name: string; id: string; stored: StoredAs }
+  | {
+      ok: true;
+      name: string;
+      id: string;
+      stored: StoredAs;
+      /** What unpacking refused and what it made inert, when it ran (group 6). */
+      unpacked?: UnpackResult;
+      /**
+       * Why the archive was not unpacked, when it was stored and unpacking
+       * failed — a bomb, or a zip that will not open.
+       *
+       * On the `ok: true` side deliberately: **the source exists**. Reporting
+       * `ok: false` for a file whose bytes are on disk and whose id is now
+       * taken forever was a real defect, not a wording choice — the inbox
+       * leaves a file it was told failed, so every later drain retried the same
+       * name and met `TakenIdError`, stranding the file and squatting the id.
+       */
+      unpackFailed?: string;
+    }
   | { ok: false; name: string; reason: string };
 
 /**
@@ -94,6 +115,33 @@ export async function ingestSource(
 
   try {
     const { id } = registerSource(projectRoot, { name, kind: "file", content });
+    if (isArchive(name)) {
+      // Unpacked *after* the bytes are stored, never instead of them. The
+      // archive is what arrived and stays the thing a citation can be checked
+      // against; the tree beside it is a reading convenience (plan 6.1, 6.4).
+      try {
+        const unpacked = await unpackArchive(projectRoot, id);
+        return { ok: true, name, id, stored: "unpacked", unpacked };
+      } catch (err) {
+        // **Its own catch, and it reports success.** A bomb or an unreadable
+        // zip leaves the source registered — the bytes are on disk and the id
+        // is taken forever — so answering `ok: false` describes a state that
+        // does not exist. It also stranded the file: the inbox only removes
+        // what landed, so every later drain retried the same name and met
+        // `TakenIdError`, squatting the id and looping on the file for good.
+        //
+        // `unpackArchive` has already removed whatever it half-wrote, so what
+        // remains is an ordinary stored source that nobody unpacked, which is
+        // exactly what this says.
+        return {
+          ok: true,
+          name,
+          id,
+          stored: "stored",
+          unpackFailed: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
     if (!isTextSource(name)) return { ok: true, name, id, stored: "stored" };
     writeSourceText(projectRoot, id, content.toString("utf8"));
     return { ok: true, name, id, stored: "text" };
@@ -105,10 +153,11 @@ export async function ingestSource(
 }
 
 /**
- * `ingestSource` is now an `async` function that awaits nothing.
+ * `ingestSource` was an `async` function that awaited nothing, kept that way
+ * because narrowing the signature would have been an API change for every
+ * caller to gain nothing — and because group 6's archive unpacking would put
+ * real asynchrony back behind it.
  *
- * Kept async on purpose: it is the door two callers `await`, one of them a
- * watcher, and narrowing the signature to sync would be an API change for
- * every caller to gain nothing. Group 6's archive unpacking puts real
- * asynchrony back behind it.
+ * It has. `unpackArchive` streams entry by entry, so the door is genuinely
+ * asynchronous now and the callers that already awaited it need no change.
  */

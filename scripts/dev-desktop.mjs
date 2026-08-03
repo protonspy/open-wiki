@@ -48,11 +48,7 @@ if (typeof electronBin !== "string" || !electronBin) {
 // port 5173 (which the next launch's --strictPort would then fail on). The
 // `./bin/vite.js` subpath is not in vite's `exports`, so resolve the package
 // root via its `package.json` (which is) and join the bin from there.
-const viteCli = resolve(
-  dirname(requireFromDesktop.resolve("vite/package.json")),
-  "bin",
-  "vite.js",
-);
+const viteCli = resolve(dirname(requireFromDesktop.resolve("vite/package.json")), "bin", "vite.js");
 
 /**
  * Spawn `pnpm` (a `.CMD` shim on Windows that only the shell resolves),
@@ -82,11 +78,11 @@ await new Promise((res, rej) => {
 //    fails loudly instead of silently landing on 5174 (which Electron would
 //    never be told about). Spawned directly as `node <vite-cli>` with the
 //    desktop as cwd so vite.config.ts is found and the process is killable.
-const vite = spawn(
-  process.execPath,
-  [viteCli, "--port", String(PORT), "--strictPort"],
-  { stdio: ["inherit", "pipe", "inherit"], cwd: desktop, shell: false },
-);
+const vite = spawn(process.execPath, [viteCli, "--port", String(PORT), "--strictPort"], {
+  stdio: ["inherit", "pipe", "inherit"],
+  cwd: desktop,
+  shell: false,
+});
 
 let electron = null;
 let exiting = false;
