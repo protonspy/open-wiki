@@ -64,6 +64,7 @@ fn a_status_response_renders_as_one_line_of_json() {
         discontinuities: 0,
         capture_fault: None,
         device_changes: 0,
+        lost_tracks: Vec::new(),
     }));
     let line = render(&response);
     assert!(!line.contains('\n'), "the framing is one object per line");

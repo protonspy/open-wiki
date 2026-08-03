@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::capture::{CaptureError, CaptureSource, Poll};
 use crate::clock::Clock;
+use crate::endpoint::CapturedEndpoint;
+use crate::level::Meter;
 use crate::timemap::TimeMap;
 use crate::track::TrackWriter;
 
@@ -25,6 +27,13 @@ pub struct Session<C: Clock> {
     state: State,
     pauses: Vec<PauseInterval>,
     device_changes: Vec<DeviceChange>,
+    device_losses: Vec<DeviceLoss>,
+    /// Which endpoint each track captured, and in which mode (R3.3). Set when
+    /// the recording starts, by whoever opened the devices.
+    endpoints: (CapturedEndpoint, CapturedEndpoint),
+    /// The level of each track over the last fraction of a second (R4.1), read
+    /// off the frames on their way to the writer and nowhere else (R4.4).
+    levels: (Meter, Meter),
     first_frame: FirstFrames,
     /// Has each track ever had *real* frames appended? `frames_written`
     /// cannot answer this: `pad_to` has usually already counted silence by
@@ -62,6 +71,23 @@ pub struct PauseInterval {
 pub struct DeviceChange {
     /// Which track: `mic` or `system`.
     pub track: String,
+    pub device: String,
+    /// When it happened, as an offset into the recording.
+    pub recorded_ns: u64,
+}
+
+/// A track's chosen endpoint lost mid-recording, with nothing put in its place
+/// (R2.3).
+///
+/// Deliberately **not** a `DeviceChange`. The two read as opposites: a change
+/// says the track carried on somewhere else, a loss says everything after this
+/// instant is manufactured silence. A reader who sees both in one list and
+/// counts "one device event" is being told the recording is fine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceLoss {
+    /// Which track: `mic` or `system`.
+    pub track: String,
+    /// The endpoint that went away, as it was last known.
     pub device: String,
     /// When it happened, as an offset into the recording.
     pub recorded_ns: u64,
@@ -125,6 +151,12 @@ impl<C: Clock> Session<C> {
             state: State::Recording,
             pauses: Vec::new(),
             device_changes: Vec::new(),
+            device_losses: Vec::new(),
+            endpoints: (CapturedEndpoint::default(), CapturedEndpoint::default()),
+            levels: (
+                Meter::for_track(mic_rate, mic_ch),
+                Meter::for_track(sys_rate, sys_ch),
+            ),
             first_frame: FirstFrames::default(),
             real_frames: (false, false),
         }
@@ -166,6 +198,52 @@ impl<C: Clock> Session<C> {
 
     pub fn device_changes(&self) -> &[DeviceChange] {
         &self.device_changes
+    }
+
+    /// The tracks whose endpoint went away and was not replaced (R2.3).
+    pub fn device_losses(&self) -> &[DeviceLoss] {
+        &self.device_losses
+    }
+
+    /// Record which endpoint each track is capturing, and in which mode
+    /// (R3.3).
+    ///
+    /// A separate call rather than two more arguments to `start`: whoever
+    /// opened the devices is what knows this, and the session's own six
+    /// arguments are already the shape of the recording rather than of the
+    /// hardware.
+    pub fn capturing(&mut self, mic: CapturedEndpoint, system: CapturedEndpoint) {
+        self.endpoints = (mic, system);
+    }
+
+    /// The endpoint the microphone track is capturing (R3.3).
+    pub fn mic_endpoint(&self) -> &CapturedEndpoint {
+        &self.endpoints.0
+    }
+
+    /// The endpoint the system track is capturing (R3.3).
+    pub fn system_endpoint(&self) -> &CapturedEndpoint {
+        &self.endpoints.1
+    }
+
+    /// The microphone track's level right now (R4.1).
+    pub fn mic_level(&self) -> &Meter {
+        &self.levels.0
+    }
+
+    /// The system track's level right now (R4.1).
+    pub fn system_level(&self) -> &Meter {
+        &self.levels.1
+    }
+
+    /// The tracks currently recording manufactured silence because their
+    /// endpoint is gone. This is what `status` reports so a person can be told
+    /// while it still matters.
+    pub fn lost_tracks(&self) -> Vec<String> {
+        self.device_losses
+            .iter()
+            .map(|loss| loss.track.clone())
+            .collect()
     }
 
     pub fn first_frames(&self) -> FirstFrames {
@@ -233,6 +311,26 @@ impl<C: Clock> Session<C> {
                     recorded_ns,
                 });
             }
+            // Recorded once, however often it is reported. The endpoint does
+            // not come back, so a source may say this on every poll for the
+            // rest of the meeting — an hour of that is 180,000 entries in the
+            // manifest all saying the same thing.
+            //
+            // Nothing is opened in its place, here or below: the track goes on
+            // being padded by `pump`, which is the manufactured silence R2.3
+            // asks for.
+            Poll::DeviceLost { device } => {
+                let name = track.name();
+                if self.device_losses.iter().any(|loss| loss.track == name) {
+                    return;
+                }
+                let recorded_ns = self.recorded_now_ns();
+                self.device_losses.push(DeviceLoss {
+                    track: name.to_string(),
+                    device,
+                    recorded_ns,
+                });
+            }
             Poll::Frames {
                 wall_ns: _,
                 samples,
@@ -241,11 +339,15 @@ impl<C: Clock> Session<C> {
                 // session's clock is the one both tracks share, and mixing the
                 // two is how they drift. The stamp is kept by the source for
                 // its own bookkeeping.
-                let writer = match track {
-                    Track::Mic => &mut self.mic,
-                    Track::System => &mut self.system,
+                let (writer, meter) = match track {
+                    Track::Mic => (&mut self.mic, &mut self.levels.0),
+                    Track::System => (&mut self.system, &mut self.levels.1),
                 };
                 writer.append(&samples);
+                // The same buffer, on its way to the file. This is the whole
+                // of R4.4: no second stream, no second consumer of the
+                // endpoint, just arithmetic over frames already in hand.
+                meter.push(&samples);
                 if samples.is_empty() {
                     return;
                 }

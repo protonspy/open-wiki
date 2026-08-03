@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::session::{DeviceChange, FirstFrames, PauseInterval};
+use crate::endpoint::CapturedEndpoint;
+use crate::session::{DeviceChange, DeviceLoss, FirstFrames, PauseInterval};
 use crate::timemap::TimeMap;
 
 /// The recording's `manifest.json` (plan 4.4).
@@ -24,6 +25,10 @@ pub struct RecordingManifest {
     pub first_frames: FirstFrames,
     pub pauses: Vec<PauseInterval>,
     pub device_changes: Vec<DeviceChange>,
+    /// Endpoints that went away mid-recording with nothing put in their place
+    /// (R2.3). Separate from `device_changes` for the reason `DeviceLoss`
+    /// gives: the two mean opposite things about whether the audio is there.
+    pub device_losses: Vec<DeviceLoss>,
     pub time_map: TimeMap,
 }
 
@@ -39,6 +44,10 @@ pub struct TrackInfo {
     pub sample_rate: u32,
     pub channels: u16,
     pub frames: u64,
+    /// Which endpoint this track captured, and whether somebody chose it
+    /// (R3.3). Two recordings can name the same microphone and mean different
+    /// things, which is why the mode is recorded and not only the name.
+    pub endpoint: CapturedEndpoint,
 }
 
 impl RecordingManifest {

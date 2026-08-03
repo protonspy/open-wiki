@@ -483,6 +483,7 @@ fn a_device_change_behind_frames_is_reported_and_not_dropped() {
                 seen_change = true;
                 break;
             }
+            Poll::DeviceLost { device } => panic!("nothing was lost, but {device} was reported so"),
             Poll::Idle => std::thread::sleep(std::time::Duration::from_millis(5)),
         }
     }
