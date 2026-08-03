@@ -5,24 +5,46 @@ in all of them. Each one loads a different entry file from a different place, ke
 servers in a different file under a different schema, and offers a different — not weaker,
 *different* — way to inspect a write before it lands.
 
-Everything below was read from each harness's own source. That is the whole point of the
-exercise: `adr:0013-the-project-directory-is-the-unit` exists because a claim about a
-harness was reasoned rather than read, and was wrong. This is the second time the question
-has come up and the second time reading beat reasoning — see **What the reading changed**
-at the end, which is not a footnote.
+Everything below carries the source it was read from — the Rust and TypeScript sources for
+Codex and opencode, which are public; the published reference for Claude Code, which is what
+Anthropic ships in place of one. Nothing here is inferred from another claim on this page.
+That is the whole point of the exercise: `adr:0013-the-project-directory-is-the-unit` exists
+because a claim about a harness was reasoned rather than read, and was wrong. This is the
+second time the question has come up and the second time reading beat reasoning — see **What
+the reading changed** at the end, which is not a footnote.
 
 ## Claude Code
 
 | What | Where |
 | --- | --- |
-| Entry file | `CLAUDE.md`, at the project root and in subdirectories |
+| Entry file | `CLAUDE.md` or `.claude/CLAUDE.md` at the project root — and in subdirectories, but see below |
 | Convention | `.claude/skills/<name>/SKILL.md` |
 | MCP | `.mcp.json` at the project root |
-| Interception | `PreToolUse` and `PostToolUse` hooks, which may deny |
+| Interception | `PreToolUse`, which can deny before the tool runs |
 
-This is the one the product already ships to, and [[claude-code-plugins]] carries the
-mechanics: what a plugin can and cannot package, and why the write gate is scaffolded into
-the project rather than shipped whole.
+**The root file loads at launch; a subdirectory's does not.** Claude Code walks *upwards*
+from the working directory and concatenates what it finds, root-first. Files in
+subdirectories *below* the working directory are discovered too, but "instead of loading
+them at launch, they are included when Claude reads files in those subdirectories". Only the
+root file is guaranteed to be in context, which is the file this product generates.
+— <https://code.claude.com/docs/en/memory>
+
+**Only `PreToolUse` refuses a write.** It answers
+`hookSpecificOutput.permissionDecision: "deny"` before the tool executes, or `updatedInput`
+to replace the arguments. `PostToolUse` fires *after a tool call succeeds*: its
+`decision: "block"` stops the agent continuing and `updatedToolOutput` rewrites what the
+agent sees, but the file is already written. A gate built on `PostToolUse` would report a
+refusal it did not perform.
+— <https://code.claude.com/docs/en/hooks>
+
+`adr:0013-the-project-directory-is-the-unit` already had this right — it gives `PostToolUse`
+validation and group 7's checks as what *covers what the entrance misses*, which is detection
+and undo, not prevention. A page about the harnesses must not know less than the record that
+came before it.
+
+Read 2026-08-03. This is the one the product already ships to, and [[claude-code-plugins]]
+carries the rest of the mechanics — what a plugin can and cannot package, and why the write
+gate is scaffolded into the project rather than shipped whole — against Claude Code v2.1.x.
 
 ## Codex
 

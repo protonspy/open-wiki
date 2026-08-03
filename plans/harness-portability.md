@@ -9,8 +9,8 @@ merge: auto
 
 Everything this product scaffolds into a project is addressed to one harness.
 `scaffoldSkills` writes `.claude/skills/`, `claude-md.ts` generates `CLAUDE.md`, the
-plugin ships Claude Code hooks, and the strongest path the write gate has is
-`PreToolUse` / `PostToolUse`. Open a project in Codex or opencode and none of it is
+plugin ships Claude Code hooks, and the only thing that refuses a write before it lands
+is a Claude Code `PreToolUse` hook. Open a project in Codex or opencode and none of it is
 read: the convention is on disk, in a directory that harness never looks in.
 
 `protonspy/spec-claude-code#6` solved the same problem for `scc` — one template set,
@@ -32,33 +32,36 @@ So **`ow init` takes harnesses, plural**, and a project may carry more than one 
 file. That is a real difference from `scc`, arrived at from a real difference in what
 the artifact is for.
 
-## The second divergence: the convention is portable, the gate is not
+## The second divergence: the convention is prose, the gate is machinery
 
 `scc` scaffolds methodology, which is entirely prose. Every byte of it ports by
 changing a path and a filename.
 
-This product scaffolds prose **and a gate**, and the gate is machinery.
-`adr:0013` already said so, and it said it after getting the hook contract wrong twice
-by reasoning instead of reading:
+This product scaffolds prose **and a gate**, and the gate is machinery — three different
+machines, as it turns out, none of which ports by renaming anything:
 
-> Hooks are also Claude Code's mechanism and nobody else's. In a harness without them
-> the gate is whatever the CLI verb enforces, and where neither is in place group 7 is
-> the net of record.
+| | Claude Code | Codex | opencode |
+| --- | --- | --- | --- |
+| the convention (skills, entry file) | scaffolded | scaffolded, at that harness's paths | scaffolded, at that harness's paths |
+| refusal before the write | `PreToolUse`, `permissionDecision: deny`, with `updatedInput` | `PreToolUse`, `should_block`, `apply_patch` named in the blocked path | a plugin's `permission.ask`, `status: "deny"` |
+| how it is configured | a hook command in JSON | a hook command in TOML | a JavaScript plugin |
+| the documented path in every regime | the `ow write` verb | the `ow write` verb | the `ow write` verb |
+| the net if a harness has none | group 7 | group 7 | group 7 |
 
-So the split is already decided and this plan does not reopen it:
+> **This section said the opposite until 1.1 read the sources.** It was written as *the
+> convention is portable, the gate is not*, quoting `adr:0013`'s "hooks are also Claude
+> Code's mechanism and nobody else's", and it reserved 3.1 for scaffolding nothing where a
+> harness cannot refuse. **All three can refuse.** What varies is the mechanism, not whether
+> one exists. See [[what-a-harness-loads]] and `adr:0024-the-convention-ships-to-every-harness`,
+> which says *scaffolded per harness* rather than *degrades* for exactly this reason. The
+> row for a harness with no interception stays, because it is a claim about the future
+> rather than about these three.
 
-| | Claude Code | Codex · opencode |
-| --- | --- | --- |
-| the convention (skills, entry file) | scaffolded | scaffolded, at that harness's paths |
-| refusal before the write | `PreToolUse`, with `updatedInput` | whatever that harness actually offers — **to be checked, not assumed** |
-| the fallback | — | the `ow write` verb |
-| the net when neither is in place | group 7 | group 7 |
-
-**What each harness can enforce is a claim to check against its source.** `scc#6`
-verified its conventions "against each tool's own source rather than its docs, which
-disagree in two places", and `adr:0013` makes the same demand a rule. Nothing in this
-plan asserts what Codex or opencode can intercept, because nobody has read it yet —
-task 1.1 is that reading, and it comes before anything is designed on top of it.
+**What each harness can enforce is a claim to check against its source**, and that rule is
+why the table above is now right. `scc#6` verified its conventions "against each tool's own
+source rather than its docs, which disagree in two places", `adr:0013` makes the same demand
+a rule, and this is the third time in this repository that reading beat reasoning about a
+harness. Anything group 2, 3 or 4 adds to that table is checked the same way.
 
 ## The third divergence: no silent default
 
@@ -132,7 +135,7 @@ this project recorded and then had to route around twice.
 
 ## 2 — One template set, three renderings
 
-- [ ] 2.1 (Unit) A harness profile: entry filename, convention directory, MCP configuration path, and what the gate degrades to. Data, not branches — the same move that let `scc` delete its per-harness template tree instead of growing two more
+- [ ] 2.1 (Unit) A harness profile: entry filename, convention directory, MCP configuration path and schema, and the interception this harness offers — the strongest one, which the gate scaffolds and the convention text names. Data, not branches — the same move that let `scc` delete its per-harness template tree instead of growing two more. **Not "what the gate degrades to"**, which is how this task read before 1.1: `adr:0024` rejected the word because it assumed a hierarchy the source does not support
 - [ ] 2.2 (TDD) Render the convention through the profile, and prove no rendered file for one harness names another's directory. Test-first because that is the failure that ships quietly: a skill that tells a Codex user to look in `.claude/` is wrong in a way nothing errors on
 - [ ] 2.3 (Unit) `ow init` with a harness named — `--claude`, `--codex`, `--opencode`, and more than one accepted — scaffolds it and asks nothing
 - [ ] 2.4 (Unit) `ow init` with none named and a terminal attached opens a picker: the three harnesses, multi-select, nothing preselected. Multi-select is why this is a screen rather than a numbered prompt, and whatever it costs in dependencies is a `docs/stack.md` line like any other
