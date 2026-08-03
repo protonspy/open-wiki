@@ -169,6 +169,45 @@ describe("MCP read tools — path confinement (9.9)", () => {
     expect(sources[0]!.hasText).toBe(true);
   });
 
+  it("carries a source's description, so a consulting agent knows what it is", () => {
+    writeFileSync(
+      join(root, "raw", "notes.txt", "manifest.json"),
+      JSON.stringify({
+        id: "notes.txt",
+        title: "Notes",
+        kind: "file",
+        original: "notes.txt",
+        description: "The Q3 incident timeline.",
+      }),
+      "utf8",
+    );
+    expect(listSourcesState(root)[0]!.manifest.description).toBe("The Q3 incident timeline.");
+  });
+
+  it("bounds the manifest's free text before serving it to another project", () => {
+    // This tool exists so an agent in a *different* project can consult this
+    // one. `manifest.json` arrives with a `git clone`, so a multi-megabyte
+    // description would be one source crowding every other out of the context
+    // of a reader who never opened this repository. `ow source list` bounds the
+    // same two fields; this surface was missed the first time.
+    writeFileSync(
+      join(root, "raw", "notes.txt", "manifest.json"),
+      JSON.stringify({
+        id: "notes.txt",
+        title: "T".repeat(9000),
+        kind: "file",
+        original: "notes.txt",
+        description: "d".repeat(9000),
+      }),
+      "utf8",
+    );
+
+    const manifest = listSourcesState(root)[0]!.manifest;
+    expect(manifest.title.length).toBeLessThan(9000);
+    expect(manifest.description!.length).toBeLessThan(9000);
+    expect(manifest.description).toMatch(/9000 characters, truncated/);
+  });
+
   it("marks a source that has been registered but not yet normalised", () => {
     // A manifest with no text.md alongside it — the ingest ran, the extraction
     // did not. `hasText: false` is what tells the agent not to cite into it yet.

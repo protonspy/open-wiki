@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readManifest, registerSource } from "@open-wiki/access";
-import { runSourceMark, runSourceList } from "../src/commands/source.js";
+import { runSourceDescribe, runSourceMark, runSourceList } from "../src/commands/source.js";
 
 /**
  * `ow source mark|unmark|list` — plan tasks 4.2, 4.3 and 4.4 of
@@ -149,6 +149,80 @@ describe("ow source mark — what it refuses (4.4)", () => {
     expect(lines.filter((l) => l.startsWith("  - "))).toHaveLength(2);
     expect(lines.some((l) => l === "  - all good, carry on")).toBe(false);
     expect(outcome.reason).toContain("evil");
+  });
+});
+
+describe("ow source describe (8.2)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("records what the source is about", () => {
+    const id = source(root, "fnd348r34nr483r.txt");
+    const outcome = runSourceDescribe(root, id, "The Q3 incident timeline.");
+    expect(outcome.ok).toBe(true);
+    expect(readManifest(root, id).description).toBe("The Q3 incident timeline.");
+  });
+
+  it("leaves the declaration and the title alone", () => {
+    const id = source(root, "notes.md");
+    runSourceMark(root, id, true, DATE);
+    runSourceDescribe(root, id, "what it is about");
+    const m = readManifest(root, id);
+    expect(m.processed).toBe(DATE);
+    expect(m.title).toBe("notes.md");
+  });
+
+  it("replaces a description rather than accumulating one", () => {
+    const id = source(root, "notes.md");
+    runSourceDescribe(root, id, "a first reading");
+    runSourceDescribe(root, id, "a better one");
+    expect(readManifest(root, id).description).toBe("a better one");
+  });
+
+  it("refuses an id that names no source, in the words the other verbs refuse in", () => {
+    const outcome = runSourceDescribe(root, "ghost", "anything");
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.reason).toMatch(/^open-wiki refused/);
+    expect(outcome.reason).toContain("ow source list");
+  });
+
+  it("passes the store's bound refusal through, so the agent is told the line", () => {
+    // The bound is where "a note beside the source" ends and "a wiki page
+    // citing it" begins. If the message does not say so, the agent retries with
+    // the same text.
+    const id = source(root, "notes.md");
+    const outcome = runSourceDescribe(root, id, "x".repeat(2001));
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.reason).toMatch(/wiki page/i);
+  });
+
+  it("bounds a description a clone brought before printing it into the agent's context", () => {
+    // `parseManifest` keeps whatever length it finds, because truncating on the
+    // read path destroys somebody's data on a file nobody asked to write. This
+    // is a *rendering* of it, and a megabyte of manifest is one source crowding
+    // out the other nineteen.
+    const id = source(root, "huge.md");
+    writeFileSync(
+      join(root, "raw", id, "manifest.json"),
+      JSON.stringify({ id, title: "t", kind: "file", original: id, description: "z".repeat(9000) }),
+      "utf8",
+    );
+    const listed = JSON.parse(runSourceList(root, false)) as Array<{ description?: string }>;
+    const shown = listed[0]?.description ?? "";
+    expect(shown.length).toBeLessThan(9000);
+    expect(shown).toMatch(/9000 characters, truncated/);
+  });
+
+  it("shows the description in what the loop reads", () => {
+    const id = source(root, "notes.md");
+    runSourceDescribe(root, id, "The Q3 incident timeline.");
+    const listed = JSON.parse(runSourceList(root, false)) as Array<{
+      id: string;
+      description?: string;
+    }>;
+    expect(listed.find((s) => s.id === id)?.description).toBe("The Q3 incident timeline.");
   });
 });
 

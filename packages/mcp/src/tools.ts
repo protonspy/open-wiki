@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   assertWithin,
+  boundedText,
   OutsideProjectError,
   listEntityPages,
   readIndex,
@@ -86,13 +87,34 @@ export function readPageWhole(projectRoot: string, slug: string): WholePage {
   return { slug, content, frontmatter: readPageFrontmatter(projectRoot, slug) };
 }
 
-/** Every source under `raw/` with its manifest and a flag for `text.md`. */
+/**
+ * Every source under `raw/` with its manifest and a flag for `text.md`.
+ *
+ * **The manifest's free text is bounded before it leaves.** `title` and
+ * `description` come out of a `manifest.json` that arrived with a `git clone`,
+ * and this tool exists so an agent in *another* project can consult this one —
+ * so a multi-megabyte description would be one source crowding every other out
+ * of a reader who never even opened this repository. `ow source list` bounds
+ * the same two fields for the same reason; the stored value is untouched by
+ * either.
+ */
 export function listSourcesState(projectRoot: string): SourceState[] {
   return listSources(projectRoot).map((id) => {
     const manifest = readManifest(projectRoot, id);
     const text = sourceTextPath(projectRoot, id);
-    return { id, manifest, hasText: existsSync(text) };
+    return { id, manifest: bounded(manifest), hasText: existsSync(text) };
   });
+}
+
+/** A manifest with its free text cut to what a reader's context can hold. */
+function bounded(manifest: SourceManifest): SourceManifest {
+  return {
+    ...manifest,
+    title: boundedText(manifest.title),
+    ...(manifest.description !== undefined
+      ? { description: boundedText(manifest.description) }
+      : {}),
+  };
 }
 
 /** A source's `text.md` — the normalised text the citations point into. */

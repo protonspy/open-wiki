@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listSourceStates, sourceState } from "../src/sources/state.js";
-import { MissingSourceError } from "../src/sources/manifest.js";
+import { MissingSourceError, readManifest } from "../src/sources/manifest.js";
 
 function tempProject(): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "ow-state-")));
@@ -158,6 +158,36 @@ describe("source state (6.1)", () => {
 
     it("refuses an id that is not a source", () => {
       expect(() => sourceState(root, "nothing")).toThrow(MissingSourceError);
+    });
+
+    it("bounds the manifest's free text, once, for every reader of a state", () => {
+      // `readManifest` is the file and keeps whatever length it finds —
+      // truncating there would destroy data on a manifest that arrived with a
+      // clone and that nobody asked to write. This is the *view*, and it has
+      // four readers: `ow source list` and three desktop call sites. Two
+      // successive security reviews each found one that a per-caller copy of
+      // this rule had not reached, which is why it lives here and in none of
+      // them.
+      const dir = join(root, "raw", "huge.md");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "manifest.json"),
+        JSON.stringify({
+          id: "huge.md",
+          title: "T".repeat(9000),
+          kind: "file",
+          original: "huge.md",
+          description: "d".repeat(9000),
+        }),
+        "utf8",
+      );
+
+      const state = sourceState(root, "huge.md");
+      expect(state.title.length).toBeLessThan(9000);
+      expect(state.description!.length).toBeLessThan(9000);
+      expect(state.description).toMatch(/9000 characters, truncated/);
+      // The file itself is untouched: this rendering destroyed nothing.
+      expect(readManifest(root, "huge.md").description).toHaveLength(9000);
     });
 
     describe("the one declared fact, beside the derived stage (R1.1, R1.2)", () => {

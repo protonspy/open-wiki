@@ -52,7 +52,14 @@ export {
   type RenameResult,
 } from "./write/rename-delete.js";
 export { writeIgnore, OPEN_BLOCK, CLOSE_BLOCK } from "./ignore.js";
-export { scaffoldSkills, SKILLS_VERSION } from "./skills.js";
+export {
+  scaffoldSkills,
+  skillVersion,
+  SKILLS_VERSION,
+  type ScaffoldSkillsResult,
+  type ScaffoldSkillsOptions,
+  type StaleSkill,
+} from "./skills.js";
 export { generateClaudeMd, writeClaudeMd } from "./claude-md.js";
 
 // The validated store (group 5)
@@ -100,7 +107,7 @@ export {
   type ExportOptions,
   type ExportResult,
 } from "./export/zip.js";
-export { humanBytes } from "./format.js";
+export { humanBytes, boundedText, MAX_LISTED } from "./format.js";
 export {
   sourceState,
   listSourceStates,

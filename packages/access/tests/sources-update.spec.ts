@@ -102,6 +102,55 @@ describe("updateManifest — correcting the title (R2.1, plan 6.7)", () => {
   });
 });
 
+describe("updateManifest — the description (plan 8.1, 8.2)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("writes what the agent learned about the source", () => {
+    updateManifest(root, ID, { description: "The Q3 architecture review." });
+    expect(readManifest(root, ID).description).toBe("The Q3 architecture review.");
+  });
+
+  it("replaces a previous description rather than appending to it", () => {
+    updateManifest(root, ID, { description: "first read" });
+    updateManifest(root, ID, { description: "second, better read" });
+    expect(readManifest(root, ID).description).toBe("second, better read");
+  });
+
+  it("clears it when handed null", () => {
+    updateManifest(root, ID, { description: "something" });
+    updateManifest(root, ID, { description: null });
+    expect(readManifest(root, ID).description).toBeUndefined();
+  });
+
+  it("leaves the title and the declaration alone", () => {
+    updateManifest(root, ID, { processed: "2026-08-02" });
+    updateManifest(root, ID, { description: "a description" });
+    const m = readManifest(root, ID);
+    expect(m.processed).toBe("2026-08-02");
+    expect(m.title).toBe("Arquitetura Fenix.pdf");
+  });
+
+  it("refuses one that needs sections, because that is a wiki page", () => {
+    // The line this bound draws is the plan's: if what the agent has to say
+    // about a source needs structure, it is a page citing that source, and
+    // writing pages is the entire product. `raw/` holding prose with sections
+    // would be a second wiki that nothing validates, indexes or links to.
+    expect(() => updateManifest(root, ID, { description: "x".repeat(2001) })).toThrow(/wiki page/i);
+    expect(readManifest(root, ID).description).toBeUndefined();
+  });
+
+  it("accepts one right up to the bound", () => {
+    updateManifest(root, ID, { description: "x".repeat(2000) });
+    expect(readManifest(root, ID).description?.length).toBe(2000);
+  });
+
+  it("refuses a description made only of whitespace, rather than storing nothing", () => {
+    expect(() => updateManifest(root, ID, { description: "   \n\t " })).toThrow();
+  });
+});
+
 describe("updateManifest — what it refuses (R2.4)", () => {
   let root: string;
   beforeEach(() => (root = tempProject()));

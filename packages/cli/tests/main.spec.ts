@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { uploadTextSource } from "@open-wiki/access";
+import { readManifest, uploadTextSource } from "@open-wiki/access";
 import { main, parseInitArgs, usage } from "../src/main.js";
 import { today } from "../src/date.js";
 
@@ -298,6 +298,41 @@ describe("ow source (4.2, 4.3, 4.4)", () => {
   it("needs an id to mark or unmark", async () => {
     expect(await main(["source", "mark"], root)).toBe(2);
     expect(await main(["source", "unmark"], root)).toBe(2);
+  });
+
+  it("describes a source, taking the rest of the line as the text", async () => {
+    // A description is prose and a shell has already split it on spaces.
+    // Requiring quotes would make the common call the one that silently records
+    // only its first word.
+    const argv = ["source", "describe", "notes.md", "The", "Q3", "incident", "timeline."];
+    expect(await main(argv, root)).toBe(0);
+    expect(stdout()).toContain("described");
+    expect(readManifest(root, "notes.md").description).toBe("The Q3 incident timeline.");
+  });
+
+  it("needs both an id and some text to describe", async () => {
+    expect(await main(["source", "describe"], root)).toBe(2);
+    expect(await main(["source", "describe", "notes.md"], root)).toBe(2);
+    expect(await main(["source", "describe", "notes.md", "   "], root)).toBe(2);
+  });
+
+  it("names describe among the subcommands it takes", async () => {
+    expect(await main(["source", "sideways"], root)).toBe(2);
+    expect(stderr()).toContain("ow source describe");
+  });
+});
+
+describe("parseInitArgs — --refresh-skills (5.3)", () => {
+  it("is off unless asked for", () => {
+    expect(parseInitArgs([]).refreshSkills).toBeUndefined();
+    expect(parseInitArgs(["--language", "en"]).refreshSkills).toBeUndefined();
+  });
+
+  it("is read alongside the other flags", () => {
+    expect(parseInitArgs(["--refresh-skills", "--name", "fenix"])).toEqual({
+      refreshSkills: true,
+      name: "fenix",
+    });
   });
 });
 

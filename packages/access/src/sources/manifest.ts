@@ -47,6 +47,23 @@ export interface SourceManifest {
    * this existed is a valid manifest of an unprocessed source.
    */
   processed?: string;
+  /**
+   * What this source is about, and why it matters here — written by whoever
+   * read it (plan 8.1).
+   *
+   * `fnd348r34nr483r.txt` is a real filename and it says nothing, and
+   * `adr:0011-sources-are-named-by-what-they-are` freezes the id from it,
+   * permanently — so the id says nothing either. Task 6.7 answered half of that
+   * by keeping the title editable; this is the other half, and the agent is the
+   * only party that can write it, because writing it requires having read the
+   * file.
+   *
+   * A field, not a document. If what there is to say needs sections, it is a
+   * wiki page citing this source: `raw/` holding prose with structure would be
+   * a second wiki that nothing validates, indexes or links to. `updateManifest`
+   * is where that line is drawn, because that is where this application writes.
+   */
+  description?: string;
 }
 
 export class TakenIdError extends Error {
@@ -114,12 +131,18 @@ export function parseManifest(id: string, text: string): SourceManifest {
   // silently never read again. `title` is refused instead of degraded because
   // there is no safe default for it; here there is.
   const processed = record["processed"];
+  // Read whatever length is there. The bound is a rule about what *this*
+  // application writes (`updateManifest`), and applying it here would silently
+  // truncate somebody else's data on a file that arrived with a clone —
+  // destroying it on the read path, where nothing asked for a write at all.
+  const description = record["description"];
   return {
     id,
     title,
     kind,
     original: typeof original === "string" ? original : "",
     ...(isDate(processed) ? { processed } : {}),
+    ...(typeof description === "string" ? { description } : {}),
   };
 }
 
