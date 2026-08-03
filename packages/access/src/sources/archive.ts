@@ -129,12 +129,45 @@ export const INERT_SUFFIX = ".inert";
  * beside it, and a `.claude/` three directories down carries skills all the
  * same.
  *
- * Matched **exactly**, too. `CLAUDE.md.bak`, `docs/claude.md` and `mcp.json`
- * are somebody's files and renaming them would be a different kind of wrong —
- * the rule is the name a harness actually loads, not everything resembling one.
+ * Matched by **what the filesystem will answer to**, not by the string the
+ * archive spelled. A security review defeated the first version twice, in ways
+ * that are obvious once seen and were invisible while the rule was written as
+ * an exact-case string comparison:
+ *
+ * - **`claude.md`.** Windows and default macOS resolve names case-insensitively
+ *   at the OS layer, so a harness doing `readFileSync(join(cwd, "CLAUDE.md"))`
+ *   reads a file written as `claude.md`. Nothing about the rename fired, and
+ *   the archive reported clean.
+ * - **`CLAUDE.md::$DATA`.** On NTFS that names the default data stream of
+ *   `CLAUDE.md` — the same bytes, reachable under the exact filename a harness
+ *   loads. It is refused outright in `placeEntry` now rather than neutralised,
+ *   because a colon in an entry name has no legitimate use in a portable
+ *   archive and every other stream syntax it enables is a way to write
+ *   somewhere `readdirSync` cannot see.
+ * - **`CLAUDE.md/x.txt`.** A *directory* named for the file. One set checked on
+ *   every segment closes it; two sets split by position did not.
+ *
+ * So one set, case-folded, with trailing dots and spaces trimmed — Win32 strips
+ * those in some paths, and a file genuinely named `CLAUDE.md ` is not a thing
+ * anybody has.
+ *
+ * What is still matched narrowly is the *name itself*. `CLAUDE.md.bak`,
+ * `docs/notes.md` and `mcp.json` are somebody's files and renaming them would
+ * be a different kind of wrong: the rule is the name a harness actually loads,
+ * not everything resembling one.
  */
-const AGENT_FILES: ReadonlySet<string> = new Set(["CLAUDE.md", ".mcp.json"]);
-const AGENT_DIRS: ReadonlySet<string> = new Set([".claude"]);
+const AGENT_NAMES: ReadonlySet<string> = new Set(["claude.md", ".mcp.json", ".claude"]);
+
+/**
+ * The form of a path segment that decides whether a harness would load it.
+ *
+ * Lowercased because the filesystem is, and trailing dots and spaces removed
+ * because Win32 removes them. Comparing the archive's own spelling instead
+ * compares something no reader ever sees.
+ */
+function loadableAs(part: string): string {
+  return part.replace(/[. ]+$/, "").toLowerCase();
+}
 
 /**
  * Where an entry's path lands once agent configuration is neutralised, or
@@ -150,13 +183,14 @@ const AGENT_DIRS: ReadonlySet<string> = new Set([".claude"]);
  */
 function neutralise(parts: readonly string[]): string[] | undefined {
   let hit = false;
-  const out = parts.map((part, i) => {
-    const last = i === parts.length - 1;
-    if (last ? AGENT_FILES.has(part) : AGENT_DIRS.has(part)) {
-      hit = true;
-      return part + INERT_SUFFIX;
-    }
-    return part;
+  // Every segment, against one set. Splitting it by position — files at the
+  // end, directories before it — left a directory named `CLAUDE.md` unhandled,
+  // and the split bought nothing: none of these names is a plausible directory
+  // somebody meant.
+  const out = parts.map((part) => {
+    if (!AGENT_NAMES.has(loadableAs(part))) return part;
+    hit = true;
+    return part + INERT_SUFFIX;
   });
   return hit ? out : undefined;
 }
@@ -230,8 +264,16 @@ function isSymlink(entry: Entry): boolean {
  * 2. **The resolved real path**, which is 2.6's rule and the only one that
  *    catches a Windows **directory junction**. A junction needs no privilege,
  *    is not a symlink, and a string prefix comparison walks straight through
- *    one — and it can be planted by an *earlier entry of the same archive*,
- *    which is precisely why this runs per entry rather than once.
+ *    one.
+ *
+ *    An earlier draft of this comment said the junction could be planted by an
+ *    *earlier entry of the same archive*. A code review pointed out that it
+ *    cannot: every symlink-typed entry is refused before anything is written,
+ *    so nothing this unpacker creates is ever a link. What the check actually
+ *    defends is a junction that was already there — planted by whatever else
+ *    can write into the project, or met on a `force` re-unpack — which is a
+ *    real threat and a different one. Keeping the wrong reason would have made
+ *    the check look load-bearing for a case it does not cover.
  * 3. **Strictly inside**, so an entry naming the contents directory itself is
  *    refused rather than treated as a write to it.
  */
@@ -251,6 +293,25 @@ function placeEntry(
   }
   if (name.startsWith("/") || name.startsWith("\\") || /^[a-zA-Z]:/.test(name)) {
     return { reason: `"${name}" is an absolute path, and an entry may only name a relative one` };
+  }
+  // **Any colon, anywhere.** On NTFS `CLAUDE.md::$DATA` addresses the *default
+  // data stream* of `CLAUDE.md` — the same bytes under the exact name a harness
+  // loads — and `file.txt:hidden` writes a stream `readdirSync` never lists. A
+  // security review landed a hostile `CLAUDE.md` this way, with the rename
+  // below never firing and the archive reporting clean. A colon in a portable
+  // archive entry has no legitimate use, so this is a refusal rather than
+  // something to normalise: normalising would have to guess what was meant.
+  if (parts.some((p) => p.includes(":"))) {
+    return {
+      reason:
+        `"${name}" carries a colon, which names an alternate data stream on Windows rather ` +
+        `than a file. An archive entry may only name a file.`,
+    };
+  }
+  // A NUL truncates the path at the system call while this code compares the
+  // whole string — so the name checked and the name written would differ.
+  if (name.includes("\0")) {
+    return { reason: `"${name}" carries a NUL, which is not part of any filename` };
   }
 
   // Neutralised before the path is built, so what is confined is the path that
@@ -308,12 +369,20 @@ export async function unpackArchive(
   // Written before the first entry, removed after the last. Between those two
   // moments the source is unfinished, and a crash in the middle leaves the one
   // fact that says so.
-  mkdirSync(contentsDir, { recursive: true });
+  //
+  // **The marker first, then the directory**, and the order is the whole
+  // guarantee. The other way round, a marker write that failed after
+  // `mkdirSync` succeeded left `contents/` present with nothing to say it was
+  // never filled — and the next attempt would meet "already has an unpacked
+  // tree" for ever, over a tree that was never unpacked. This way the only
+  // reachable in-between state is a marker with no directory, which reads as
+  // exactly what it is: an unpack that started and did not finish.
   writeFileSync(
     join(dir, UNPACKING),
     JSON.stringify({ archive: basename(archive) }, null, 2) + "\n",
     "utf8",
   );
+  mkdirSync(contentsDir, { recursive: true });
   try {
     await eachEntry(zip, async (entry) => {
       const name = entryName(entry);
@@ -356,19 +425,37 @@ export async function unpackArchive(
         result.inert.push({ original: name, stored: placed.inert });
       }
 
-      mkdirSync(dirname(placed.path), { recursive: true });
-      const stream = await entryStream(zip, entry);
-      // **Counted while it is written, not after.** A bomb detected once the
-      // disk is full has been detected too late, and an archive's declared
-      // sizes are the attacker's to choose — so the meter sits in the byte
-      // stream, between the decompressor and the file, and throws part-way
-      // through an entry as readily as between two of them.
-      result.bytes += await writeBounded(stream, placed.path, result.bytes, ceiling, {
-        maxBytes,
-        maxRatio,
-        archiveBytes,
-      });
-      result.files += 1;
+      try {
+        mkdirSync(dirname(placed.path), { recursive: true });
+        const stream = await entryStream(zip, entry);
+        // **Counted while it is written, not after.** A bomb detected once the
+        // disk is full has been detected too late, and an archive's declared
+        // sizes are the attacker's to choose — so the meter sits in the byte
+        // stream, between the decompressor and the file, and throws part-way
+        // through an entry as readily as between two of them.
+        result.bytes += await writeBounded(stream, placed.path, result.bytes, ceiling, {
+          maxBytes,
+          maxRatio,
+          archiveBytes,
+        });
+        result.files += 1;
+      } catch (err) {
+        // **A filesystem refusal about one entry is one entry's problem.** The
+        // `existsSync` check above catches a file landing where a file already
+        // is, but not the other order: an archive carrying `src` as a file and
+        // then `src/x.txt` makes `mkdirSync` throw `ENOTDIR`, and letting that
+        // reach the outer catch discarded the whole tree over one member —
+        // which contradicts this module's own rule that a bad member costs
+        // itself and nothing else.
+        //
+        // The bound is not an entry's problem and must still stop everything,
+        // so it is rethrown: a bomb is a fact about the archive.
+        if (err instanceof ExpansionError) throw err;
+        result.refused.push({
+          entry: name,
+          reason: `"${name}" could not be written: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
     });
   } catch (err) {
     // A refused archive leaves nothing: a half-unpacked tree is a source that

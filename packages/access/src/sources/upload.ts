@@ -52,6 +52,17 @@ export type IngestOutcome =
       stored: StoredAs;
       /** What unpacking refused and what it made inert, when it ran (group 6). */
       unpacked?: UnpackResult;
+      /**
+       * Why the archive was not unpacked, when it was stored and unpacking
+       * failed — a bomb, or a zip that will not open.
+       *
+       * On the `ok: true` side deliberately: **the source exists**. Reporting
+       * `ok: false` for a file whose bytes are on disk and whose id is now
+       * taken forever was a real defect, not a wording choice — the inbox
+       * leaves a file it was told failed, so every later drain retried the same
+       * name and met `TakenIdError`, stranding the file and squatting the id.
+       */
+      unpackFailed?: string;
     }
   | { ok: false; name: string; reason: string };
 
@@ -108,13 +119,28 @@ export async function ingestSource(
       // Unpacked *after* the bytes are stored, never instead of them. The
       // archive is what arrived and stays the thing a citation can be checked
       // against; the tree beside it is a reading convenience (plan 6.1, 6.4).
-      //
-      // A refusal here is about this file — a bomb, a zip that will not open —
-      // so it comes back as an outcome like every other, and `unpackArchive`
-      // has already removed what it half-wrote. The source stays, stored: the
-      // bytes are still evidence, and the caller has more files to try.
-      const unpacked = await unpackArchive(projectRoot, id);
-      return { ok: true, name, id, stored: "unpacked", unpacked };
+      try {
+        const unpacked = await unpackArchive(projectRoot, id);
+        return { ok: true, name, id, stored: "unpacked", unpacked };
+      } catch (err) {
+        // **Its own catch, and it reports success.** A bomb or an unreadable
+        // zip leaves the source registered — the bytes are on disk and the id
+        // is taken forever — so answering `ok: false` describes a state that
+        // does not exist. It also stranded the file: the inbox only removes
+        // what landed, so every later drain retried the same name and met
+        // `TakenIdError`, squatting the id and looping on the file for good.
+        //
+        // `unpackArchive` has already removed whatever it half-wrote, so what
+        // remains is an ordinary stored source that nobody unpacked, which is
+        // exactly what this says.
+        return {
+          ok: true,
+          name,
+          id,
+          stored: "stored",
+          unpackFailed: err instanceof Error ? err.message : String(err),
+        };
+      }
     }
     if (!isTextSource(name)) return { ok: true, name, id, stored: "stored" };
     writeSourceText(projectRoot, id, content.toString("utf8"));

@@ -22,6 +22,7 @@ import {
   isUnpacking,
 } from "../src/sources/archive.js";
 import { registerSource } from "../src/sources/register.js";
+import { ingestSource } from "../src/sources/upload.js";
 import { buildZip, zipBomb } from "./zip-fixture.js";
 
 /**
@@ -460,23 +461,21 @@ describe("unpackArchive — agent configuration lands inert (6.3)", () => {
   it("leaves a file that merely resembles one alone", async () => {
     // The rule is the name a harness actually loads. Widening it would rename
     // somebody's source file, which is a different kind of wrong.
+    //
+    // `docs/claude.md` used to be in this list and is **not** any more: it is
+    // loadable as `docs/CLAUDE.md` on any case-insensitive filesystem, so this
+    // test was asserting the hole a security review later walked through.
     const id = stored(
       root,
       buildZip([
         { path: "CLAUDE.md.bak", content: "x" },
-        { path: "docs/claude.md", content: "x" },
         { path: "mcp.json", content: "x" },
         { path: "claude/notes.md", content: "x" },
       ]),
     );
     const result = await unpackArchive(root, id);
     expect(result.inert).toEqual([]);
-    expect(contentsOf(root, id)).toEqual([
-      "CLAUDE.md.bak",
-      "claude/notes.md",
-      "docs/claude.md",
-      "mcp.json",
-    ]);
+    expect(contentsOf(root, id)).toEqual(["CLAUDE.md.bak", "claude/notes.md", "mcp.json"]);
   });
 
   it("refuses a second entry aimed at a path already written, rather than overwriting it", async () => {
@@ -578,5 +577,156 @@ describe("the unpacked tree is provenance and is kept (6.4)", () => {
     const cited = join(root, "raw", id, CONTENTS, "src", "main.rs");
     expect(existsSync(cited)).toBe(true);
     expect(readFileSync(cited, "utf8").split("\n").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("agent configuration cannot dodge the rename (6.3, security review)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("catches a name whose only trick is its case", async () => {
+    // Windows and default macOS resolve names case-insensitively at the OS
+    // layer, so a harness doing `readFileSync(join(cwd, "CLAUDE.md"))` reads a
+    // file written as `claude.md`. Matching the archive's own spelling compares
+    // something no reader ever sees.
+    const id = stored(
+      root,
+      buildZip([
+        { path: "claude.md", content: "pwned\n" },
+        { path: "SRC/CLAUDE.MD", content: "pwned\n" },
+        { path: ".Claude/settings.json", content: "{}" },
+      ]),
+    );
+    const result = await unpackArchive(root, id);
+    expect(result.inert).toHaveLength(3);
+    expect(existsSync(join(root, "raw", id, CONTENTS, "CLAUDE.md"))).toBe(false);
+    expect(existsSync(join(root, "raw", id, CONTENTS, "SRC", "CLAUDE.MD"))).toBe(false);
+  });
+
+  it("refuses a name carrying a colon, which is a data stream and not a file", async () => {
+    // `CLAUDE.md::$DATA` addresses the default data stream of `CLAUDE.md` on
+    // NTFS — the same bytes under the exact name a harness loads — and
+    // `file.txt:hidden` writes a stream no directory listing shows.
+    const id = stored(
+      root,
+      buildZip([
+        { path: "CLAUDE.md::$DATA", content: "pwned\n" },
+        { path: "notes.txt:hidden", content: "pwned\n" },
+        { path: "ok.txt", content: "x" },
+      ]),
+    );
+    const result = await unpackArchive(root, id);
+    expect(result.refused).toHaveLength(2);
+    for (const r of result.refused) expect(r.reason).toMatch(/alternate data stream/i);
+    expect(contentsOf(root, id)).toEqual(["ok.txt"]);
+    expect(existsSync(join(root, "raw", id, CONTENTS, "CLAUDE.md"))).toBe(false);
+  });
+
+  it("catches a directory named for the file, not only the file", async () => {
+    const id = stored(root, buildZip([{ path: "CLAUDE.md/x.txt", content: "x" }]));
+    expect((await unpackArchive(root, id)).inert).toHaveLength(1);
+    expect(existsSync(join(root, "raw", id, CONTENTS, "CLAUDE.md"))).toBe(false);
+  });
+
+  it("catches a trailing dot or space, which Win32 strips on some paths", async () => {
+    const id = stored(
+      root,
+      buildZip([
+        { path: "CLAUDE.md.", content: "x" },
+        { path: "CLAUDE.md ", content: "x" },
+      ]),
+    );
+    expect((await unpackArchive(root, id)).inert).toHaveLength(2);
+  });
+
+  it("still leaves a file that merely resembles one alone", async () => {
+    const id = stored(
+      root,
+      buildZip([
+        { path: "CLAUDE.md.bak", content: "x" },
+        { path: "docs/notes.md", content: "x" },
+        { path: "mcp.json", content: "x" },
+      ]),
+    );
+    expect((await unpackArchive(root, id)).inert).toEqual([]);
+  });
+});
+
+describe("ingestSource — an archive that will not unpack (security review)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("reports the source it actually created, so the inbox does not retry forever", async () => {
+    // Answering `ok: false` for a file whose bytes are on disk and whose id is
+    // taken forever describes a state that does not exist — and the inbox only
+    // removes what landed, so every later drain retried the same name and met
+    // `TakenIdError`, stranding the file and squatting the id.
+    const outcome = await ingestSource(root, "bomb.zip", zipBomb(40_000_000));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.stored).toBe("stored");
+    expect(outcome.unpackFailed).toMatch(/expand|times its own size/i);
+    expect(existsSync(join(root, "raw", outcome.id, "manifest.json"))).toBe(true);
+    expect(contentsOf(root, outcome.id)).toEqual([]);
+  });
+
+  it("unpacks an ordinary archive through the same door", async () => {
+    const outcome = await ingestSource(
+      root,
+      "acme.zip",
+      buildZip([{ path: "src/main.rs", content: "fn main() {}\n" }]),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.stored).toBe("unpacked");
+    expect(outcome.unpacked?.files).toBe(1);
+  });
+});
+
+describe("one bad entry costs itself, not the tree (code review)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("refuses an entry that cannot be written, and keeps the rest", async () => {
+    // The collision the `existsSync` check does not catch: `src` as a file and
+    // then `src/x.txt`, where `mkdirSync` throws ENOTDIR. Letting that reach
+    // the outer catch discarded the whole tree over one member, which
+    // contradicts this module's own rule.
+    const id = stored(
+      root,
+      buildZip([
+        { path: "src", content: "a file, not a directory\n" },
+        { path: "src/x.txt", content: "cannot land\n" },
+        { path: "README.md", content: "# fine\n" },
+      ]),
+    );
+    const result = await unpackArchive(root, id);
+    expect(contentsOf(root, id).sort()).toEqual(["README.md", "src"]);
+    expect(result.refused.map((r) => r.entry)).toEqual(["src/x.txt"]);
+  });
+
+  it("still stops the whole archive for a bound, which is a fact about the archive", async () => {
+    const id = stored(root, zipBomb(200_000));
+    await expect(unpackArchive(root, id, { maxBytes: 1_000 })).rejects.toThrow(/expand/i);
+    expect(contentsOf(root, id)).toEqual([]);
+  });
+});
+
+describe("the marker is written before the directory (6.6, code review)", () => {
+  let root: string;
+  beforeEach(() => (root = tempProject()));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("never leaves contents/ standing with nothing to say it was unfinished", async () => {
+    // The other order left a `contents/` that a failed marker write could not
+    // explain, and the next attempt met "already has an unpacked tree" for
+    // ever — over a tree that was never unpacked.
+    const id = stored(root, buildZip([{ path: "a.txt", content: "x" }]));
+    await unpackArchive(root, id);
+    expect(existsSync(join(root, "raw", id, CONTENTS))).toBe(true);
+    expect(isUnpacking(join(root, "raw", id))).toBe(false);
   });
 });
