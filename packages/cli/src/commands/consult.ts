@@ -39,9 +39,24 @@ export function consultKey(name: string): string {
   return `open-wiki-${name}`;
 }
 
-/** The entry itself: stdio, read-only, naming the project rather than pathing it. */
-function consultEntry(name: string): { command: string; args: string[] } {
-  return { command: "ow", args: ["mcp", "--project", name, "--read-only"] };
+/**
+ * The entry itself: stdio, read-only, naming the project rather than pathing it —
+ * **in the shape the harness's own schema defines.**
+ *
+ * One object for all three was the first version and it was wrong. opencode's
+ * local server is a discriminated union with no `args` field at all, so the
+ * entry it received was a well-formed file in the right place that opencode
+ * ignored — this plan's exact bug, produced by the code written to end it. The
+ * shape is the profile's answer now, like the file and the format.
+ */
+function consultEntry(profile: HarnessProfile, name: string): Record<string, unknown> {
+  const argv = ["ow", "mcp", "--project", name, "--read-only"];
+  if (profile.mcp.entry === "typed-argv") {
+    // `enabled` is optional in the schema and set explicitly: a server nobody
+    // can see the state of is a server somebody debugs by guessing.
+    return { type: "local", command: argv, enabled: true };
+  }
+  return { command: argv[0]!, args: argv.slice(1) };
 }
 
 /** Thrown rather than overwriting a configuration file this product does not own. */
@@ -111,8 +126,8 @@ function writeConsult(
 
   const next =
     profile.mcp.format === "toml"
-      ? tomlWithConsult(existing, file, profile.mcp.serversKey, name, key)
-      : jsonWithConsult(existing, file, profile.mcp.serversKey, name, key);
+      ? tomlWithConsult(existing, file, profile, name, key)
+      : jsonWithConsult(existing, file, profile, name, key);
 
   // `null` is "already exactly this" — the file is not opened for writing at
   // all, so a re-run costs the user's formatting and comments nothing.
@@ -135,7 +150,7 @@ function writeConsult(
 function jsonWithConsult(
   existing: string | null,
   file: string,
-  serversKey: string,
+  profile: HarnessProfile,
   name: string,
   key: string,
 ): string {
@@ -156,13 +171,17 @@ function jsonWithConsult(
   // and then `JSON.stringify` drops it, so the file would be rewritten with our
   // entry silently missing while the CLI reported success; a primitive throws a
   // bare `TypeError` instead of this refusal.
+  const serversKey = profile.mcp.serversKey;
   const servers = doc[serversKey];
   if (servers !== undefined && (typeof servers !== "object" || servers === null)) {
     throw new UnparsableMcpConfigError(file);
   }
   if (Array.isArray(servers)) throw new UnparsableMcpConfigError(file);
 
-  const next = { ...((servers as Record<string, unknown>) ?? {}), [key]: consultEntry(name) };
+  const next = {
+    ...((servers as Record<string, unknown>) ?? {}),
+    [key]: consultEntry(profile, name),
+  };
   doc[serversKey] = next;
   return JSON.stringify(doc, null, 2) + "\n";
 }
@@ -203,7 +222,7 @@ function jsonWithConsult(
 function tomlWithConsult(
   existing: string | null,
   file: string,
-  serversKey: string,
+  profile: HarnessProfile,
   name: string,
   key: string,
 ): string | null {
@@ -217,7 +236,8 @@ function tomlWithConsult(
     }
   }
 
-  const entry = consultEntry(name);
+  const entry = consultEntry(profile, name);
+  const serversKey = profile.mcp.serversKey;
   const servers = doc[serversKey];
   if (servers !== undefined && (typeof servers !== "object" || servers === null)) {
     // `mcp_servers` present and not a table. Merging into it would produce a
@@ -229,10 +249,13 @@ function tomlWithConsult(
   // Already exactly what we would write: touch nothing.
   if (current !== undefined && JSON.stringify(current) === JSON.stringify(entry)) return null;
 
+  // Built from the entry rather than from its known field names, so a harness
+  // whose profile spells its entry differently gets a correct table without
+  // this function being edited — which is the same reason the shape moved into
+  // the profile at all.
   const table = [
     `[${serversKey}.${tomlKey(key)}]`,
-    `command = ${tomlString(entry.command)}`,
-    `args = [${entry.args.map(tomlString).join(", ")}]`,
+    ...Object.entries(entry).map(([field, value]) => `${tomlKey(field)} = ${tomlValue(value)}`),
   ].join("\n");
 
   if (current === undefined) {
@@ -255,6 +278,24 @@ function tomlWithConsult(
  */
 function tomlKey(key: string): string {
   return /^[A-Za-z0-9_-]+$/.test(key) ? key : tomlString(key);
+}
+
+/**
+ * One value of an entry, as TOML.
+ *
+ * Covers exactly what a consult entry holds — a string, a boolean, a list of
+ * strings — and **refuses anything else** rather than emitting a guess. An
+ * unhandled value silently rendered as `[object Object]` would be a file Codex
+ * cannot load, which is the failure this whole plan is about; a throw is a
+ * developer's problem at the moment they add the field.
+ */
+function tomlValue(value: unknown): string {
+  if (typeof value === "string") return tomlString(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+    return `[${value.map(tomlString).join(", ")}]`;
+  }
+  throw new Error(`open-wiki: no TOML rendering for a consult entry value of ${typeof value}`);
 }
 
 /**

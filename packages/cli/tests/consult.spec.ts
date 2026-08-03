@@ -90,12 +90,34 @@ describe("the consult reaches every harness the project carries (4.1, 4.2)", () 
     });
   });
 
-  it("writes opencode's entry under the key opencode reads", () => {
+  it("writes opencode's entry in the shape opencode's schema defines", () => {
+    // **This asserted only that the key existed**, which is worth no more than
+    // no assertion at all for this requirement — and so it passed while the
+    // entry was `{ command, args }`, the Claude Code shape. opencode's local
+    // server is a discriminated union whose `command` carries the whole argv,
+    // with no `args` field, and its own v1→v2 migration drops an entry with no
+    // `type`. A well-formed file, in the right place, that opencode ignores:
+    // this plan's own bug, found by a review in the code written to end it.
     runConsultAdd(root, "fenix", ["opencode"]);
     const doc = JSON.parse(readFileSync(join(root, "opencode.json"), "utf8")) as {
-      mcp: Record<string, unknown>;
+      mcp: Record<string, { type: string; command: string[]; enabled: boolean; args?: unknown }>;
     };
     expect(Object.keys(doc.mcp)).toEqual(["open-wiki-fenix"]);
+
+    const entry = doc.mcp["open-wiki-fenix"]!;
+    expect(entry.type).toBe("local");
+    expect(entry.command).toEqual(["ow", "mcp", "--project", "fenix", "--read-only"]);
+    expect(entry.enabled).toBe(true);
+    // opencode has no such field; carrying one means the argv was split.
+    expect(entry.args).toBeUndefined();
+  });
+
+  it("writes Claude Code's entry in Claude Code's shape, which is not opencode's", () => {
+    // The two JSON targets are not interchangeable, which is the whole point.
+    runConsultAdd(root, "fenix", ["claude"]);
+    const entry = readMcp(root).mcpServers["open-wiki-fenix"]!;
+    expect(entry.command).toBe("ow");
+    expect(entry.args).toEqual(["mcp", "--project", "fenix", "--read-only"]);
   });
 
   it("adds it everywhere in one act, so no harness is left half-configured", () => {

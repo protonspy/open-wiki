@@ -57,23 +57,32 @@ describe("what each harness loads", () => {
     expect(profileFor("opencode").skillsDir).toBe(".opencode/skills");
   });
 
-  it("names the MCP file and the schema that file is in", () => {
+  it("names the MCP file, the schema it is in, and the shape of an entry", () => {
     expect(profileFor("claude").mcp).toEqual({
       file: ".mcp.json",
       format: "json",
       serversKey: "mcpServers",
+      entry: "command-and-args",
     });
     // Codex keeps servers in TOML inside its own config file, not a file of its
     // own — the difference a writer assuming JSON everywhere would get wrong.
+    // Its stdio transport is a `command: String` beside `args: Vec<String>`, so
+    // the *entry* shape happens to match Claude Code's.
     expect(profileFor("codex").mcp).toEqual({
       file: ".codex/config.toml",
       format: "toml",
       serversKey: "mcp_servers",
+      entry: "command-and-args",
     });
+    // **opencode's does not**, and that is the one that shipped wrong: a
+    // discriminated union whose `command` carries the whole argv, with no
+    // `args` field at all. The file and the key were right and the entry was
+    // ignored — this plan's own bug, in the code written to end it.
     expect(profileFor("opencode").mcp).toEqual({
       file: "opencode.json",
       format: "json",
       serversKey: "mcp",
+      entry: "typed-argv",
     });
   });
 

@@ -35,6 +35,26 @@ export interface McpProfile {
   readonly format: "json" | "toml";
   /** The key holding the map of server name to server. */
   readonly serversKey: string;
+  /**
+   * How a stdio server is *spelled* in this harness's schema.
+   *
+   * **The file and the format are not the whole of "the shape it actually
+   * reads".** A review caught this: the same `{ command, args }` object was
+   * written to all three, and opencode's schema has no `args` field at all. Its
+   * local server is a discriminated union — `{ type: "local", command: [...] }`
+   * with the whole argv in `command` (`packages/core/src/v1/config/mcp.ts`) —
+   * and its own v1→v2 migration drops an entry carrying no `type`. So an
+   * opencode project got a correct file, in the right place, that opencode
+   * silently ignored: **this plan's exact bug, produced by the code written to
+   * end it.**
+   *
+   * - `command-and-args` — `{ command: "ow", args: [...] }`. Claude Code's
+   *   `.mcp.json`, and Codex's `[mcp_servers]`, whose stdio transport is a
+   *   `command: String` beside `args: Vec<String>`
+   *   (`codex-rs/config/src/mcp_types.rs`).
+   * - `typed-argv` — `{ type: "local", command: ["ow", …], enabled: true }`.
+   */
+  readonly entry: "command-and-args" | "typed-argv";
 }
 
 /**
@@ -95,7 +115,12 @@ const CLAUDE: HarnessProfile = {
   label: "Claude Code",
   entryFile: "CLAUDE.md",
   skillsDir: ".claude/skills",
-  mcp: { file: ".mcp.json", format: "json", serversKey: "mcpServers" },
+  mcp: {
+    file: ".mcp.json",
+    format: "json",
+    serversKey: "mcpServers",
+    entry: "command-and-args",
+  },
   gate: {
     mechanism: "hook",
     // `.claude/settings.json`, under a `hooks` key — **not** `.claude/hooks/hooks.json`,
@@ -124,7 +149,12 @@ const CODEX: HarnessProfile = {
   label: "Codex",
   entryFile: "AGENTS.md",
   skillsDir: ".codex/skills",
-  mcp: { file: ".codex/config.toml", format: "toml", serversKey: "mcp_servers" },
+  mcp: {
+    file: ".codex/config.toml",
+    format: "toml",
+    serversKey: "mcp_servers",
+    entry: "command-and-args",
+  },
   gate: {
     mechanism: "hook",
     configFile: ".codex/hooks.json",
@@ -147,7 +177,13 @@ const OPENCODE: HarnessProfile = {
   label: "opencode",
   entryFile: "AGENTS.md",
   skillsDir: ".opencode/skills",
-  mcp: { file: "opencode.json", format: "json", serversKey: "mcp" },
+  mcp: {
+    file: "opencode.json",
+    format: "json",
+    serversKey: "mcp",
+    // A discriminated union with no `args` field — see `McpProfile.entry`.
+    entry: "typed-argv",
+  },
   gate: {
     mechanism: "plugin",
     configFile: ".opencode/plugin/open-wiki.ts",
