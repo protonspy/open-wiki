@@ -2274,3 +2274,139 @@ a:hover,
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
+
+/* --- The launcher (desktop-ui 8.4, then `plans/launcher-home.md`).
+ *
+ * The one screen that never adopted this file. It rendered raw buttons and
+ * borrowed `.list` from the sources table, so a project read as a row of a data
+ * grid rather than as the thing this window exists to open.
+ *
+ * It is set as a sibling of `.first-run` — same column, same eyebrow-and-display
+ * heading — because they are the same moment seen twice, and a home that looked
+ * unrelated to the screen it hands over to would be two products.
+ */
+.launcher {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  /* Wider than the first run's 62ch: these rows carry absolute paths, and a
+     path that wraps three times is a path nobody reads. */
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: var(--space-8) 0;
+}
+
+.launcher__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.launcher h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+
+/* Where a new one would go, in the machine's own voice — the draft's caption
+   idiom, the same one §2.2 uses for `creates D:\acme-docs\atlas\`. Mono here
+   means "this is a path, exactly as written", never emphasis. */
+.launcher__where {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.launcher__doors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.launcher__projects {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * A project, and the one deliberate move on this screen.
+ *
+ * The left edge is `--paper`'s border: this window is a cold instrument holding
+ * a warm reading surface, and the home is the list of surfaces it holds. It
+ * earns the width by carrying state rather than decorating — warm where the
+ * directory is there, dim red where it moved — so it says the same thing the
+ * badge says, in the shape of the row itself.
+ */
+.launcher__project {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--paper-border);
+  border-radius: var(--radius);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.launcher__project:hover {
+  background: var(--popover);
+  border-color: var(--border-strong);
+  border-left-color: var(--primary);
+}
+
+.launcher__project--missing {
+  border-left-color: var(--destructive-dim);
+}
+
+.launcher__project--missing:hover {
+  border-left-color: var(--destructive);
+}
+
+/* `min-width: 0`, so a long path shrinks the column instead of pushing the
+   actions off the row. */
+.launcher__identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.launcher__name {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+}
+
+.launcher__project .launcher__path {
+  overflow-wrap: anywhere;
+}
+
+.launcher__actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+/* Nothing held yet — so no paper edge. The instrument is empty, and the block
+   says what to do rather than reporting that it is. */
+.launcher__nothing {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  background: var(--card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.launcher__foot {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
