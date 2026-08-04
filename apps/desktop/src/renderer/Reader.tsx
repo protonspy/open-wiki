@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from "react";
 import type { PageView } from "../main/api.js";
 import { titleOfPage } from "../shared/pages.js";
-import { renderPageBody } from "./markdown.js";
+import { activatesLink } from "./keyboard.js";
+import { opensWithHeading, PAGE_ATTR, renderPageBody, SOURCE_ATTR } from "./markdown.js";
 import { linkTarget, type LinkTarget } from "./navigation.js";
 
 /**
@@ -104,6 +105,7 @@ export interface ReaderProps {
 export function Reader({ page, slugs, onLink }: ReaderProps): React.JSX.Element {
   const html = useMemo(() => renderPageBody(page.body, { slugs }), [page.body, slugs]);
   const chips = useMemo(() => chipsOf(page.frontmatter), [page.frontmatter]);
+  const ownHeading = useMemo(() => opensWithHeading(page.body), [page.body]);
 
   // One handler for the whole rendered page. `onAuxClick` as well, because
   // Chromium dispatches the middle button as `auxclick` — and a middle click
@@ -118,6 +120,26 @@ export function Reader({ page, slugs, onLink }: ReaderProps): React.JSX.Element 
       // the system browser.
       if (target.kind !== "external") event.preventDefault();
       onLink(target);
+    },
+    [onLink],
+  );
+
+  /**
+   * The same links, from the keyboard (uxpass 3.1).
+   *
+   * Delegated on the same element for the same reason: the prose is
+   * `dangerouslySetInnerHTML`, so there is no React node per link to bind to.
+   * Only what the renderer's own rules marked is followed — a broken wikilink
+   * carries neither attribute and is deliberately not a tab stop, and an
+   * external link is the platform's Enter to handle.
+   */
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!activatesLink(event)) return;
+      const anchor = (event.target as HTMLElement).closest(`[${PAGE_ATTR}], [${SOURCE_ATTR}]`);
+      if (!anchor) return;
+      event.preventDefault();
+      onLink(linkTarget(anchor));
     },
     [onLink],
   );
@@ -140,10 +162,21 @@ export function Reader({ page, slugs, onLink }: ReaderProps): React.JSX.Element 
 
       {/* The title the page declares, or its slug — the same answer the tree
           gives, from the same function, so a page is not called two things in
-          one window. */}
-      <h1>{titleOfPage(page.frontmatter, page.slug)}</h1>
+          one window.
 
-      <div onClick={onClick} onAuxClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+          Drawn only when the body has no heading of its own (uxpass 5.1). Every
+          page used to render its title twice: this `<h1>`, and then the body's
+          own `# Heading` immediately after it — two `<h1>` in one `<article>`,
+          confirmed on every page. The body wins where it has an opinion,
+          because the alternative is discarding a line somebody wrote. */}
+      {ownHeading ? null : <h1>{titleOfPage(page.frontmatter, page.slug)}</h1>}
+
+      <div
+        onClick={onClick}
+        onAuxClick={onClick}
+        onKeyDown={onKeyDown}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </article>
   );
 }

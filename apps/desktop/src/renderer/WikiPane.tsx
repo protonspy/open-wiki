@@ -1,4 +1,5 @@
-import { Plus, SquarePen, TextCursorInput, Trash2 } from "lucide-react";
+import { PanelLeft, PanelRight, Plus, SquarePen, TextCursorInput, Trash2 } from "lucide-react";
+import { useState } from "react";
 import type { PageView, WikiIndex } from "../main/api.js";
 import { PaneBar } from "./PaneBar.js";
 import { Button } from "./ui/Button.js";
@@ -40,13 +41,30 @@ export interface WikiPaneProps {
   onRename: () => void;
   onDelete: () => void;
   /**
+   * Whether the editor is open on the page (uxpass 2.2, 2.4).
+   *
+   * Two things hang off it. The three page actions are disabled, because all
+   * three were live mid-edit and *Delete this page* was one click away from an
+   * unsaved draft. And the reader column stops scrolling, so the editor's own
+   * two panes can fill it — see `.reader--editing`.
+   */
+  editing?: boolean;
+  /** Save and Cancel, so one screen has one action row (uxpass 2.4). */
+  editorActions?: React.ReactNode;
+  /**
    * The reader's own contents. The wiki pane arranges; what a page looks like
    * is `Reader`'s, and while editing it is the editor's — both are wired in
    * `App`, which is where saving and navigating live.
    */
   reader: React.ReactNode;
-  /** The side column, or nothing when no page is open. */
-  side?: React.ReactNode;
+  /**
+   * The side column, or nothing when no page is open.
+   *
+   * A function rather than a node because below ~1000px it is a sheet the pane
+   * opens and closes (uxpass 1.1), and whether it is showing is this pane's to
+   * know — `App` builds what goes in it and has no business holding that.
+   */
+  side?: (open: boolean) => React.ReactNode;
 }
 
 export function WikiPane({
@@ -59,10 +77,24 @@ export function WikiPane({
   onEdit,
   onRename,
   onDelete,
+  editing = false,
+  editorActions,
   reader,
   side,
 }: WikiPaneProps): React.JSX.Element {
   const hasSide = page !== null && side !== undefined;
+  /**
+   * Whether each panel is showing *while it is a sheet* (uxpass 1.1, 1.2).
+   *
+   * Both start closed, which is what a narrow window wants: the reader is the
+   * thing somebody came here for, and 115px of it was the finding this closes.
+   * At the widths where they are columns the flags are inert — the media
+   * queries in `globals.css` decide, and this component never asks how wide the
+   * window is.
+   */
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [sideOpen, setSideOpen] = useState(false);
+
   return (
     <section className={hasSide ? "wiki-pane" : "wiki-pane wiki-pane--no-side"} aria-label="Wiki">
       <PaneBar
@@ -74,26 +106,70 @@ export function WikiPane({
            reading" is still a fair question. */
         detail={page ? <code className="pane-bar__path">{page.path}</code> : null}
       >
+        <IconButton
+          icon={PanelLeft}
+          label={treeOpen ? "Hide the page list" : "Show the page list"}
+          className="pane-bar__panel pane-bar__panel--tree"
+          aria-expanded={treeOpen}
+          onClick={() => setTreeOpen((open) => !open)}
+        />
         {page ? (
           <>
-            <IconButton icon={SquarePen} label="Edit this page" onClick={onEdit} />
-            <IconButton icon={TextCursorInput} label="Rename this page" onClick={onRename} />
+            {/* Disabled while the editor is open (uxpass 2.2). All three were
+                live mid-edit, which put *Delete this page* one click away from
+                an unsaved draft — and rename and edit would both have thrown
+                the buffer away without a word. */}
+            <IconButton
+              icon={SquarePen}
+              label="Edit this page"
+              disabled={editing}
+              onClick={onEdit}
+            />
+            <IconButton
+              icon={TextCursorInput}
+              label="Rename this page"
+              disabled={editing}
+              onClick={onRename}
+            />
             <IconButton
               icon={Trash2}
               label="Delete this page"
               className="icon-btn--danger"
+              disabled={editing}
               onClick={onDelete}
             />
           </>
+        ) : null}
+        {/* Save and Cancel, in the one action row this screen has (2.4). */}
+        {editing ? editorActions : null}
+        {hasSide ? (
+          <IconButton
+            icon={PanelRight}
+            label={sideOpen ? "Hide what is beside this page" : "Show what is beside this page"}
+            className="pane-bar__panel pane-bar__panel--side"
+            aria-expanded={sideOpen}
+            onClick={() => setSideOpen((open) => !open)}
+          />
         ) : null}
         <Button onClick={onCreate} icon={Plus}>
           New page
         </Button>
       </PaneBar>
 
-      <Tree pages={index.pages} current={selection} onOpen={onOpen} />
+      <Tree
+        pages={index.pages}
+        current={selection}
+        open={treeOpen}
+        onOpen={(slug) => {
+          // Picking a page is what the sheet was opened for, so it closes
+          // behind you. At the widths where the tree is a column this is a flag
+          // nothing reads.
+          setTreeOpen(false);
+          onOpen(slug);
+        }}
+      />
 
-      <div className="reader">
+      <div className={editing ? "reader reader--editing" : "reader"}>
         {/* The wiki pane's own failures — reading the index, creating a page —
             in the column the reader is looking at rather than above the whole
             window, where they were indistinguishable from a failed drop. */}
@@ -101,7 +177,7 @@ export function WikiPane({
         {reader}
       </div>
 
-      {hasSide ? side : null}
+      {hasSide ? side(sideOpen) : null}
     </section>
   );
 }

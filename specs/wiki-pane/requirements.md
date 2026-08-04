@@ -34,15 +34,21 @@ scope.)
 - **R2.1** The wiki pane shall show the open page on a warm surface, distinct
   from the chrome around it.
 - **R2.2** The reader shall show the page's frontmatter as one chip per entry.
-- **R2.3** The reader shall show the page's title as a heading, or its slug when
-  the page has no title.
+- **R2.3** (MODIFIED) The reader shall show the page's title as a heading, or its
+  slug when the page has no title — unless the body opens with a heading of its
+  own, in which case the reader shall not draw a second one over it.
 - **R2.4** The reader shall render the page's body with its wikilinks and
   citations as links the application handles.
-- **R2.5** Where a wikilink does not resolve, the reader shall show it as broken
-  where it appears.
+- **R2.5** (MODIFIED) Where a wikilink does not resolve, the reader shall show it
+  as broken where it appears, and shall say in its text that it is broken.
 - **R2.6** The reader shall offer editing, renaming and deleting the open page.
 - **R2.7** The reader shall render a citation as an amber chip showing its
   fragment, with an icon distinguishing an audio source from a document source.
+- **R2.8** (ADDED) The reader shall make every link it renders reachable and
+  followable from the keyboard.
+- **R2.9** (ADDED) While the open page is being edited, the wiki pane shall not
+  offer editing, renaming or deleting it, and shall confirm before leaving the
+  page with unsaved changes.
 
 ## R3 · The side panel
 
@@ -56,17 +62,33 @@ scope.)
   that concern the open page.
 - **R3.5** When a side-panel section would be empty, the wiki pane shall omit the
   section rather than show an empty header.
+- **R3.6** (ADDED) The side panel shall list the open page's headings once it has
+  enough of them to get lost in, and choosing one shall move the reader to it.
 
 ## R4 · Empty and absent states
 
-- **R4.1** When no page is selected, the reader shall say so, rather than show
-  nothing.
+- **R4.1** (MODIFIED) When no page is selected, the reader shall say what the
+  pane is for and offer creating a page, rather than report that nothing is
+  selected.
 - **R4.2** While a page is being read, the reader shall say so, rather than show
   nothing.
 - **R4.3** When the wiki has no pages, the wiki pane shall say that the agent
   writes the pages, not the window.
 - **R4.4** While the wiki's index has not been read yet, the wiki pane shall say
   so rather than say the wiki is empty.
+
+## R5 · The pane at the widths the window allows (ADDED)
+
+The application permits a 720×480 window and the pane had one layout, so at its
+own minimum the reader column came to 115px.
+
+- **R5.1** (ADDED) While the window is too narrow for three columns, the pane shall draw
+  the side panel over the reader rather than beside it, and shall offer showing and
+  hiding it.
+- **R5.2** (ADDED) While the window is too narrow for two columns, the pane shall do the
+  same with the tree.
+- **R5.3** (ADDED) The reader column shall stay wide enough to read prose in, at every
+  width the window allows.
 
 ## Out of scope
 

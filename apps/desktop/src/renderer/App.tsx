@@ -15,9 +15,10 @@ import {
   occasionOf,
   occasionQuestion,
   renameQuestion,
+  unsavedQuestion,
 } from "./dialogs.js";
 import { pageTemplate } from "./page-template.js";
-import { Editor } from "./Editor.js";
+import { Editor, EditorActions, useEditorBuffer } from "./Editor.js";
 import { Shell, type LinkTarget, type Location, type Overlay, type Pane } from "./navigation.js";
 import {
   clearAt,
@@ -28,7 +29,7 @@ import {
   replaceAt,
   type Notice,
 } from "./notices.js";
-import { fixesFor, type Fix } from "./fixes.js";
+import { fixesFor, writesToDisk, type Fix } from "./fixes.js";
 import { closesOverlay, isFieldTag, paneShortcut } from "./keyboard.js";
 import { Reader, readerState } from "./Reader.js";
 import { Side } from "./Side.js";
@@ -45,10 +46,13 @@ import { Drawer } from "./ui/Drawer.js";
 import { Sheet } from "./ui/Sheet.js";
 import { Chat } from "./Chat.js";
 import { Launcher } from "./Launcher.js";
+import { htmlLang } from "./languages.js";
 import { mayAskForProject, windowView } from "./window-view.js";
 import { Settings } from "./Settings.js";
 import { Sources } from "./Sources.js";
 import { Button } from "./ui/Button.js";
+import { Empty } from "./ui/Empty.js";
+import { Plus } from "lucide-react";
 
 /**
  * How long a burst of folder changes is gathered before the screen redraws.
@@ -64,7 +68,7 @@ const COALESCE_MS = 120;
  * padded `<main>` — the old behaviour — until somebody gives it a frame, rather
  * than silently rendering edge to edge with no bar at all.
  */
-const FRAMED_PANES: ReadonlySet<Pane> = new Set<Pane>(["wiki", "sources", "checks"]);
+const FRAMED_PANES: ReadonlySet<Pane> = new Set<Pane>(["wiki", "sources", "checks", "chat"]);
 
 /**
  * The shell (plan 8.2), browsing the wiki inside it (8.5), and the screens
@@ -100,8 +104,10 @@ export function App(): React.JSX.Element {
   // Electron, so the four controls that used it did nothing at all.
   const { ask, askFully, confirm, element: dialog } = useDialogs();
 
-  /** How many findings the checks last reported; null until they have run. */
+  /** How many findings the checks last reported; null while none has come back. */
   const [findings, setFindings] = useState<number | null>(null);
+  /** Whether the last attempt failed — which is not the same as none yet. */
+  const [checksFailed, setChecksFailed] = useState(false);
   const [lastWrite, setLastWrite] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -147,9 +153,39 @@ export function App(): React.JSX.Element {
     setNotices((current) => clearAt(current, "page"));
   }, []);
 
-  const visit = useCallback((next: Location) => arrive(shell.current.visit(next)), [arrive]);
+  /**
+   * Whether leaving where we are would throw away unsaved work (uxpass 2.3).
+   *
+   * A ref, because every navigation callback below would otherwise have to be
+   * rebuilt on every keystroke in the editor — and the window's keydown listener
+   * with them.
+   */
+  const unsaved = useRef(false);
 
-  const goTo = useCallback((pane: Pane) => arrive(shell.current.goTo(pane)), [arrive]);
+  /**
+   * Go somewhere, unless there is a draft that would be lost by going.
+   *
+   * The move itself is deferred until the question is answered: `Shell.visit`
+   * mutates the history, so calling it first and then asking would leave the
+   * back stack believing in a navigation that never happened.
+   */
+  const leaveFor = useCallback(
+    async (move: () => Location) => {
+      if (unsaved.current && !(await confirm(unsavedQuestion()))) return;
+      arrive(move());
+    },
+    [arrive, confirm],
+  );
+
+  const visit = useCallback(
+    (next: Location) => void leaveFor(() => shell.current.visit(next)),
+    [leaveFor],
+  );
+
+  const goTo = useCallback(
+    (pane: Pane) => void leaveFor(() => shell.current.goTo(pane)),
+    [leaveFor],
+  );
 
   const show = useCallback((next: Overlay) => {
     shell.current.show(next);
@@ -183,6 +219,19 @@ export function App(): React.JSX.Element {
       })
       .catch((e: unknown) => say(failure("shell", e)));
   }, [refreshIndex, say]);
+
+  /**
+   * The document's language is the project's (uxpass 4.4).
+   *
+   * `index.html` hard-wires `en`, and the wiki is the overwhelming majority of
+   * the text in this window: a Portuguese project read out with English
+   * phonemes is not an accent, it is unintelligible. Set here rather than in the
+   * HTML because the answer arrives with `project()` and changes in the settings
+   * sheet.
+   */
+  useEffect(() => {
+    document.documentElement.lang = htmlLang(project?.language);
+  }, [project?.language]);
 
   // 8.10 — the folder changed, whoever wrote it. Coalesced: an agent writing
   // twenty pages is twenty events, and every panel walks the tree.
@@ -234,6 +283,45 @@ export function App(): React.JSX.Element {
       .catch(() => setLastWrite(null));
   }, [reloadKey, mayAsk]);
 
+  /**
+   * The checks, asked once and again after every write (uxpass 9.2).
+   *
+   * **The status bar used to say *not checked yet* until somebody opened the
+   * checks pane**, which is honest and leaves the default state of the window
+   * saying nothing at all about the wiki's health — on an application whose
+   * whole argument is that a wiki is worth trusting because something checks it.
+   *
+   * `StatusBar`'s note about not computing the count here still holds and this
+   * does not break it: the count is still never computed *for the bar* on a
+   * render, and `ow check` walks the project exactly once per change, in the
+   * background, off the paint path.
+   *
+   * Skipped while the checks pane is the one on screen, because that pane runs
+   * the same walk and reports it through `onCount`. Read from a ref rather than
+   * a dependency, or every pane switch would be another walk of the project.
+   */
+  const currentPane = useRef(location.pane);
+  currentPane.current = location.pane;
+  useEffect(() => {
+    if (!hasBridge() || !mayAsk || currentPane.current === "checks") return;
+    let live = true;
+    void bridge()
+      .findings()
+      .then((found) => {
+        if (!live) return;
+        setFindings(found.length);
+        setChecksFailed(false);
+      })
+      .catch(() => {
+        // **Not a zero.** A count is a claim, and a walk that threw reached no
+        // verdict — the same rule `ChecksPane` follows for its own body.
+        if (live) setChecksFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [mayAsk, reloadKey]);
+
   useEffect(() => {
     if (location.pane !== "wiki" || !location.selection) {
       setPage(null);
@@ -283,6 +371,29 @@ export function App(): React.JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [goTo, dismiss]);
+
+  /**
+   * The edit session's buffer (uxpass 2.3, 2.4).
+   *
+   * It lives here rather than inside `Editor` because Save and Cancel moved
+   * into the pane bar, and the bar is `WikiPane`'s: two components need the same
+   * buffer, so it belongs above both of them.
+   */
+  const editor = useEditorBuffer({
+    page,
+    editing,
+    onSaved: () => {
+      setEditing(false);
+      if (location.selection) void reload(location.selection);
+    },
+  });
+  unsaved.current = editor.dirty;
+
+  /** Closing the editor is leaving too, so it asks the same question (2.3). */
+  const cancelEdit = useCallback(async () => {
+    if (editor.dirty && !(await confirm(unsavedQuestion()))) return;
+    setEditing(false);
+  }, [confirm, editor.dirty]);
 
   /** Which slugs a fix button may offer to open (5.3). */
   const knownSlugs = useMemo(() => new Set(index.slugs), [index.slugs]);
@@ -392,8 +503,8 @@ export function App(): React.JSX.Element {
         recording={recording}
         onRecord={(action) => void record(action)}
         onSettings={() => show({ kind: "settings" })}
-        onBack={() => arrive(shell.current.back())}
-        onForward={() => arrive(shell.current.forward())}
+        onBack={() => void leaveFor(() => shell.current.back())}
+        onForward={() => void leaveFor(() => shell.current.forward())}
         canGoBack={shell.current.canGoBack}
         canGoForward={shell.current.canGoForward}
       />
@@ -401,10 +512,11 @@ export function App(): React.JSX.Element {
       <div className="app-body">
         <Rail current={location.pane} onGoTo={goTo} language={project?.language ?? "en"} />
 
-        {/* Three of the four panes draw their own frame — a bar, and a body
-            that scrolls inside it — so `<main>` stops padding and stops
-            scrolling for them. The chat pane is not one of them and keeps the
-            padded `<main>` it was built against. */}
+        {/* Every pane draws its own frame — a bar, and a body that scrolls
+            inside it — so `<main>` stops padding and stops scrolling. The chat
+            pane joined them when it got a bar of its own (uxpass 6.1); a pane
+            added later still gets the padded `<main>` until somebody frames it,
+            rather than silently rendering edge to edge with no bar at all. */}
         <main className={FRAMED_PANES.has(location.pane) ? "main main--bleed" : "main"}>
           {/* Beside the controls they are about: the recording notice under
               the titlebar, the shell's own above every pane. */}
@@ -437,18 +549,25 @@ export function App(): React.JSX.Element {
               onDelete={() => {
                 if (page) void deleteFlow(page.slug, confirm, visit, say);
               }}
+              editing={editing}
+              editorActions={<EditorActions buffer={editor} onCancel={() => void cancelEdit()} />}
               side={
-                page ? (
-                  /* 6.5 — where this page came from, and what the checks say
-                     about it, beside the page rather than behind a button. */
-                  <Side
-                    page={page}
-                    reloadKey={reloadKey}
-                    onOpenSource={(id, fragment) =>
-                      show({ kind: "provenance", source: id, fragment })
-                    }
-                  />
-                ) : undefined
+                page
+                  ? /* 6.5 — where this page came from, and what the checks say
+                       about it, beside the page rather than behind a button.
+                       Below ~1000px it is a sheet, and whether it is open is
+                       the pane's (uxpass 1.1). */
+                    (open) => (
+                      <Side
+                        page={page}
+                        open={open}
+                        reloadKey={reloadKey}
+                        onOpenSource={(id, fragment) =>
+                          show({ kind: "provenance", source: id, fragment })
+                        }
+                      />
+                    )
+                  : undefined
               }
               reader={
                 <>
@@ -460,8 +579,32 @@ export function App(): React.JSX.Element {
 
                   {reading === "empty-wiki" ? <EmptyWiki root={project?.root ?? ""} /> : null}
 
+                  {/* uxpass 8.1 — it was *"Pick a page on the left to read
+                      it."* pinned to the top-left of 650px of void: a report of
+                      the state rather than what the pane is for, with nothing
+                      offered about it. */}
                   {reading === "no-selection" ? (
-                    <p className="empty">Pick a page on the left to read it.</p>
+                    <Empty
+                      title="Nothing open"
+                      action={
+                        <Button
+                          icon={Plus}
+                          onClick={() => void createPage(index, askFully, visit, say)}
+                        >
+                          New page
+                        </Button>
+                      }
+                    >
+                      <p>
+                        This is the wiki — the pages this project has accumulated, and what they
+                        rest on. Pick one from the list to read it.
+                      </p>
+                      <p>
+                        {index.pages.length} {index.pages.length === 1 ? "page" : "pages"} so far,
+                        and the agent writes most of them: the Chat pane runs it against this
+                        project.
+                      </p>
+                    </Empty>
                   ) : null}
 
                   {reading === "loading" ? <p className="empty">Opening&hellip;</p> : null}
@@ -476,17 +619,7 @@ export function App(): React.JSX.Element {
                     </>
                   ) : null}
 
-                  {page && editing ? (
-                    <Editor
-                      page={page}
-                      slugs={index.slugs}
-                      onSaved={() => {
-                        setEditing(false);
-                        void reload(page.slug);
-                      }}
-                      onCancel={() => setEditing(false)}
-                    />
-                  ) : null}
+                  {page && editing ? <Editor buffer={editor} slugs={index.slugs} /> : null}
                 </>
               }
             />
@@ -502,7 +635,10 @@ export function App(): React.JSX.Element {
           {location.pane === "checks" ? (
             <ChecksPane
               reloadKey={reloadKey}
-              onCount={setFindings}
+              onCount={(count) => {
+                setFindings(count);
+                setChecksFailed(false);
+              }}
               notice={<Reported notices={notices} place="checks" />}
               /* 5.3 — reaching what the finding named, from the finding. */
               actionFor={(finding) => (
@@ -536,6 +672,7 @@ export function App(): React.JSX.Element {
       <StatusBar
         root={project?.root ?? ""}
         findings={findings}
+        checksFailed={checksFailed}
         onGoToChecks={() => goTo("checks")}
         onUndo={lastWrite ? () => show({ kind: "history" }) : null}
       />
@@ -576,12 +713,12 @@ function Dropped({
   const failed = outcomes.filter((o) => !o.ok);
   return (
     <div className={failed.length > 0 ? "error" : "empty"}>
-      <div className="editor__bar">
+      <div className="notice-row">
         <strong>
           {outcomes.length - failed.length} of {outcomes.length} added
         </strong>
         <span className="chrome__spacer" />
-        <button onClick={onDismiss}>Dismiss</button>
+        <Button onClick={onDismiss}>Dismiss</Button>
       </div>
       <ul>
         {/* Keyed by position as well as name: the inbox (3.7) appends to this
@@ -788,14 +925,14 @@ function InboxWaiting({
 
   return (
     <div className="empty">
-      <div className="editor__bar">
+      <div className="notice-row">
         <strong>
           {names.length} {names.length === 1 ? "file is" : "files are"} waiting in raw/_inbox
         </strong>
         <span className="chrome__spacer" />
-        <button onClick={() => void take()} disabled={busy}>
+        <Button onClick={() => void take()} disabled={busy}>
           {busy ? "Adding…" : "Add them"}
-        </button>
+        </Button>
       </div>
       {error ? <p className="error">{error}</p> : null}
       <ul>
@@ -908,7 +1045,9 @@ function Fixes({
         <Button
           key={fix.kind}
           size="sm"
-          variant={fix.kind === "add-to-index" || fix.kind === "replace" ? "default" : "ghost"}
+          /* uxpass 7.5 — the ones that change the wiki look like it, and the
+             ones that only take you somewhere do not. */
+          variant={writesToDisk(fix.kind) ? "default" : "ghost"}
           disabled={busy}
           onClick={() => void take(fix)}
         >

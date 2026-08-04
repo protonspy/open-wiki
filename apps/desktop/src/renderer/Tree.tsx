@@ -82,9 +82,19 @@ export interface TreeProps {
   /** The slug the reader is showing, if any. */
   current?: string;
   onOpen: (slug: string) => void;
+  /**
+   * Whether the tree is showing while it is a sheet rather than a column
+   * (uxpass 1.2).
+   *
+   * Read only by the narrow-window rules in `globals.css`: at the widths where
+   * the tree is a column the attribute is inert, which is why this component
+   * never asks how wide the window is. Two answers to that question is one
+   * answer too many — see the note on `.pane-bar__panel`.
+   */
+  open?: boolean;
 }
 
-export function Tree({ pages, current, onOpen }: TreeProps): React.JSX.Element {
+export function Tree({ pages, current, onOpen, open = false }: TreeProps): React.JSX.Element {
   const bands = groupPages(pages);
   // Flat, in the order the bands draw them: the arrows move down the tree as it
   // is read, across a band boundary and on, because that is what "the next
@@ -121,7 +131,7 @@ export function Tree({ pages, current, onOpen }: TreeProps): React.JSX.Element {
 
   let index = -1;
   return (
-    <nav className="tree" aria-label="Pages" onKeyDown={onKeyDown}>
+    <nav className="tree" aria-label="Pages" data-open={String(open)} onKeyDown={onKeyDown}>
       {bands.map((band) => (
         // The unnamed band still needs a key, and `""` cannot collide with a
         // folder name because a path segment is never empty.

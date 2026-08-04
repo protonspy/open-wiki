@@ -142,15 +142,16 @@ describe("the focus ring", () => {
     expect(rule?.[1]).toMatch(/outline:\s*2px solid var\(--ring\)/);
   });
 
-  it("is removed in exactly one place, and put back on the box around it", () => {
-    // `.search input` is the one legitimate case: the ring is moved to the
-    // control's own edge, where the eye reads it, rather than deleted. Any
-    // other `outline: none` in this file is the bug this test exists for.
+  it("is never removed anywhere", () => {
+    // `.search input` used to be the one legitimate case — the ring moved to
+    // the control's own edge rather than deleted — and `ui/SearchInput` had
+    // zero importers, so uxpass 7.6 took the component and its rules together.
+    // With nothing left to except, the invariant is the stronger one: any
+    // `outline: none` in this file is the bug this test exists for.
     const removals = [...css.matchAll(/([^{}]*)\{[^}]*outline:\s*(?:none|0)[;\s]/g)].map((m) =>
       m[1]?.trim(),
     );
-    expect(removals).toEqual([".search input"]);
-    expect(css).toMatch(/\.search:focus-within\s*\{[^}]*outline:\s*2px solid var\(--ring\)/);
+    expect(removals).toEqual([]);
   });
 
   it("never turns the ring off for reduced motion", () => {

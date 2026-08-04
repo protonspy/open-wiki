@@ -5,6 +5,7 @@ import type { PageView } from "../main/api.js";
 import type { PageSource } from "../main/sources.js";
 import { bridge } from "./bridge.js";
 import { failed, LOADING, ready, valueOf, type Loaded } from "./loaded.js";
+import { extractHeadings, type PageHeading } from "./markdown.js";
 import { ICON_SM } from "./ui/icons.js";
 
 /**
@@ -23,14 +24,72 @@ export interface SideProps {
   /** Bumped when the project changed, so both lists refetch. */
   reloadKey: number;
   onOpenSource: (id: string, fragment: string) => void;
+  /**
+   * Whether it is showing while it is a sheet rather than a column
+   * (uxpass 1.1). Inert at the widths where it is a column — see `Tree`.
+   */
+  open?: boolean;
 }
 
-export function Side({ page, reloadKey, onOpenSource }: SideProps): React.JSX.Element {
+export function Side({
+  page,
+  reloadKey,
+  onOpenSource,
+  open = false,
+}: SideProps): React.JSX.Element {
   return (
-    <aside className="side" aria-label="About this page">
+    <aside className="side" aria-label="About this page" data-open={String(open)}>
+      <PageContents body={page.body} />
       <PageProvenance slug={page.slug} reloadKey={reloadKey} onOpen={onOpenSource} />
       <PageFindings path={page.path} reloadKey={reloadKey} />
     </aside>
+  );
+}
+
+/**
+ * How many headings a page has to have before a contents list earns its place
+ * (uxpass 5.6).
+ *
+ * Below this the list is longer than the scrolling it saves — and it would sit
+ * above the provenance, which is the column's actual subject.
+ */
+export const CONTENTS_THRESHOLD = 4;
+
+/** Which headings a contents list shows, or none at all. */
+export function contentsOf(body: string): PageHeading[] {
+  // `h1` is the page's own title, which is at the top of the column already.
+  const inside = extractHeadings(body).filter(
+    (heading) => heading.level >= 2 && heading.level <= 3,
+  );
+  return inside.length >= CONTENTS_THRESHOLD ? inside : [];
+}
+
+/**
+ * The page's own headings, for a page long enough to get lost in (uxpass 5.6).
+ *
+ * The ids come from `markdown.ts`'s own rule, through the same parse the reader
+ * renders — so an entry here and the heading it points at cannot disagree about
+ * what the anchor is called.
+ */
+export function PageContents({ body }: { body: string }): React.JSX.Element | null {
+  const headings = contentsOf(body);
+  if (headings.length === 0) return null;
+  return (
+    <>
+      <p className="side-title">On this page</p>
+      <nav className="side-toc" aria-label="On this page">
+        {headings.map((heading) => (
+          <button
+            key={heading.id}
+            type="button"
+            className={heading.level > 2 ? "side-toc__item side-toc__item--deep" : "side-toc__item"}
+            onClick={() => document.getElementById(heading.id)?.scrollIntoView({ block: "start" })}
+          >
+            {heading.text}
+          </button>
+        ))}
+      </nav>
+    </>
   );
 }
 

@@ -255,99 +255,99 @@ a change nobody can keep.
 
 ### 1 — the window at every size it allows
 
-- [ ] 1.1 (Unit) Give the shell a breakpoint that drops the right rail to a
+- [x] 1.1 (Unit) Give the shell a breakpoint that drops the right rail to a
       toggleable overlay below ~1000px, asserting the reader column stays above 380px
       at 860×560
-- [ ] 1.2 (Unit) Collapse the page tree to an overlay below ~820px, asserting the
+- [x] 1.2 (Unit) Collapse the page tree to an overlay below ~820px, asserting the
       reader column stays above 380px at 720×480
-- [ ] 1.3 (Unit) Assert no element overflows the viewport at 720×480 on every pane
+- [x] 1.3 (Unit) Assert no element overflows the viewport at 720×480 on every pane
 
 ### 2 — the editor
 
-- [ ] 2.1 (Unit) Change `.editor__panes` to `minmax(0, 1fr) minmax(0, 1fr)` and make
+- [x] 2.1 (Unit) Change `.editor__panes` to `minmax(0, 1fr) minmax(0, 1fr)` and make
       the source box fill the pane height, asserting the two columns measure within
       10% of each other on a page containing a wide code fence
-- [ ] 2.2 (Unit) Disable Edit, Rename and Delete in the pane bar while the editor is
+- [x] 2.2 (Unit) Disable Edit, Rename and Delete in the pane bar while the editor is
       open
-- [ ] 2.3 (Unit) Track a dirty state: mark it in the pane bar, disable Save when
+- [x] 2.3 (Unit) Track a dirty state: mark it in the pane bar, disable Save when
       clean, and confirm before navigating away with unsaved changes
-- [ ] 2.4 (Unit) Move Save/Cancel into the pane bar so one screen has one action row
-- [ ] 2.5 (Unit) Complete `[[` from the wiki's slugs and `src://`/`rec://` from the
+- [x] 2.4 (Unit) Move Save/Cancel into the pane bar so one screen has one action row
+- [x] 2.5 (Unit) Complete `[[` from the wiki's slugs and `src://`/`rec://` from the
       project's source ids, inside the source textarea
 
 ### 3 — links from the keyboard
 
-- [ ] 3.1 (Unit) Give wikilink and provenance anchors `tabindex="0"`, `role="link"`
+- [x] 3.1 (Unit) Give wikilink and provenance anchors `tabindex="0"`, `role="link"`
       and Enter/Space activation through the existing delegated handler, asserting a
       focusable count greater than zero inside a rendered article
-- [ ] 3.2 (Unit) Give a broken wikilink an accessible name that says it is broken,
+- [x] 3.2 (Unit) Give a broken wikilink an accessible name that says it is broken,
       rather than a `title` alone
 
 ### 4 — announcements
 
-- [ ] 4.1 (Unit) Put the notices region behind `role="status"`, and failures behind
+- [x] 4.1 (Unit) Put the notices region behind `role="status"`, and failures behind
       `role="alert"`
-- [ ] 4.2 (Unit) Announce the agent's turn boundaries and the approval request
-- [ ] 4.3 (Unit) Give the transcription progress a `role="progressbar"` with
+- [x] 4.2 (Unit) Announce the agent's turn boundaries and the approval request
+- [x] 4.3 (Unit) Give the transcription progress a `role="progressbar"` with
       `aria-valuenow`/`aria-valuemax`, and the sources table's actions column a
       visually-hidden header
-- [ ] 4.4 (Unit) Set `<html lang>` from the project's content language
-- [ ] 4.5 (Unit) Make the rail one tab stop with Left/Right arrow movement, per the
+- [x] 4.4 (Unit) Set `<html lang>` from the project's content language
+- [x] 4.5 (Unit) Make the rail one tab stop with Left/Right arrow movement, per the
       tablist pattern the markup already claims
 
 ### 5 — the reading surface
 
-- [ ] 5.1 (Unit) Render the page title once — drop the body's leading H1 when it
+- [x] 5.1 (Unit) Render the page title once — drop the body's leading H1 when it
       matches, or the reader's own when the body opens with one
-- [ ] 5.2 (Unit) Style tables inside the reader by element, asserting a rendered cell
+- [x] 5.2 (Unit) Style tables inside the reader by element, asserting a rendered cell
       has non-zero padding and a visible row rule
-- [ ] 5.3 (Unit) Restate the heading scale so h2 and h3 are distinguishable from body
+- [x] 5.3 (Unit) Restate the heading scale so h2 and h3 are distinguishable from body
       and from each other
-- [ ] 5.4 (Unit) Give live and broken wikilinks distinct colour as well as underline
-- [ ] 5.5 (Unit) Enable GFM task lists in the renderer
-- [ ] 5.6 (Unit) Give headings stable ids, and the right rail a table of contents for
+- [x] 5.4 (Unit) Give live and broken wikilinks distinct colour as well as underline
+- [x] 5.5 (Unit) Enable GFM task lists in the renderer
+- [x] 5.6 (Unit) Give headings stable ids, and the right rail a table of contents for
       pages above a threshold
 
 ### 6 — the chat pane
 
-- [ ] 6.1 (Unit) Give chat a pane bar: title, the model in use, and a new
+- [x] 6.1 (Unit) Give chat a pane bar: title, the model in use, and a new
       conversation
-- [ ] 6.2 (Unit) Size the assistant bubble to its content and cap its measure to the
+- [x] 6.2 (Unit) Size the assistant bubble to its content and cap its measure to the
       reader's
-- [ ] 6.3 (Unit) Render a word-level diff between `old_string` and `new_string` in
+- [x] 6.3 (Unit) Render a word-level diff between `old_string` and `new_string` in
       the approval card
-- [ ] 6.4 (Unit) Disable the composer while a run is paused on an interrupt, and say
+- [x] 6.4 (Unit) Disable the composer while a run is paused on an interrupt, and say
       why in place of the placeholder
-- [ ] 6.5 (Unit) Move focus to the approval card when it appears, and bind
+- [x] 6.5 (Unit) Move focus to the approval card when it appears, and bind
       approve/reject
-- [ ] 6.6 (Unit) Show working state as a persistent element rather than a placeholder
+- [x] 6.6 (Unit) Show working state as a persistent element rather than a placeholder
 
 ### 7 — the design system
 
-- [ ] 7.1 (Unit) Add `ui/Input` and `ui/Select`, and replace every raw `<input>` and
+- [x] 7.1 (Unit) Add `ui/Input` and `ui/Select`, and replace every raw `<input>` and
       the model `<select>` with them
-- [ ] 7.2 (Unit) Replace the remaining raw `<button>`s with `ui/Button`
-- [ ] 7.3 (Unit) Constrain `.seg` to its content inside `.ask__field`, asserting the
+- [x] 7.2 (Unit) Replace the remaining raw `<button>`s with `ui/Button`
+- [x] 7.3 (Unit) Constrain `.seg` to its content inside `.ask__field`, asserting the
       rendered track width equals the sum of its segments
-- [ ] 7.4 (Unit) Restate the WAV setting so heading, label and toggle polarity agree,
+- [x] 7.4 (Unit) Restate the WAV setting so heading, label and toggle polarity agree,
       and take the toggle into the amber palette
-- [ ] 7.5 (Unit) Give every fix that writes to disk the same emphasis in the checks
+- [x] 7.5 (Unit) Give every fix that writes to disk the same emphasis in the checks
       pane
-- [ ] 7.6 (Unit) Delete `ui/Card.tsx` and `ui/SearchInput.tsx`, or adopt them
+- [x] 7.6 (Unit) Delete `ui/Card.tsx` and `ui/SearchInput.tsx`, or adopt them
 
 ### 8 — empty states and spacing
 
-- [ ] 8.1 (Unit) Rebuild the wiki, chat and checks empty states as centred blocks
+- [x] 8.1 (Unit) Rebuild the wiki, chat and checks empty states as centred blocks
       that say what the pane is for and offer the first action
-- [ ] 8.2 (Unit) Centre the launcher and first-run columns in the window
-- [ ] 8.3 (Unit) Show the launcher's cache note only when there is a list to explain
-- [ ] 8.4 (Unit) Offer **Locate…** on a project that is not where it was
-- [ ] 8.5 (Unit) Stop inline `<code>` orphaning trailing punctuation, and fix the
+- [x] 8.2 (Unit) Centre the launcher and first-run columns in the window
+- [x] 8.3 (Unit) Show the launcher's cache note only when there is a list to explain
+- [x] 8.4 (Unit) Offer **Locate…** on a project that is not where it was
+- [x] 8.5 (Unit) Stop inline `<code>` orphaning trailing punctuation, and fix the
       doubled ellipsis in the first run's directory help
-- [ ] 8.6 (Unit) Give the first run a stepper, and size the directory field to the
+- [x] 8.6 (Unit) Give the first run a stepper, and size the directory field to the
       value it holds
 
 ### 9 — honest counts
 
-- [ ] 9.1 (Unit) Tone the checks pill by the worst severity present, not by the count
-- [ ] 9.2 (Unit) Decide what the status bar says before the first check has run
+- [x] 9.1 (Unit) Tone the checks pill by the worst severity present, not by the count
+- [x] 9.2 (Unit) Decide what the status bar says before the first check has run

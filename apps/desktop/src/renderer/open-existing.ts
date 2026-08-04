@@ -39,6 +39,46 @@ export async function openExisting(ow: OpenExistingBridge): Promise<OpenAttempt>
     : { kind: "create-here", directory: outcome.directory };
 }
 
+/** What a project whose directory moved came to (uxpass 8.4). */
+export type RelocateAttempt =
+  | { kind: "cancelled" }
+  /** Found: the registry now points at where it actually is. */
+  | { kind: "relocated"; name: string }
+  /** The chosen directory is not a project — offer to make one there. */
+  | { kind: "not-a-project"; directory: string };
+
+/** The three calls a relocate takes, and nothing else of the bridge. */
+export interface RelocateBridge extends OpenExistingBridge {
+  forgetProject(name: string): Promise<void>;
+}
+
+/**
+ * Point a moved project at where it actually is (uxpass 8.4).
+ *
+ * A project marked **not where it was** offered only **Forget**, so a moved
+ * project was a dead end: the one thing anybody wants to do with it — say where
+ * it went — was the one thing the screen could not do.
+ *
+ * **The stale entry is dropped before the directory is taken on**, and the order
+ * is the whole of the design. `adoptProject` derives a *free* name from the
+ * directory, and the entry that moved is holding the name this project is
+ * called: adopting first would register it as `fenix-2` beside a `fenix` that
+ * points at nothing. Dropping a pointer that already resolves to nothing costs
+ * nothing — the registry is a cache and never truth (2.2), and the directory is
+ * what is real.
+ *
+ * The chooser is answered *first*, so cancelling forgets nothing.
+ */
+export async function relocateProject(ow: RelocateBridge, name: string): Promise<RelocateAttempt> {
+  const directory = await ow.chooseDirectory();
+  if (directory === null) return { kind: "cancelled" };
+  await ow.forgetProject(name);
+  const outcome = await ow.openDirectory(directory);
+  return outcome.kind === "adopted"
+    ? { kind: "relocated", name: outcome.project.name }
+    : { kind: "not-a-project", directory: outcome.directory };
+}
+
 /**
  * What a directory field holds after the chooser closes (R3.2, R3.3).
  *

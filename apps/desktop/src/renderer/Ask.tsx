@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { answerOf, buttonsFor, canAnswer, type Question } from "./dialogs.js";
 import { Button } from "./ui/Button.js";
 import { Dialog } from "./ui/Dialog.js";
+import { Input } from "./ui/Input.js";
 import { Segmented } from "./ui/Segmented.js";
 
 /**
@@ -139,8 +140,7 @@ function Ask({
           {question.kind === "prompt" ? (
             <label className="ask__field">
               {question.label}
-              <input
-                className="editor__source"
+              <Input
                 value={typed}
                 placeholder={question.placeholder}
                 autoFocus

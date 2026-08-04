@@ -2,10 +2,11 @@ import type { Harness, Language } from "@open-wiki/access";
 import { HARNESS_CHOICES, toggleHarness } from "./harnesses.js";
 import { useCallback, useEffect, useState } from "react";
 import { bridge } from "./bridge.js";
-import { canLeave, nextStep, STEPS, stepNumber, type StepId } from "./first-run.js";
+import { canLeave, nextStep, stepClass, STEPS, stepNumber, type StepId } from "./first-run.js";
 import { DEFAULT_LANGUAGE, LANGUAGES } from "./languages.js";
 import { directoryAfterChoosing, directoryFor, kebabCase } from "./open-existing.js";
 import { Button } from "./ui/Button.js";
+import { Input } from "./ui/Input.js";
 import { Segmented } from "./ui/Segmented.js";
 
 /**
@@ -139,9 +140,22 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
 
   return (
     <section className="first-run">
-      <p className="first-run__where">
-        Step {stepNumber(step)} of {STEPS.length}
-      </p>
+      {/* uxpass 8.6 — a stepper rather than *Step 2 of 5*. Four questions is a
+          short road, and seeing the whole of it is what makes answering the
+          second one feel like progress instead of an unknown number of screens.
+          `aria-current="step"` is what says the same thing to a screen reader. */}
+      <ol className="stepper">
+        {STEPS.map((entry, i) => (
+          <li
+            key={entry.id}
+            className={stepClass(i, stepNumber(step) - 1)}
+            aria-current={entry.id === step ? "step" : undefined}
+          >
+            <span className="stepper__dot" aria-hidden />
+            <span className="stepper__label">{entry.short}</span>
+          </li>
+        ))}
+      </ol>
       <h2>{current.title}</h2>
       <p className="first-run__detail">{current.detail}</p>
       {error ? <p className="error">{error}</p> : null}
@@ -150,7 +164,7 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
         <>
           <label className="field">
             Name
-            <input
+            <Input
               value={name}
               placeholder="fenix"
               autoFocus
@@ -170,8 +184,8 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
             Directory
             {/* `specs/opening-an-existing-project`, R3.1 — wherever a directory
                 is asked for, and this is the first one anybody ever sees. */}
-            <div className="editor__bar">
-              <input
+            <div className="field__row">
+              <Input
                 value={directory}
                 placeholder={defaultRoot || "C:\\projects\\fenix"}
                 onChange={(e) => {
@@ -180,17 +194,19 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
                   setDirectory(e.target.value);
                 }}
               />
-              <button type="button" onClick={() => void chooseDirectory()}>
-                Choose…
-              </button>
+              <Button onClick={() => void chooseDirectory()}>Choose…</Button>
             </div>
           </label>
           {/* R3.4 — said out loud, because a path that fills itself in is only
               reassuring if you can see where it came from. */}
+          {/* uxpass 8.5 — this sentence used to end by naming the Choose button
+              with its own trailing ellipsis and then a full stop after it, which
+              reads as a typo and is one. The button is named without its
+              punctuation instead. */}
           {!touched && defaultRoot ? (
             <p className="empty">
-              New projects go in <code>{defaultRoot}</code> unless you say otherwise — type a path
-              or use Choose….
+              New projects go in <code>{defaultRoot}</code> unless you say otherwise. Type a path,
+              or pick one with the Choose button.
             </p>
           ) : null}
         </>
@@ -238,7 +254,7 @@ export function FirstRun({ onDone }: { onDone: () => void }): React.JSX.Element 
           {provider === "groq" ? (
             <label className="field">
               API key
-              <input
+              <Input
                 type="password"
                 placeholder="gsk_…"
                 value={key}

@@ -6,7 +6,9 @@ import { failed, LOADING, ready, valueOf, type Loaded } from "./loaded.js";
 import { groupFindings, whereOf } from "./families.js";
 import { PaneBar } from "./PaneBar.js";
 import { Button } from "./ui/Button.js";
+import { Empty } from "./ui/Empty.js";
 import { ICON_SM } from "./ui/icons.js";
+import type { PillTone } from "./ui/Pill.js";
 
 /**
  * The checks pane (plan 7.6, then desktop-ui 5.2).
@@ -34,6 +36,20 @@ export interface ChecksPaneProps {
   actionFor?: (finding: Finding) => React.ReactNode;
   /** What this pane has to say — a fix that failed, most of the time (1.5). */
   notice?: React.ReactNode;
+}
+
+/**
+ * The tone of the count in the bar (uxpass 9.1).
+ *
+ * **By the worst severity present, never by the count.** It was
+ * `findings.length > 0 ? "error" : "ok"`, so a wiki with five warnings and no
+ * errors showed a red **5** — the pane one row below drew every one of those
+ * five in amber, with a warning icon, on the argument that an error and a
+ * warning have to be told apart. The bar said the opposite of the body.
+ */
+export function toneOfFindings(findings: readonly Finding[]): PillTone {
+  if (findings.some((finding) => finding.severity === "error")) return "error";
+  return findings.length > 0 ? "warning" : "ok";
 }
 
 export function ChecksPane({
@@ -86,7 +102,8 @@ export function ChecksPane({
       <PaneBar
         title="Checks"
         count={findings?.length ?? null}
-        countTone={findings && findings.length > 0 ? "error" : "ok"}
+        noun="finding"
+        countTone={findings ? toneOfFindings(findings) : undefined}
         detail={<span className="pane-bar__note">re-runs on every write</span>}
       >
         <Button icon={RotateCw} onClick={rerun} disabled={loaded.state === "loading"}>
@@ -102,7 +119,18 @@ export function ChecksPane({
             The checks could not run: {loaded.why}. Nothing here is a verdict on the wiki.
           </p>
         ) : null}
-        {findings && findings.length === 0 ? <p className="empty">Nothing to fix.</p> : null}
+        {/* uxpass 8.1 — *"Nothing to fix."* was true and said nothing about
+            what had been looked at, which is the whole value of a clean run. */}
+        {findings && findings.length === 0 ? (
+          <Empty title="Nothing to fix">
+            <p>
+              Every check <code>ow check</code> runs passed on this project: the links resolve, the
+              citations point at sources that exist, the vocabulary is the one the glossary names,
+              and every page is reachable from the index.
+            </p>
+            <p>These run again after every write, so this is the state to come back to.</p>
+          </Empty>
+        ) : null}
 
         {groups.map(({ family, findings: inFamily }) => (
           <div key={family.key} className="check-group">

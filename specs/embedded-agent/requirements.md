@@ -31,6 +31,10 @@ lands.
   preserve the conversation that produced it.
 - **R1.5** The chat pane shall replace the "there is no model behind this window" copy
   shipped today with the empty state in R1.3, in any release that carries this feature.
+- **R1.6** (ADDED) The chat pane shall show which model the embedded agent is running,
+  and shall offer starting a new conversation.
+- **R1.7** (ADDED) While a run is in flight, the chat pane shall show that it is, in the
+  transcript rather than as a hint that disappears when the user types.
 
 ## R2 · The embedded agent runtime
 
@@ -109,10 +113,11 @@ lands.
 
 - **R5.1** When the embedded agent calls a write tool, the embedded agent shall pause the
   run before the write executes and wait for a human decision.
-- **R5.2** While a write is paused, the chat pane shall show the complete effect of the
-  proposed change — the page slug, and the old and new content (or the rename/delete target)
-  — and for an `edit_file` with `replace_all` shall show every match site (or the full
-  resulting page), and shall offer approve, reject, and edit.
+- **R5.2** (MODIFIED) While a write is paused, the chat pane shall show the complete effect
+  of the proposed change — the page slug, and the old and new content (or the rename/delete
+  target), **with what actually differs between them marked** — and for an `edit_file` with
+  `replace_all` shall show every match site (or the full resulting page), and shall offer
+  approve, reject, and edit.
 - **R5.3** When the user rejects a paused write, the tool shall not execute and the agent
   shall be told the write was rejected and not to retry it unless asked.
 - **R5.4** When the user edits the arguments of a paused write, the tool shall execute with
@@ -120,6 +125,18 @@ lands.
 - **R5.5** When the user resumes a paused write, the embedded agent shall revalidate that the
   target page is unchanged since the interrupt and, if it has changed, shall return a fresh
   proposal rather than apply a stale edit.
+- **R5.6** (ADDED) When a write pauses, the chat pane shall move the focus to the decision
+  and shall bind approving and rejecting to the keyboard.
+- **R5.7** (ADDED) While a write is paused, the chat pane shall not accept a message, and
+  shall say why in place of the composer's prompt.
+
+R5.2 asked for the _complete effect_ and got it as two blocks of near-identical
+prose under **Replace** and **With**, which asks the reader to find the
+difference by eye — on the one surface in this application where a person is
+deciding whether a write lands. R5.6 and R5.7 are the rest of that same
+argument: an approval loop is only worth having if answering it is cheap, and it
+was mouse-only, unfocused, and interruptible by a message sent into a run that
+had already stopped.
 
 ## R6 · The line is proved, not configured
 

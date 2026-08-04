@@ -66,16 +66,30 @@ has to survive the repaint.
   pane's name.
 - **R4.2** The rail shall mark which pane is open.
 - **R4.3** The rail shall show the project's content language.
+- **R4.4** (ADDED) The rail shall be one stop in the window's tab order, with the
+  arrow keys moving between its panes.
 
 ## R5 · The status bar
 
 - **R5.1** The status bar shall show the open project's directory.
-- **R5.2** The status bar shall show how many findings the checks last reported.
+- **R5.2** (MODIFIED) The shell shall run the checks when the project opens and
+  after every write, and the status bar shall show how many findings they
+  reported.
 - **R5.3** When the user chooses the findings count, the shell shall show the
   checks pane.
 - **R5.4** The status bar shall offer undoing the most recent recorded write.
 - **R5.5** If there is no recorded write to undo, then the status bar shall say
   so rather than offer it.
+- **R5.6** (ADDED) While the checks have not answered, the status bar shall say they are
+  running; if a run failed, then the status bar shall say so rather than report a count.
+
+R5.2 was _"shall show how many findings the checks last reported"_, and nothing
+ran them: the bar read _not checked yet_ until somebody opened the checks pane,
+so the default state of the window said nothing about the wiki's health. The
+shell asks once when the project opens, and again on each change it already
+coalesces — the same walk the pane makes, moved off the pane's own arrival.
+R5.6 is what keeps that honest, because a run in flight and a run that failed are
+not a count and must not be shown as one.
 
 ## Out of scope
 

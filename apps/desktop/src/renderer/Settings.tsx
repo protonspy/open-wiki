@@ -11,7 +11,9 @@ import { bridge } from "./bridge.js";
 import { LANGUAGES } from "./languages.js";
 import { Button } from "./ui/Button.js";
 import { ICON_SM } from "./ui/icons.js";
+import { Input } from "./ui/Input.js";
 import { Segmented } from "./ui/Segmented.js";
+import { Select } from "./ui/Select.js";
 import { Switch } from "./ui/Switch.js";
 
 /**
@@ -142,7 +144,7 @@ export function Settings(): React.JSX.Element {
             <div className="key-row">
               <label className="field">
                 API key
-                <input
+                <Input
                   type="password"
                   placeholder={
                     credential?.hasKey ? "A key is stored — type a new one to replace it" : "gsk_…"
@@ -199,29 +201,33 @@ export function Settings(): React.JSX.Element {
             The model the embedded agent runs. The list is what Groq offered for this project when
             the key was checked.
           </p>
-          <select
-            className="setting__select"
-            aria-label="Chat agent model"
+          {/* uxpass 7.1 — `Select` rather than a bare `<select>`. `Segmented`
+              is still the rule where the options are few and named; this list
+              is whatever Groq offered, which is not knowable here. */}
+          <Select
+            label="Chat agent model"
             value={agent.selectedModel}
-            onChange={(e) => void pickModel(e.target.value)}
-          >
-            {agent.models.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
+            options={agent.models.map((model) => ({ value: model, label: model }))}
+            onChange={(model) => void pickModel(model)}
+          />
         </section>
       ) : null}
 
+      {/* uxpass 7.4 — the heading, the label and the switch now say the same
+          thing. The section read *Keep the WAV after transcribing* over a
+          control reading *Delete it once transcription succeeds*, so ON meant
+          delete under a heading that said keep: the two halves of one setting
+          stating opposite polarities, with nothing to tell a reader which of
+          them the switch was about. */}
       <section className="setting">
-        <h4>Keep the WAV after transcribing</h4>
+        <h4>Delete the WAV after transcribing</h4>
         <p>
           An hour of raw audio is about 690&nbsp;MB. The Opus copy is what citations point at and it
-          is kept either way — the WAV buys nothing once the text exists.
+          is kept either way — the WAV buys nothing once the text exists. On, the WAV is deleted as
+          soon as a transcription succeeds; off, it stays in <code>raw/</code>.
         </p>
         <div className="setting__row">
-          <span>Delete it once transcription succeeds</span>
+          <span>Delete the WAV once transcription succeeds</span>
           <span className="pane-bar__spacer" />
           <Switch
             label="Delete the WAV once transcription succeeds"

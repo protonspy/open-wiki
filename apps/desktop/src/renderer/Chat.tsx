@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { MessageSquarePlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ChatEditPreview, ChatEvent } from "../main/agent/chat-events.js";
 import { bridge } from "./bridge.js";
 import {
+  chatAnnouncement,
   chatReducer,
+  composerDisabled,
+  composerPlaceholder,
   editableOf,
   initialChat,
+  interruptShortcut,
   proposalOf,
   type ChatState,
   type EditableField,
@@ -12,6 +17,10 @@ import {
   type Message,
   type Proposal,
 } from "./chat-model.js";
+import { sideOf, wordDiff, type DiffSpan } from "./diff.js";
+import { PaneBar } from "./PaneBar.js";
+import { Button } from "./ui/Button.js";
+import { Empty } from "./ui/Empty.js";
 
 /**
  * The chat pane (specs/embedded-agent, R1). The embedded agent's window into
@@ -42,8 +51,14 @@ export function Chat({ onOpenSettings, active }: ChatProps): React.JSX.Element {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [draft, setDraft] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
-  // One conversation per window (R7.1).
-  const [threadId] = useState(() => crypto.randomUUID());
+  // One conversation per window (R7.1) — and a new one on request (uxpass 6.1),
+  // which is why this is a state rather than a constant. The transcript and the
+  // thread id are replaced together: a cleared window still addressing the
+  // checkpointed thread would show nothing while the agent remembered
+  // everything.
+  const [threadId, setThreadId] = useState(() => crypto.randomUUID());
+  /** Which model the agent is running (uxpass 6.1) — chosen in Settings. */
+  const [model, setModel] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
   // The stream subscription lives for the component's life; the reducer is the
@@ -67,6 +82,15 @@ export function Chat({ onOpenSettings, active }: ChatProps): React.JSX.Element {
       setHasKey(c.provider === "groq" && c.hasKey);
     } catch {
       setHasKey(false);
+    }
+    // uxpass 6.1 — the model is chosen in Settings and was never shown where it
+    // is used, though `agentModels()` has been on the bridge the whole time.
+    // Re-read with the credential, because choosing one is not a project change
+    // and arrives no other way.
+    try {
+      setModel((await bridge().agentModels()).selectedModel);
+    } catch {
+      setModel(null);
     }
   }, []);
   useEffect(() => {
@@ -122,20 +146,106 @@ export function Chat({ onOpenSettings, active }: ChatProps): React.JSX.Element {
     if (runId) void bridge().chatCancel({ runId });
   }, [runId]);
 
-  if (hasKey === null) return <p className="empty">Checking the agent…</p>;
+  /**
+   * A new conversation (uxpass 6.1).
+   *
+   * The transcript and the thread id go together — see the note on `threadId`.
+   * A run in flight is stopped first, because the events of a cancelled run
+   * would otherwise arrive into the transcript that replaced it.
+   */
+  const startOver = useCallback(() => {
+    if (runId) void bridge().chatCancel({ runId });
+    setRunId(null);
+    setDraft("");
+    setThreadId(crypto.randomUUID());
+    dispatch({ type: "reset" });
+  }, [runId]);
+
+  // Before the pane can be a pane at all: no answer yet, or no key. Both keep
+  // the padded frame `main--bleed` no longer supplies.
+  if (hasKey === null) {
+    return (
+      <div className="chat chat--gate">
+        <p className="empty">Checking the agent&hellip;</p>
+      </div>
+    );
+  }
 
   if (hasKey === false) {
-    return <EmptyAgent onOpenSettings={onOpenSettings} />;
+    return (
+      <div className="chat chat--gate">
+        <EmptyAgent onOpenSettings={onOpenSettings} />
+      </div>
+    );
   }
 
   return (
     <div className="chat">
+      {/* uxpass 4.2 — the boundaries of a turn, and the moment it stops for a
+          decision. Nothing else in this window changes as much without anybody
+          touching it, and the only signal there was is a placeholder that
+          disappears when somebody types. Always in the document, because a live
+          region nobody was watching announces nothing. */}
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {chatAnnouncement(state)}
+      </p>
+
+      {/* uxpass 6.1 — every other pane has a bar; this one had no title, no
+          model and no way to start again. The model is chosen in Settings and
+          was never shown where it is used. */}
+      <PaneBar
+        title="Chat"
+        detail={
+          model ? (
+            <code className="pane-bar__path">{model}</code>
+          ) : (
+            <span className="pane-bar__note">the agent&rsquo;s model is set in Settings</span>
+          )
+        }
+      >
+        <Button
+          icon={MessageSquarePlus}
+          onClick={startOver}
+          disabled={state.messages.length === 0 && !state.running}
+        >
+          New conversation
+        </Button>
+      </PaneBar>
+
       <div className="chat__scroll" ref={scroller}>
         {state.messages.length === 0 ? (
-          <p className="empty">Ask the agent to read the project and write a page.</p>
+          /* uxpass 8.1 — one grey sentence over 570px of void, saying nothing
+             about what this pane can do or what asking it looks like. */
+          <Empty title="The agent, in this window">
+            <p>
+              It reads this project and writes the wiki through the same gate the editor uses,
+              pausing for your approval on every write — nothing lands without you seeing it first.
+            </p>
+            <p>Ask it for something:</p>
+            <ul className="empty-state__examples">
+              <li>
+                <code>read raw/ and write a page about the cutover</code>
+              </li>
+              <li>
+                <code>what does this project already say about retention?</code>
+              </li>
+              <li>
+                <code>fix the broken links the checks pane found</code>
+              </li>
+            </ul>
+          </Empty>
         ) : (
           state.messages.map((m, i) => <Turn key={i} message={m} />)
         )}
+        {/* uxpass 6.6 — the working state was the composer's placeholder, which
+            disappears the moment anybody types into the box. It is an element
+            in the transcript now, where the answer is going to appear. */}
+        {state.running ? (
+          <p className="chat__working">
+            <span className="chat__working-dot" aria-hidden />
+            The agent is working&hellip;
+          </p>
+        ) : null}
         {state.error ? <p className="error">{state.error}</p> : null}
         {state.interrupt ? (
           // Keyed by the interrupt, so a replacement proposal remounts the card.
@@ -163,7 +273,10 @@ export function Chat({ onOpenSettings, active }: ChatProps): React.JSX.Element {
       >
         <textarea
           className="chat__input"
-          placeholder={state.running ? "The agent is working…" : "Message the agent"}
+          aria-label="Message the agent"
+          // uxpass 6.4 — the box is only ever read while it is disabled, so the
+          // placeholder is where the reason goes.
+          placeholder={composerPlaceholder(state)}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -174,16 +287,21 @@ export function Chat({ onOpenSettings, active }: ChatProps): React.JSX.Element {
               void send();
             }
           }}
-          disabled={state.running}
+          // uxpass 6.4 — a paused run is not a run you may talk over: the
+          // composer stayed live through an interrupt, so a message could be
+          // sent into a run waiting for a decision.
+          disabled={composerDisabled(state)}
         />
         {state.running ? (
-          <button type="button" className="btn" onClick={cancel}>
-            Stop
-          </button>
+          <Button onClick={cancel}>Stop</Button>
         ) : (
-          <button type="submit" className="btn btn--primary" disabled={!draft.trim()}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!draft.trim() || state.interrupt !== null}
+          >
             Send
-          </button>
+          </Button>
         )}
       </form>
     </div>
@@ -233,29 +351,66 @@ function InterruptCard({
   const preview = interrupt.previews?.[0] ?? null;
   const editable: EditableField | null = proposal && action ? editableOf(proposal, action) : null;
   const [editing, setEditing] = useState<string | null>(null);
+  const card = useRef<HTMLDivElement>(null);
+
+  /**
+   * The focus goes to the card when it appears (uxpass 6.5).
+   *
+   * The run has stopped and the window is waiting on a person: leaving the focus
+   * wherever it was — usually the composer, which is now disabled — is a pause
+   * nobody using a keyboard can answer without hunting for it. The card is
+   * `tabindex="-1"` so it can hold focus without becoming a tab stop of its own.
+   *
+   * Mounted once per interrupt, because the card is keyed by it (see the call
+   * site) — so a replacement proposal takes the focus again, which is right: it
+   * is a different write.
+   */
+  useEffect(() => card.current?.focus(), []);
+
+  /** The keyboard for a repeated approve loop (uxpass 6.5). */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const decision = interruptShortcut(event);
+    if (decision === null) return;
+    event.preventDefault();
+    if (decision === "approve") onApprove();
+    else onReject();
+  };
 
   if (!proposal || !action) {
     // An interrupt with no renderable proposal: still pause for a decision,
     // showing the raw action name so the human is not staring at nothing.
     return (
-      <div className="chat__interrupt">
+      <div
+        className="chat__interrupt"
+        ref={card}
+        tabIndex={-1}
+        role="group"
+        aria-label="The agent is waiting for approval"
+        onKeyDown={onKeyDown}
+      >
         <p className="chat__interrupt-lead">
           The agent wants to run a tool and is waiting for approval.
         </p>
         <div className="chat__interrupt-actions">
-          <button type="button" className="btn btn--primary" onClick={onApprove}>
+          <Button variant="primary" onClick={onApprove}>
             Approve
-          </button>
-          <button type="button" className="btn" onClick={onReject}>
-            Reject
-          </button>
+          </Button>
+          <Button onClick={onReject}>Reject</Button>
         </div>
+        <Shortcuts />
       </div>
     );
   }
 
   return (
-    <div className="chat__interrupt">
+    <div
+      className="chat__interrupt"
+      ref={card}
+      tabIndex={-1}
+      role="group"
+      aria-label={`The agent wants to ${labelFor(proposal)}`}
+      onKeyDown={onKeyDown}
+    >
       <p className="chat__interrupt-lead">
         The agent wants to <strong>{labelFor(proposal)}</strong>. Review it before it lands.
       </p>
@@ -276,30 +431,40 @@ function InterruptCard({
             aria-label={`Edited ${editable.key}`}
           />
           <div className="chat__interrupt-actions">
-            <button type="submit" className="btn btn--primary">
+            <Button type="submit" variant="primary">
               Send edited
-            </button>
-            <button type="button" className="btn" onClick={() => setEditing(null)}>
-              Cancel edit
-            </button>
+            </Button>
+            <Button onClick={() => setEditing(null)}>Cancel edit</Button>
           </div>
         </form>
       ) : (
-        <div className="chat__interrupt-actions">
-          <button type="button" className="btn btn--primary" onClick={onApprove}>
-            Approve
-          </button>
-          {editable ? (
-            <button type="button" className="btn" onClick={() => setEditing(editable.value)}>
-              Edit
-            </button>
-          ) : null}
-          <button type="button" className="btn" onClick={onReject}>
-            Reject
-          </button>
-        </div>
+        <>
+          <div className="chat__interrupt-actions">
+            <Button variant="primary" onClick={onApprove}>
+              Approve
+            </Button>
+            {editable ? <Button onClick={() => setEditing(editable.value)}>Edit</Button> : null}
+            <Button onClick={onReject}>Reject</Button>
+          </div>
+          <Shortcuts />
+        </>
       )}
     </div>
+  );
+}
+
+/**
+ * What the two chords are, said where they are used (uxpass 6.5).
+ *
+ * A shortcut nobody is told about is a shortcut nobody uses, and this pane's
+ * whole ergonomics is a repeated approve loop.
+ */
+function Shortcuts(): React.JSX.Element {
+  return (
+    <p className="chat__shortcuts">
+      <kbd>Ctrl</kbd>+<kbd>Enter</kbd> approves &middot; <kbd>Ctrl</kbd>+<kbd>Backspace</kbd>{" "}
+      rejects
+    </p>
   );
 }
 
@@ -318,6 +483,21 @@ function ProposalView({
   proposal: Proposal;
   preview: ChatEditPreview | null;
 }): React.JSX.Element {
+  /**
+   * The two sides, with what actually changed marked (uxpass 6.3).
+   *
+   * Computed once and used for both rows, so *Replace* and *With* are two views
+   * of one comparison rather than two independent renderings that could
+   * disagree. `null` when either side is too long to diff — see `DIFF_LIMIT`.
+   */
+  const spans = useMemo(
+    () =>
+      proposal.oldString !== undefined && proposal.newString !== undefined
+        ? wordDiff(proposal.oldString, proposal.newString)
+        : null,
+    [proposal.oldString, proposal.newString],
+  );
+
   return (
     <dl className="chat__proposal">
       <dt>Path</dt>
@@ -336,7 +516,11 @@ function ProposalView({
         <>
           <dt>Replace{proposal.replaceAll ? " (all)" : ""}</dt>
           <dd>
-            <pre className="chat__diff">{proposal.oldString}</pre>
+            {spans ? (
+              <Marked spans={sideOf(spans, "before")} side="before" />
+            ) : (
+              <pre className="chat__diff">{proposal.oldString}</pre>
+            )}
           </dd>
         </>
       ) : null}
@@ -344,7 +528,16 @@ function ProposalView({
         <>
           <dt>{proposal.tool === "edit_file" ? "With" : "Content"}</dt>
           <dd>
-            <pre className="chat__diff">{proposal.newString}</pre>
+            {spans ? (
+              <Marked spans={sideOf(spans, "after")} side="after" />
+            ) : (
+              <pre className="chat__diff">{proposal.newString}</pre>
+            )}
+            {proposal.oldString !== undefined && spans === null ? (
+              <p className="chat__sites-lead">
+                Too long to compare word by word — both sides are shown whole.
+              </p>
+            ) : null}
           </dd>
         </>
       ) : null}
@@ -388,6 +581,40 @@ function ProposalView({
   );
 }
 
+/**
+ * One side of the diff (uxpass 6.3).
+ *
+ * **Marked, never colour alone** — the same rule the checks pane follows for
+ * severity. A removed run is struck through and an added one is underlined, and
+ * each carries a name for the ear, because the whole point of this card is that
+ * somebody can tell what changed without reading both blocks twice.
+ */
+function Marked({
+  spans,
+  side,
+}: {
+  spans: readonly DiffSpan[];
+  side: "before" | "after";
+}): React.JSX.Element {
+  const changed = side === "before" ? "removed" : "added";
+  return (
+    <pre className="chat__diff">
+      {spans.map((span, i) =>
+        span.kind === "same" ? (
+          <span key={i}>{span.text}</span>
+        ) : (
+          <mark key={i} className={`chat__diff-${changed}`}>
+            <span className="visually-hidden">
+              {changed === "removed" ? "removed: " : "added: "}
+            </span>
+            {span.text}
+          </mark>
+        ),
+      )}
+    </pre>
+  );
+}
+
 /** `1 match` / `4 matches` — the count, said the way a person reads it. */
 function countLabel(n: number): string {
   return n === 1 ? "1 match" : `${n} matches`;
@@ -404,9 +631,9 @@ function EmptyAgent({ onOpenSettings }: { onOpenSettings: () => void }): React.J
         add one in settings to enable it.
       </p>
       <p>
-        <button type="button" className="btn btn--primary" onClick={onOpenSettings}>
+        <Button variant="primary" onClick={onOpenSettings}>
           Open settings
-        </button>
+        </Button>
       </p>
     </div>
   );

@@ -123,15 +123,33 @@ function wikilinkRule(state: StateInline, silent: boolean): boolean {
       const open = state.push("wikilink_open", "a", 1);
       open.attrSet("class", "wikilink");
       open.attrSet(PAGE_ATTR, target);
+      // uxpass 3.1 — an `<a>` with no `href` is not focusable and has no `link`
+      // role, so every navigation target inside a page was invisible to
+      // assistive technology and unreachable without a mouse: measured at zero
+      // focusable elements inside a rendered `<article>`. The `href` stays
+      // absent on purpose (see `PAGE_ATTR` above); what was missing is the
+      // consequence of that decision being carried through.
+      open.attrSet("tabindex", "0");
+      open.attrSet("role", "link");
       pushText(state, label);
       state.push("wikilink_close", "a", -1);
     } else {
       // A link to nowhere that looks like a link is worse than obviously
       // missing text — and it is the same thing 7.1 reports.
+      //
+      // Not focusable, because there is nothing to open: a tab stop that
+      // cannot be activated is a promise the page cannot keep. What it gets
+      // instead is uxpass 3.2 — the reason it is dead, in the text rather than
+      // in a `title` a screen reader may never announce and a keyboard can
+      // never surface.
       const open = state.push("wikilink_open", "span", 1);
       open.attrSet("class", "wikilink wikilink--broken");
       open.attrSet("title", `no page named ${target}`);
       pushText(state, label);
+      const note = state.push("wikilink_note_open", "span", 1);
+      note.attrSet("class", "visually-hidden");
+      pushText(state, ` (broken link: no page named ${target})`);
+      state.push("wikilink_note_close", "span", -1);
       state.push("wikilink_close", "span", -1);
     }
   }
@@ -176,6 +194,16 @@ function splitProvenance(state: StateCore, token: Token): Token[] {
     open.attrSet("class", `provenance provenance--${match[1]!}`);
     open.attrSet(SOURCE_ATTR, match[2]!);
     open.attrSet(FRAGMENT_ATTR, match[3]!);
+    // uxpass 3.1 — reachable from the keyboard, for the same reason and by the
+    // same means as a wikilink. The name says what it opens as well as where:
+    // the chip reads as its fragment, and *14:32* announced on its own is not
+    // a citation anybody can act on.
+    open.attrSet("tabindex", "0");
+    open.attrSet("role", "link");
+    open.attrSet(
+      "aria-label",
+      `${match[1] === "rec" ? "Recording" : "Source"} ${match[2]!} at ${citationLabel(match[1]!, match[3]!)}`,
+    );
     // The chip reads as its fragment; the id and the fragment ride the
     // attributes, which is what the seek and the checks use.
     out.push(
@@ -196,6 +224,147 @@ function textToken(state: StateCore, content: string): Token {
   return token;
 }
 
+/**
+ * GFM task lists (uxpass 5.5).
+ *
+ * `- [ ] item` rendered the brackets literally, which is what markdown-it does
+ * without a plugin — and a wiki whose own convention files are written in
+ * checklists renders its conventions as punctuation. A core rule rather than a
+ * dependency, for the reason at the top of this file: everything here works on
+ * tokens, and `html: false` means a page cannot write an `<input>` itself.
+ *
+ * The box is disabled because this is a *reader*. A live checkbox would be a
+ * control that changes nothing on disk, which is the dead-button class the
+ * shell spent a whole group removing.
+ */
+const TASK_MARKER = /^\[([ xX])\]\s+/;
+
+function taskListRule(state: StateCore): void {
+  const tokens = state.tokens;
+  /** The open list tokens, innermost last, so a nested list is marked too. */
+  const lists: number[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token) continue;
+    if (token.type === "bullet_list_open" || token.type === "ordered_list_open") {
+      lists.push(i);
+      continue;
+    }
+    if (token.type === "bullet_list_close" || token.type === "ordered_list_close") {
+      lists.pop();
+      continue;
+    }
+    // The first paragraph of a list item, and nothing else: `[ ]` in the middle
+    // of a sentence is a bracket somebody typed.
+    if (token.type !== "inline") continue;
+    if (tokens[i - 1]?.type !== "paragraph_open") continue;
+    const item = tokens[i - 2];
+    if (item?.type !== "list_item_open") continue;
+
+    const match = TASK_MARKER.exec(token.content);
+    const first = token.children?.[0];
+    if (!match || !first || first.type !== "text" || !TASK_MARKER.test(first.content)) continue;
+
+    first.content = first.content.replace(TASK_MARKER, "");
+    token.content = token.content.replace(TASK_MARKER, "");
+
+    const box = new state.Token("task_checkbox", "input", 0);
+    box.attrSet("type", "checkbox");
+    box.attrSet("disabled", "");
+    if (match[1] !== " ") box.attrSet("checked", "");
+    token.children = [box, ...(token.children ?? [])];
+
+    item.attrJoin("class", "task-list-item");
+    const list = lists[lists.length - 1];
+    // Once per list, however many of its items are tasks — `attrJoin` appends,
+    // so four checkboxes would otherwise write the class four times.
+    const open = list === undefined ? undefined : tokens[list];
+    if (open && !(open.attrGet("class") ?? "").split(" ").includes("contains-task-list")) {
+      open.attrJoin("class", "contains-task-list");
+    }
+  }
+}
+
+/**
+ * The anchor a heading is addressed by (uxpass 5.6).
+ *
+ * Headings carried no `id`, so a long page had no in-page anchoring and no table
+ * of contents was possible. Diacritics are folded rather than dropped, because a
+ * project's content language may be `pt-BR` and *Migração* would otherwise
+ * become `mira-o`.
+ */
+export function headingId(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{M}+/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function headingIdRule(state: StateCore): void {
+  // Two headings can legitimately read the same — *Consequences* under each of
+  // three decisions — and two elements sharing an id is one nothing can reach.
+  const seen = new Map<string, number>();
+  for (let i = 0; i < state.tokens.length; i++) {
+    const token = state.tokens[i];
+    if (token?.type !== "heading_open") continue;
+    const base = headingId(state.tokens[i + 1]?.content ?? "");
+    if (!base) continue;
+    const taken = seen.get(base) ?? 0;
+    seen.set(base, taken + 1);
+    token.attrSet("id", taken === 0 ? base : `${base}-${String(taken)}`);
+  }
+}
+
+/** A heading in a page, as a table of contents reads it. */
+export interface PageHeading {
+  /** 1 for `#`, 2 for `##`, and so on. */
+  level: number;
+  id: string;
+  text: string;
+}
+
+/**
+ * Every heading in a body, with the id the rendered page will actually carry.
+ *
+ * Parsed through the same renderer rather than matched with a regular
+ * expression: the ids come from the rule above, so a contents entry and the
+ * heading it points at cannot disagree — and a `#` inside a fenced block is not
+ * a heading, which a regex over the source would not know.
+ */
+export function extractHeadings(body: string): PageHeading[] {
+  const tokens = markdown().parse(body, {} satisfies RenderEnv);
+  const headings: PageHeading[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token?.type !== "heading_open") continue;
+    const id = token.attrGet("id");
+    if (id === null) continue;
+    headings.push({
+      level: Number(token.tag.slice(1)),
+      id,
+      text: tokens[i + 1]?.content ?? "",
+    });
+  }
+  return headings;
+}
+
+/**
+ * Whether the body opens with its own `#` heading (uxpass 5.1).
+ *
+ * Every page rendered its title twice — the reader drew `titleOfPage`, and the
+ * body's own `# Heading` rendered straight after it, two `<h1>` in one
+ * `<article>` on every page in the wiki. The body wins where it has an opinion,
+ * because dropping it would discard text somebody wrote; the reader supplies the
+ * title only when the body has none.
+ */
+export function opensWithHeading(body: string): boolean {
+  const tokens = markdown().parse(body, {} satisfies RenderEnv);
+  return tokens[0]?.type === "heading_open" && tokens[0].tag === "h1";
+}
+
 let renderer: MarkdownIt | null = null;
 
 function markdown(): MarkdownIt {
@@ -203,6 +372,8 @@ function markdown(): MarkdownIt {
     renderer = new MarkdownIt({ html: false, linkify: false, typographer: false });
     renderer.inline.ruler.before("link", "wikilink", wikilinkRule);
     renderer.core.ruler.push("provenance", provenanceRule);
+    renderer.core.ruler.push("tasklist", taskListRule);
+    renderer.core.ruler.push("headingid", headingIdRule);
   }
   return renderer;
 }

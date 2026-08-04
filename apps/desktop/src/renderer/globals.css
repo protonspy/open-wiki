@@ -42,6 +42,12 @@
   --paper: #16130f;
   --paper-foreground: #ece7de;
   --paper-border: #2a241c;
+  /* A link on paper (uxpass 5.4). It has to be told from prose *and* from a
+     citation: `--paper-foreground` made a live link identical to the sentence
+     around it, and `--primary` is spent on provenance and nothing else. This
+     sits between them — warmer and more golden than ink, far lighter and less
+     saturated than the accent — at 11:1 on `--paper`. */
+  --paper-link: #dcc39a;
 
   /* --- Accent. Amber is provenance — citations, sources, traced to something.
      One accent, and never used to mean "this button is the pretty one". */
@@ -142,6 +148,26 @@ body {
   border-radius: var(--radius-sm);
 }
 
+/*
+ * Text for the ear and not the eye.
+ *
+ * Used where the visual carries a fact the words do not: a broken wikilink is
+ * drawn dotted and red (uxpass 3.2), a column of row actions has a header that
+ * would be noise on screen (4.3). `display: none` would remove it from the
+ * accessibility tree as well, which is the mistake this class exists to avoid.
+ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -184,6 +210,16 @@ body {
   padding: var(--space-2) 0;
   background: var(--background);
   border-right: 1px solid var(--border);
+}
+
+/* The tabs, and only the tabs (uxpass 4.5). The language chip below them is not
+   one, and a `tablist` holding a child that is not a `tab` is a child nothing
+   can name. */
+.rail__tabs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .rail-btn {
@@ -468,6 +504,31 @@ button[aria-current="true"],
   border-color: rgb(229 72 77 / 40%);
 }
 
+/*
+ * A warning, distinct from an error by shape as well as by colour (uxpass 9.1).
+ *
+ * The checks pane already draws `CircleAlert` for an error and `TriangleAlert`
+ * for a warning, on the same argument: a reader who cannot tell red from amber
+ * still has to be able to tell the two apart. The pill's marker follows — a
+ * round dot for everything else, a triangle for this — which is also what keeps
+ * it from reading as `pill--cited`, whose amber means something else entirely.
+ */
+.pill--warning {
+  background: rgb(217 154 78 / 12%);
+  color: var(--primary);
+  border-color: rgb(217 154 78 / 30%);
+}
+
+.pill--warning::before {
+  width: 0;
+  height: 0;
+  border-radius: 0;
+  background: transparent;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 7px solid currentcolor;
+}
+
 /* Working: the dot is amber and pulses, and the word stays legible. */
 .pill--working,
 .badge--transcribing {
@@ -495,25 +556,9 @@ button[aria-current="true"],
   border: 1px solid currentcolor;
 }
 
-.card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--background);
-  padding: 13px 14px;
-}
-
-.card__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: 10px;
-}
-
-.card__head h3 {
-  margin: 0;
-  font-size: var(--text-base);
-  font-weight: 600;
-}
+/* `.card` and `.search` stood here. Their components had zero importers and
+   were deleted (uxpass 7.6); a rule for markup nothing emits is the same drift
+   in the other direction, so they went with them. */
 
 .table {
   width: 100%;
@@ -584,14 +629,18 @@ button[aria-current="true"],
     background 0.15s ease;
 }
 
+/* On is amber (uxpass 7.4). It was green — `--ok` — which is a semantic colour
+   this palette spends on *succeeded*, and it was the only green in the window.
+   A switch being on is not a success; it is a choice, and a chosen thing here
+   is amber, the way `.seg__option--on` and `.rail-btn[aria-selected]` are. */
 .switch[aria-checked="true"] {
-  background: rgb(76 195 138 / 25%);
-  border-color: rgb(76 195 138 / 50%);
+  background: rgb(217 154 78 / 25%);
+  border-color: rgb(217 154 78 / 50%);
 }
 
 .switch[aria-checked="true"]::after {
   transform: translateX(15px);
-  background: var(--ok);
+  background: var(--primary);
 }
 
 .switch:disabled {
@@ -599,40 +648,73 @@ button[aria-current="true"],
   cursor: not-allowed;
 }
 
-.search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/*
+ * A text field (uxpass 7.1).
+ *
+ * There was no input component and no input rule: ten raw `<input>`s, four of
+ * them wearing `editor__source` — the markdown editor's monospace textarea
+ * style — on the project name, the directory, the API key and the New page
+ * slug. One rule, so a field is a field wherever it is asked for.
+ */
+.input {
   height: var(--control);
-  width: 240px;
-  padding: 0 9px;
-  background: var(--input);
+  width: 100%;
+  min-width: 0;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  color: var(--muted-foreground);
-}
-
-.search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
+  background: var(--input);
   color: var(--foreground);
   font: inherit;
   font-size: var(--text-sm);
-  /* Removed here and put back on the box below, so the ring is drawn around
-     the whole control rather than inside its border. */
-  outline: none;
 }
 
-.search input::placeholder {
+.input::placeholder {
   color: var(--muted-foreground);
 }
 
-.search:focus-within {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-color: var(--ring);
+.input:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/*
+ * A dropdown (uxpass 7.1). The open list is the platform's — it has to be — but
+ * the closed control is this window's, which is what anybody looking at the
+ * panel sees. It sat under two `Segmented` controls wearing Windows' own chrome.
+ */
+.select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select select {
+  appearance: none;
+  height: var(--control);
+  padding: 0 26px 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.select select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.select__chevron {
+  position: absolute;
+  right: var(--space-2);
+  color: var(--muted-foreground);
+  pointer-events: none;
 }
 
 /* --- The three overlays. All modal `<dialog>`s: the top layer, the focus
@@ -773,22 +855,34 @@ button[aria-current="true"],
 }
 
 /*
+ * A live region, and what keeps an empty one out of the way (uxpass 4.1).
+ *
+ * `Reported` is in the document at every moment, with nothing in it most of the
+ * time, because a live region is announced only if it was already being watched
+ * when its contents changed. `:empty` is the CSS side of that: no child nodes,
+ * no box.
+ */
+.reported:empty {
+  display: none;
+}
+
+/*
  * What the shell has to say, above whichever pane is open.
  *
- * `:empty` is what keeps it out of the way: every child here renders null when
- * it has nothing, so with nothing to report the wrapper has no child nodes at
- * all and the rules below never apply.
+ * `:has(> *:not(:empty))` rather than `:not(:empty)` on the wrapper itself: the
+ * notice regions above are now always present, so the wrapper always has
+ * children and the question is whether any of them is carrying anything.
  */
 .main__notices {
   display: grid;
   gap: var(--space-3);
 }
 
-.main__notices:not(:empty) {
+.main__notices:has(> *:not(:empty)) {
   margin-bottom: var(--space-4);
 }
 
-.main--bleed .main__notices:not(:empty) {
+.main--bleed .main__notices:has(> *:not(:empty)) {
   padding: var(--space-3) var(--space-3) 0;
   margin-bottom: 0;
 }
@@ -804,11 +898,87 @@ button[aria-current="true"],
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  /* The anchor the two collapsed panels are positioned against below. */
+  position: relative;
 }
 
 /* No page open, so nothing for a side column to be about. */
 .wiki-pane--no-side {
   grid-template-columns: 220px minmax(0, 1fr);
+}
+
+/*
+ * The panel toggles (uxpass 1.1, 1.2).
+ *
+ * They are in the bar at every width and hidden at the widths where the panel
+ * they open is already a column — rather than rendered conditionally, because
+ * the condition is the viewport and the viewport is CSS's to know. A React
+ * component asking `window.innerWidth` would be a second answer to a question
+ * the stylesheet already answers, and the two disagree on the first resize
+ * nobody re-rendered for.
+ */
+.pane-bar__panel {
+  display: none;
+}
+
+/*
+ * --- The window at every size it allows (uxpass, group 1).
+ *
+ * `globals.css` had exactly one `@media` rule — the reduced-motion one — while
+ * `minWidth`/`minHeight` on the window are 720×480. These are the two widths at
+ * which a column has to stop being a column, and `layout.ts` holds the same
+ * numbers with the arithmetic that justifies them.
+ */
+@media (max-width: 999px) {
+  /* The side column becomes a sheet over the reader's right edge. */
+  .wiki-pane {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .side {
+    position: absolute;
+    z-index: 5;
+    top: 38px;
+    right: 0;
+    bottom: 0;
+    width: 250px;
+    box-shadow: -20px 0 40px -18px rgb(0 0 0 / 70%);
+  }
+
+  .side[data-open="false"] {
+    display: none;
+  }
+
+  .pane-bar__panel--side {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 819px) {
+  /* And so does the tree. Both selectors, because the no-side variant declares
+     its own columns and would otherwise keep the tree's track. */
+  .wiki-pane,
+  .wiki-pane--no-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tree {
+    position: absolute;
+    z-index: 6;
+    top: 38px;
+    left: 0;
+    bottom: 0;
+    width: 220px;
+    box-shadow: 20px 0 40px -18px rgb(0 0 0 / 70%);
+  }
+
+  .tree[data-open="false"] {
+    display: none;
+  }
+
+  .pane-bar__panel--tree {
+    display: inline-flex;
+  }
 }
 
 .pane-bar {
@@ -848,13 +1018,17 @@ button[aria-current="true"],
   overflow: hidden;
 }
 
+/* Both scroll sideways as well as down (uxpass 1.3). The sources table is six
+   columns and the window is allowed to be 720px wide: without this the body
+   clips what does not fit, which is a column nobody can reach rather than a
+   column somebody has to scroll to. */
 .sources-body {
-  overflow-y: auto;
+  overflow: auto;
   padding: var(--space-3);
 }
 
 .checks-body {
-  overflow-y: auto;
+  overflow: auto;
   padding: var(--space-3) 14px;
 }
 
@@ -1060,6 +1234,43 @@ button[aria-current="true"],
   margin-top: 22px;
 }
 
+/* The page's own headings (uxpass 5.6), for a page long enough to get lost in.
+   Text that acts, not a row of buttons: it is a list of the page's own words,
+   and a bordered control per heading would out-weigh the provenance below it. */
+.side-toc {
+  display: grid;
+  gap: 1px;
+  margin-bottom: 22px;
+}
+
+.side-toc__item {
+  height: auto;
+  padding: 3px var(--space-2);
+  border: 0;
+  border-left: 2px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-toc__item:hover:not(:disabled) {
+  background: transparent;
+  border-left-color: var(--primary);
+  color: var(--foreground);
+}
+
+/* An `h3` is a step in, said by indent rather than by a second type size. */
+.side-toc__item--deep {
+  padding-left: var(--space-4);
+}
+
 .src-card {
   display: block;
   width: 100%;
@@ -1152,8 +1363,18 @@ button[aria-current="true"],
   text-wrap: balance;
 }
 
+/*
+ * The scale (uxpass 5.3).
+ *
+ * It was 24 → 15 → 13 against a 13px body: the 24→15 jump is a cliff, 15→13 is
+ * not a step, and an h3 differed from a paragraph by weight alone. 24 → 18 → 15
+ * over 13 puts a real interval between every level and between the smallest
+ * heading and the prose under it — the tokens the file already defines, so this
+ * is a re-assignment rather than a new set of sizes.
+ */
 .page h2 {
-  font-size: var(--text-md);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
   font-weight: 600;
   letter-spacing: -0.005em;
   line-height: var(--leading-tight);
@@ -1161,9 +1382,65 @@ button[aria-current="true"],
 }
 
 .page h3 {
-  font-size: var(--text-base);
+  font-size: var(--text-md);
   font-weight: 600;
+  line-height: var(--leading-tight);
   margin: var(--space-6) 0 var(--space-2);
+}
+
+/*
+ * A table on paper (uxpass 5.2).
+ *
+ * `globals.css` styled `.table` — a class markdown-it never emits — so a
+ * rendered table computed to **1px of cell padding and no borders at all**, and
+ * a three-column table read as one paragraph of fragments. Styled by element
+ * here, because the reader's HTML comes from `markdown.ts` and carries no
+ * classes to hang a rule on.
+ */
+.page table {
+  /* `block` so a table wider than the measure scrolls inside the column
+     instead of widening it — the same answer `.page pre` already gives. */
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0 0 var(--space-4);
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.page thead th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--paper-foreground);
+  font-weight: 600;
+}
+
+.page tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--paper-border);
+  vertical-align: top;
+}
+
+/*
+ * GFM task lists (uxpass 5.5). The marker comes off the item, because the box
+ * is the marker.
+ */
+.page .contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.page .task-list-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.page .task-list-item input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--primary);
 }
 
 .page p,
@@ -1217,12 +1494,24 @@ button[aria-current="true"],
    here: the draft sizes inline code in prose as `0.92em` (`.inline-code`), so
    a code span tracks the paragraph it interrupts instead of being one fixed
    size in a reader whose text is set larger than the chrome around it. */
+/*
+ * A code span in prose.
+ *
+ * The horizontal padding is pulled back out again (uxpass 8.5): 4px of tint on
+ * each side reads as a space, so *"the same way `code` ."* left the full stop
+ * orphaned across a visible gap from the word it belongs to. The negative margin
+ * puts the neighbours back where the type sets them while the background keeps
+ * its breathing room, and `box-decoration-break` keeps that true across a line
+ * break.
+ */
 .page code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   background: rgb(236 231 222 / 6%);
-  padding: 1px var(--space-1);
+  padding: 1px 0.25em;
+  margin: 0 -0.15em;
   border-radius: var(--radius-sm);
+  box-decoration-break: clone;
 }
 
 .page pre {
@@ -1251,22 +1540,28 @@ a:hover,
 }
 
 /*
- * On paper, a wikilink is ink with a line under it — not amber.
+ * On paper, a wikilink has a colour of its own — and it is not amber.
  *
  * **Amber means provenance, everywhere, always.** It is the draft's one
  * reserved colour, and a page whose every internal link is amber spends it on
  * the most ordinary thing in the wiki; the citation chip then has nothing left
  * to be.
+ *
+ * But the answer to that was `--paper-foreground` with a 28% underline, which
+ * made a live link **exactly the ink of the sentence around it** (uxpass 5.4):
+ * nothing told a reader a word was a link until they hovered it. `--paper-link`
+ * is the third colour that argument was missing, and the underline is now
+ * legible rather than a hint.
  */
 .reader .wikilink {
-  color: var(--paper-foreground);
+  color: var(--paper-link);
   text-decoration: none;
-  border-bottom: 1px solid rgb(236 231 222 / 28%);
+  border-bottom: 1px solid rgb(220 195 154 / 45%);
 }
 
 .reader .wikilink:hover {
   text-decoration: none;
-  border-bottom-color: var(--paper-foreground);
+  border-bottom-color: var(--paper-link);
 }
 
 /*
@@ -1354,6 +1649,74 @@ a:hover,
 .empty {
   color: var(--muted-foreground);
   font-size: var(--text-sm);
+}
+
+/*
+ * A pane with nothing in it yet (uxpass 8.1).
+ *
+ * Centred in the space, and left-aligned inside itself: centred prose is harder
+ * to read at every line length, and this block is prose. `safe` so a block
+ * taller than the pane starts at the top rather than having its first line
+ * pushed off the edge.
+ */
+.empty-state {
+  display: grid;
+  align-content: safe center;
+  justify-items: start;
+  gap: var(--space-3);
+  width: 100%;
+  height: 100%;
+  max-width: 52ch;
+  margin: 0 auto;
+  padding: var(--space-6);
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.empty-state__lead {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+
+/* On the paper, it is the page — the same move `.reader .doorway` makes. */
+.reader .empty-state__lead {
+  color: var(--paper-foreground);
+}
+
+.empty-state__body {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.empty-state__body p {
+  margin: 0;
+}
+
+.empty-state__body code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* What asking the agent looks like. Written as what somebody would type,
+   because "ask it to write a page" is advice and this is an example. */
+.empty-state__examples {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.empty-state__examples code {
+  display: block;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .list {
@@ -1514,28 +1877,98 @@ a:hover,
   object-fit: contain;
 }
 
-/* --- The editor (8.7, 8.8). Source and preview side by side. */
+/* --- The editor (8.7, 8.8, then uxpass group 2). Source and preview side by
+   side, each filling half the pane and the whole of its height. */
 .editor {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
-  height: 100%;
+  min-height: 0;
 }
 
-.editor__bar {
+/* While the editor is open the reader column stops being a scrolling page and
+   becomes a frame: the two panes inside it scroll on their own, which is what
+   makes `height` mean anything to the source box. It used to stop 355px short
+   of the bottom, which is `height: 100%` of a box with no height to speak of. */
+.reader--editing {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--space-3);
+}
+
+.reader--editing .editor {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * A row of controls: the conflict card's three answers, a field and the chooser
+ * beside it, a report and the button that dismisses it.
+ *
+ * Three names for one shape, deliberately (uxpass 7.2). `editor__bar` was
+ * borrowed by the launcher's checkbox rows and by the drop report, which is how
+ * a class stops describing anything — the same drift `editor__source` on a
+ * project-name field was.
+ */
+.editor__bar,
+.field__row,
+.choice-row,
+.notice-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
+/* A field and the control that fills it in: the box takes the room. */
+.field__row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Choices wrap; a row of five harnesses is not a row on a narrow window. */
+.choice-row {
+  flex-wrap: wrap;
+}
+
+/*
+ * `minmax(0, 1fr)`, not `1fr` (uxpass 2.1).
+ *
+ * `1fr` is `minmax(auto, 1fr)`: a preview holding anything with a wide minimum —
+ * a fenced code line, a table — pushes past its half and takes the difference
+ * out of the source box. Measured on a page with one `ow check --json | jq …`
+ * fence in a 1228px pane: **textarea 207px, preview 468px**, with the markdown
+ * wrapping at roughly 22 characters. `minmax(0, …)` lets the track be narrower
+ * than its content, and the content scrolls inside it instead.
+ */
 .editor__panes {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+}
+
+/* The preview scrolls inside its own half rather than stretching the row. */
+.editor__panes > .page {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The anchor for the completion list, and the box's own height. */
+.editor__source-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
 .editor__source {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
   font-family: var(--font-mono);
   font-size: var(--text-base);
   line-height: var(--leading);
@@ -1545,6 +1978,48 @@ a:hover,
   border-radius: var(--radius);
   padding: var(--space-3);
   resize: none;
+}
+
+/* What the box can finish for you (uxpass 2.5) — every slug in the wiki, every
+   source id in the project. It sits at the foot of the box rather than at the
+   caret: a menu that follows the caret needs a mirrored copy of the textarea to
+   measure against, and a list somebody can see all of is worth more than a list
+   in exactly the right place. */
+.editor__completions {
+  position: absolute;
+  z-index: 8;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  min-width: 220px;
+  max-width: calc(100% - var(--space-6));
+  max-height: 45%;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--popover);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 30px -10px rgb(0 0 0 / 80%);
+}
+
+.editor__completion {
+  overflow: hidden;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+/* Marked by weight as well as colour, the way every other chosen thing in this
+   window is. */
+.editor__completion.is-on {
+  background: rgb(217 154 78 / 14%);
+  color: var(--primary);
+  font-weight: 600;
 }
 
 /* --- The findings (7.6). The fix is as prominent as the problem. */
@@ -1756,17 +2231,6 @@ a:hover,
   color: var(--muted-foreground);
 }
 
-.setting__select {
-  height: var(--control);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--input);
-  color: var(--foreground);
-  font: inherit;
-  font-size: var(--text-sm);
-}
-
 /* Where a setting is kept. Mono and quiet: it is a fact about the disk rather
    than a control — and the point of showing it is that support for an
    application with no backend is somebody opening their own configuration. */
@@ -1805,16 +2269,8 @@ a:hover,
   color: var(--muted-foreground);
 }
 
-.field input {
-  height: var(--control);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--input);
-  color: var(--foreground);
-  font: inherit;
-  font-size: var(--text-sm);
-}
+/* `.field input` stood here, duplicating what `.input` now says once
+   (uxpass 7.1). A field's own rule is the label and the gap above the box. */
 
 .validated {
   display: inline-flex;
@@ -1831,6 +2287,15 @@ a:hover,
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  /*
+   * uxpass 7.3 — `inline-flex` sizes a box to its content everywhere except
+   * inside a grid, where the item's own `justify-self` decides and the default
+   * is `stretch`. `.ask__field` is a grid, so in the New page dialog the track
+   * measured **406px holding 170px of segments** — 236px of empty bordered box
+   * with a hairline round it. Stated here rather than at the one call site,
+   * because the next grid to hold a `.seg` would inherit the same surprise.
+   */
+  justify-self: start;
 }
 
 .seg__option {
@@ -2047,7 +2512,7 @@ a:hover,
 .chat {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
   min-height: 0;
 }
 
@@ -2061,8 +2526,19 @@ a:hover,
   padding: var(--space-4);
 }
 
+/* The chat pane draws its own bar now (uxpass 6.1) and `<main>` no longer pads
+   for it, so the two states that render before the pane exists pad themselves. */
+.chat--gate {
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
 .chat__turn {
   display: grid;
+  /* uxpass 6.2 — the default is `stretch`, which is why an assistant bubble was
+     a fixed-width bordered box at 910px whatever it held: a two-word answer read
+     as an empty input field. */
+  justify-items: start;
   gap: var(--space-1);
 }
 
@@ -2070,14 +2546,43 @@ a:hover,
   justify-items: end;
 }
 
+/*
+ * uxpass 6.2 — sized to its content, and capped at the measure the reader is
+ * capped at.
+ *
+ * A long answer ran about 140 characters to the line while the reader two panes
+ * over was held near 70, which is the same prose set twice with one of the two
+ * unreadable. `66ch` is `.page p`'s cap; `80%` keeps the shape the draft draws
+ * for a bubble in a narrow pane.
+ */
 .chat__bubble {
-  max-width: 80%;
+  width: fit-content;
+  max-width: min(80%, 66ch);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--background);
   border: 1px solid var(--border);
+}
+
+/* uxpass 6.6 — the working state, as an element in the transcript rather than
+   as the composer's placeholder, which disappeared the moment anybody typed. */
+.chat__working {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.chat__working-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 .chat__turn--user .chat__bubble {
@@ -2166,6 +2671,51 @@ a:hover,
   padding: var(--space-2);
 }
 
+/*
+ * What actually changed (uxpass 6.3).
+ *
+ * The card showed two blocks of near-identical prose and asked the reader to
+ * spot the difference by eye — on the one surface in this application where a
+ * person is deciding whether to let a write land.
+ *
+ * **Marked, never colour alone**: a removed run is struck through and an added
+ * one underlined, so the two are told apart by shape as well as by hue. That is
+ * the same rule `ChecksPane` follows for severity.
+ */
+.chat__diff-removed,
+.chat__diff-added {
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.chat__diff-removed {
+  background: var(--destructive-dim);
+  color: var(--destructive-foreground);
+  text-decoration: line-through;
+}
+
+.chat__diff-added {
+  background: var(--ok-dim);
+  color: var(--ok);
+  text-decoration: underline;
+}
+
+/* The two chords, said where they are used (uxpass 6.5). */
+.chat__shortcuts {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.chat__shortcuts kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
 /* Where a proposed edit will land — one row per match site (R5.2). */
 .chat__sites-lead {
   margin: 0 0 var(--space-1);
@@ -2231,21 +2781,73 @@ a:hover,
 
 /* --- The first run (desktop-ui 6.3). One step on screen at a time, because
    four questions at once is a form and this is a conversation. */
+/*
+ * uxpass 8.2 — centred in the window, not pinned to the top of it.
+ *
+ * Both screens put a ~500px column against the top of a 1280×800 window and
+ * left 380px below it. `safe` so a column taller than the viewport starts at the
+ * top and scrolls, rather than having its first step pushed off the edge.
+ *
+ * Wider than 62ch, too: this column holds an absolute path (8.6), and a path
+ * that wraps three times is a path nobody reads.
+ */
 .first-run {
   display: grid;
+  align-content: safe center;
   gap: var(--space-3);
-  max-width: 62ch;
+  min-height: 100%;
+  max-width: 72ch;
   margin: 0 auto;
   padding: var(--space-8) 0;
 }
 
-.first-run__where {
+/*
+ * The stepper (uxpass 8.6), where *Step 2 of 5* stood.
+ *
+ * Four questions is a short road, and seeing the whole of it is what makes
+ * answering the second one feel like progress rather than an unknown number of
+ * screens. Three states — behind you, here, still to come — carried by the dot's
+ * fill and by weight, never by colour alone.
+ */
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepper__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--muted-foreground);
+}
+
+.stepper__dot {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+}
+
+.stepper__step--done .stepper__dot {
+  background: var(--border-strong);
+}
+
+.stepper__step--here {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.stepper__step--here .stepper__dot {
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .first-run h2 {
@@ -2287,10 +2889,12 @@ a:hover,
  */
 .launcher {
   display: grid;
-  align-content: start;
+  /* uxpass 8.2 — centred in the window rather than against the top of it. */
+  align-content: safe center;
   gap: var(--space-4);
-  /* Wider than the first run's 62ch: these rows carry absolute paths, and a
-     path that wraps three times is a path nobody reads. */
+  /* These rows carry absolute paths, and a path that wraps three times is a
+     path nobody reads. */
+  min-height: 100%;
   max-width: 72ch;
   margin: 0 auto;
   padding: var(--space-8) 0;
