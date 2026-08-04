@@ -1,55 +1,54 @@
 # CLAUDE.md
 
-This repo practises spec-driven development, scaffolded and checked by `scc`.
+Spec-driven development, scaffolded and checked by `scc`. Keep this file short —
+the methodology lives in `.claude/rules/`, read when the concern is live. Never inline it here.
 
-**This file is deliberately short, and keeping it short is a requirement.** Every
-session pays for it in context, and model accuracy degrades as context grows —
-non-uniformly, well before any documented limit. The methodology lives in
-`.claude/rules/`, one file per concern, read when the concern is live. Do not
-inline those rules here.
+## Rules — `.claude/rules/<name>.md`
 
-## The rules
+Read at these moments, without being asked:
 
-| Read                                                 | When                                                        |
-| ---------------------------------------------------- | ----------------------------------------------------------- |
-| [routing.md](.claude/rules/routing.md)               | Work arrives and needs a vehicle — a spec, or a plan.       |
-| [autonomy.md](.claude/rules/autonomy.md)             | At kickoff, before writing anything.                        |
-| [methodology.md](.claude/rules/methodology.md)       | Starting any task: which cycle, and what to run first.      |
-| [tasks.md](.claude/rules/tasks.md)                   | Writing or reading a task list.                             |
-| [verification.md](.claude/rules/verification.md)     | A task's code is written and you think it is done.          |
-| [delivery.md](.claude/rules/delivery.md)             | The last task is done: branch, review, PR.                  |
-| [specs.md](.claude/rules/specs.md)                   | Writing or changing anything under `specs/`.                |
-| [knowledge-base.md](.claude/rules/knowledge-base.md) | Something learned is worth keeping, or a decision was made. |
-| [project.md](.claude/rules/project.md)               | You need this project's build, test, or lint commands.      |
+- autonomy — at kickoff, before writing anything
+- routing — work arrives and needs a vehicle: a spec, or a plan
+- methodology — starting a task: which cycle, what to run first
+- verification — code is written and you think it is done
+- delivery — last task done: branch, review, PR
 
-## The layout
+Read by name when you're in that territory: tasks, specs, project (build/test/lint
+commands), knowledge-base (something learned, or a decision made).
+
+## Layout
 
 ```
 specs/<feature>/   requirements.md · design.md · tasks.md
-plans/<name>.md    one file: structure, plus a checklist and/or spec references
-docs/              the knowledge base — wiki, adr, codewiki, glossary, stack
+plans/<name>.md    structure, plus a checklist and/or spec references
+docs/              knowledge base — wiki, adr, codewiki, glossary, stack
 .claude/rules/     the methodology above
 .claude/skills/    how to author each part of docs/ — invoked when it applies
-.claude/commands/  the same skills on demand, as /scc-wiki, /scc-adr, /scc-prd, …
+.claude/commands/  the same skills on demand: /scc-wiki, /scc-adr, /scc-prd, …
 ```
 
 ## Checking your work
 
-```
-scc validate        # every applicable validator; exit 2 means findings
-```
+`scc validate` — or `npx @protonspy/scc validate` if not installed (`@<version>` pins for CI).
+Exit `0` ok · `1` could not run · `2` ran and found something. A finding is an answer, not a crash.
+`scc` checks artifact *shape* only; it never reads source, so whether the code honors the artifact is on you.
 
-If `scc` is not installed on this machine, run it with no install — same binary,
-same exit codes:
 
-```
-npx @protonspy/scc validate       # always the latest
-npx @protonspy/scc@<version> ...  # pin a version (CI)
-```
+<!-- rtk-instructions v2 -->
+## RTK
+Prefix EVERY command with `rtk`, including each link in a `&&` chain (`rtk git add . && rtk git commit -m "x"`).
+No dedicated filter means it passes through unchanged — always safe.
 
-Exit codes are the contract: `0` ok, `1` the command could not run, `2` it ran and
-found something. A finding is an answer, not a crash.
+Covered:
+- cargo build/check/clippy/test, go test, tsc, lint, prettier, next build
+- jest, vitest, playwright, pytest, rspec, rake test, test `<cmd>`
+- git (all subcommands)
+- gh pr view/checks, gh run list, gh issue list, gh api
+- pnpm, npm run, npx, prisma, uv run
+- ls, read, grep, find
+- err, log, json, deps, env, summary, diff
+- docker, kubectl, curl, wget
 
-`scc` checks the _shape_ of these artifacts — that a decision was made and written
-down. It never reads your source, so it cannot tell you the code honors what the
-artifact says. That part is on you.
+Meta: `rtk gain [--history]`, `rtk discover`, `rtk proxy <cmd>` (no filtering), `rtk init [--global]`
+Caveat: `rtk grep` with `-c -l -L -o -Z` runs raw.
+<!-- /rtk-instructions -->
