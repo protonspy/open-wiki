@@ -90,6 +90,32 @@ own minimum the reader column came to 115px.
 - **R5.3** (ADDED) The reader column shall stay wide enough to read prose in, at every
   width the window allows.
 
+## R6 · Taking the wiki away (ADDED)
+
+The export is not a setting. It acts on the wiki, like creating a page or
+deleting one, and every other act on the wiki is offered here — it sat at the
+foot of the settings sheet, three clicks away behind a modal about API keys,
+because that is where the first version of that sheet had room for it.
+`specs/wiki-export` R4.3 says the desktop application exposes the export and does
+not say from where; this is where.
+
+- **R6.1** (ADDED) The wiki pane shall offer exporting the project, beside
+  creating a page.
+- **R6.2** (ADDED) When the user chooses the export, the wiki pane shall say how
+  many files and how many bytes it would carry before asking where to write it.
+- **R6.3** (ADDED) If the export fails, then the wiki pane shall report it beside
+  the page list; if the user cancels it, then the wiki pane shall report nothing.
+- **R6.4** (ADDED) While the open page is being edited, the wiki pane shall not
+  offer the export.
+
+R6.2 is what the settings sheet had by printing the size beside the button, and
+it is the one property that had to be rebuilt when the button moved into a bar
+with no room for a sentence: `raw/` is where the bytes are, and a
+several-hundred-megabyte file is a decision to make rather than one to discover
+afterwards. R6.4 applies R2.9's reason to one more control — the archive is
+written from what is on disk, which is not what is on screen while a buffer is
+unsaved.
+
 ## Out of scope
 
 - **Search.** The plan's group 4 framed search as lexical, reaching

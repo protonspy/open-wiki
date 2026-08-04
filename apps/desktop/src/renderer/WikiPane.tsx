@@ -1,4 +1,12 @@
-import { PanelLeft, PanelRight, Plus, SquarePen, TextCursorInput, Trash2 } from "lucide-react";
+import {
+  Download,
+  PanelLeft,
+  PanelRight,
+  Plus,
+  SquarePen,
+  TextCursorInput,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import type { PageView, WikiIndex } from "../main/api.js";
 import { PaneBar } from "./PaneBar.js";
@@ -31,6 +39,23 @@ export interface WikiPaneProps {
   notices: readonly Notice[];
   onOpen: (slug: string) => void;
   onCreate: () => void;
+  /**
+   * Take the whole project away as one zip (`specs/wiki-export` R4.3,
+   * wiki-pane R6.1).
+   *
+   * **Beside *New page*, because it acts on the wiki.** It used to be the last
+   * block of the settings sheet, under the WAV switch — which is where the first
+   * version of that sheet had room for it, not where it belongs. A setting is
+   * something you change once and live inside; an export is an act on the wiki,
+   * the same shelf as creating a page, renaming one, deleting one. All the
+   * others are in this bar and that one was three clicks away behind a modal
+   * about API keys.
+   *
+   * Quieter than *New page* on purpose: the pane's one primary action is
+   * writing a page, and a second loud button is how an accent stops meaning
+   * anything.
+   */
+  onExport: () => void;
   /**
    * What can be done to the open page (R2.6), wired to the flows 8.7 to 8.9
    * already built. They sit in the bar rather than on the page: the draft draws
@@ -74,6 +99,7 @@ export function WikiPane({
   notices,
   onOpen,
   onCreate,
+  onExport,
   onEdit,
   onRename,
   onDelete,
@@ -151,6 +177,14 @@ export function WikiPane({
             onClick={() => setSideOpen((open) => !open)}
           />
         ) : null}
+        {/* R6.1 — the whole project as one zip, beside the other acts on the
+            wiki rather than at the foot of the settings. Disabled while the
+            editor is open for the same reason the three page actions are: the
+            archive would be written from what is on disk, which is not what is
+            on screen. */}
+        <Button onClick={onExport} icon={Download} variant="ghost" disabled={editing}>
+          Export
+        </Button>
         <Button onClick={onCreate} icon={Plus}>
           New page
         </Button>

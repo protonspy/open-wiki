@@ -40,3 +40,8 @@ are what it changed about _this_ feature.
 - [x] 6.6 (Unit) Rebuild the no-selection state as a block that says what the pane is for and offers a page — R4.1
 - [x] 6.7 (Unit) Collapse the side panel below ~1000px and the tree below ~820px, each to a sheet the pane bar toggles — R5.1, R5.2
 - [x] 6.8 (Unit) Assert the reader stays above 380px at every width the window allows — it was 115px at 720×480 — R5.3
+
+## 7 · The export moves here (`plans/settings-pane-and-export.md`)
+
+- [x] 7.1 (Unit) Ask the export question with the survey already in it, so the size is known before the save dialog opens — R6.2
+- [x] 7.2 (Unit) Put Export in the pane bar beside New page, disabled while the editor is open, reporting a failure beside the page list and saying nothing when the save dialog is cancelled — R6.1, R6.3, R6.4

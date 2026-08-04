@@ -213,8 +213,10 @@ describe("the rail, as it ships (4.5)", () => {
 
   it("keeps the language chip out of the tablist", () => {
     // It is not a tab, and a non-tab child of a `tablist` is a child nothing
-    // can name.
-    const tabs = rail.slice(rail.indexOf('className="rail__tabs"'), rail.indexOf("rail-spacer"));
+    // can name. The settings tab *is* one, which is why it stays inside the list
+    // and is pushed to the foot from within it — so there is no spacer element
+    // between the two any more, and the slice ends at the list's closing tag.
+    const tabs = rail.slice(rail.indexOf('className="rail__tabs"'), rail.indexOf("</div>"));
     expect(tabs).not.toContain("rail-btn--static");
     expect(css).toMatch(/\.rail__tabs\s*\{[^}]*flex-direction:\s*column/);
   });

@@ -81,7 +81,16 @@ describe("the pane bar (6.1)", () => {
   });
 
   it("joins the panes that frame themselves, now that it has a bar", () => {
-    expect(source("App.tsx")).toContain('new Set<Pane>(["wiki", "sources", "checks", "chat"])');
+    // Asserted by membership rather than against the whole literal: the
+    // settings joined the same set when they stopped being a sheet, and a test
+    // that spells the list out fails on every pane added after it, for no
+    // reason of its own.
+    const app = source("App.tsx");
+    const from = app.indexOf("const FRAMED_PANES");
+    const framed = app.slice(from, app.indexOf("]);", from));
+    for (const pane of ["wiki", "sources", "checks", "chat"]) {
+      expect(framed).toContain(`"${pane}"`);
+    }
   });
 });
 

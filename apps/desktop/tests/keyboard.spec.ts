@@ -38,6 +38,12 @@ describe("paneShortcut (8.1)", () => {
     expect(paneShortcut({ key: "0", ctrlKey: true })).toBeNull();
     expect(paneShortcut({ key: "e", ctrlKey: true })).toBeNull();
   });
+
+  it("reaches the settings, which the sheet could never be reached by", () => {
+    // The settings are a pane now, so they take a digit like every other one.
+    // As a sheet there was no chord for them at all: an overlay is not a place.
+    expect(paneShortcut({ key: String(PANES.length), ctrlKey: true })).toBe("settings");
+  });
 });
 
 describe("listMove (8.1)", () => {
@@ -66,12 +72,17 @@ describe("listMove (8.1)", () => {
 
 describe("closesOverlay (8.1)", () => {
   it("closes the one overlay that is not a modal", () => {
-    // The sheet and the drawer are `<dialog>`s: the platform closes them and
-    // their own `onClose` dismisses the shell. The provenance panel is
-    // deliberately not modal (`desktop-shell` R2.6), so nothing was listening.
+    // The drawer is a `<dialog>`: the platform closes it and its own `onClose`
+    // dismisses the shell. The provenance panel is deliberately not modal
+    // (`desktop-shell` R2.6), so nothing was listening.
     expect(closesOverlay({ key: "Escape" }, "provenance", false)).toBe(true);
-    expect(closesOverlay({ key: "Escape" }, "settings", false)).toBe(false);
     expect(closesOverlay({ key: "Escape" }, "history", false)).toBe(false);
+  });
+
+  it("does not close a pane, which is what the settings are now", () => {
+    // Leaving a pane is Back, or another pane. Escape closing one would make
+    // the settings the only pane in the window you can dismiss.
+    expect(closesOverlay({ key: "Escape" }, "settings", false)).toBe(false);
   });
 
   it("leaves Escape alone inside a field", () => {

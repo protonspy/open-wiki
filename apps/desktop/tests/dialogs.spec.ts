@@ -6,6 +6,7 @@ import {
   buttonsFor,
   canAnswer,
   deleteQuestion,
+  exportQuestion,
   newPageQuestion,
   occasionOf,
   occasionQuestion,
@@ -154,6 +155,48 @@ describe("the questions", () => {
     // or the button lies about what pressing it does.
     expect(occasionQuestion().cancelLabel).toMatch(/[Rr]ecord/);
     expect(occasionQuestion().emptyMeans).toBe("accept");
+  });
+});
+
+/**
+ * Exporting from the wiki pane's bar (`plans/settings-pane-and-export`, 2.1;
+ * `specs/wiki-pane` R6.2).
+ *
+ * The settings sheet printed the size beside the button. A pane bar has no room
+ * for a sentence, and dropping it would turn a several-hundred-megabyte write
+ * into something you discover afterwards — so carrying the survey into the
+ * question is the whole reason there is a question at all.
+ */
+describe("exportQuestion (R6.2)", () => {
+  it("says how many files and how many bytes, before anything is written", () => {
+    const question = exportQuestion({ files: 214, bytes: 357_000_000 });
+    expect(question.detail).toContain("214 files");
+    // Human units, not a raw byte count — 357000000 is not a size anybody reads.
+    expect(question.detail).toMatch(/\d+(\.\d+)?\s?[KMG]B/);
+  });
+
+  it("counts one file in the singular", () => {
+    expect(exportQuestion({ files: 1, bytes: 40 }).detail).toContain("1 file,");
+  });
+
+  it("still asks when the survey failed, and says that it did", () => {
+    // Not knowing the size is a reason to say so, not a reason to refuse to
+    // export. Refusing would make a failed count fatal to a working feature.
+    const question = exportQuestion(null);
+    expect(question.detail).toMatch(/could not be measured/);
+    expect(question.confirmLabel).toMatch(/[Ss]ave/);
+  });
+
+  it("says what the archive leaves out, because .state/ is where a redaction hides", () => {
+    expect(exportQuestion(null).detail).toContain(".state/");
+  });
+
+  it("promises only the save dialog, since that is all pressing it opens", () => {
+    // The affirmative does not write anything: where it goes is the system
+    // dialog's answer, and a button reading "Export" would claim otherwise.
+    const question = exportQuestion({ files: 2, bytes: 10 });
+    expect(question.confirmLabel).toBe("Choose where to save it");
+    expect(question.danger).toBeUndefined();
   });
 });
 

@@ -9,7 +9,8 @@ import { selectClass } from "../src/renderer/ui/Select.js";
  * Design-system drift (`plans/desktop-ui-uxpass.md`, group 7).
  *
  * The system existed — `ui/Button`, `IconButton`, `Pill`, `Segmented`, `Dialog`,
- * `Sheet`, `Drawer` — and half the application routed around it: 28 raw
+ * `Drawer` (and `Sheet`, until the settings it was built for became a pane and
+ * took it with them) — and half the application routed around it: 28 raw
  * `<button>` against 28 `<Button>`, ten raw `<input>` with no input component to
  * be, and the class four of those borrowed was the markdown editor's monospace
  * textarea style.
@@ -126,6 +127,7 @@ describe("the raw buttons (7.2)", () => {
     "switch", // ui/Switch — a switch, not a button
     "segmentClass", // ui/Segmented — one of a row of choices, classed by helper
     "editor__completion", // a candidate in the completion list
+    "settings-tab", // a tab on the settings page, the same shape as a rail tab
   ];
 
   it("are gone, except the ones that are a different control", () => {

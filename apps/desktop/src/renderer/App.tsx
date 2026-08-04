@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SourceKind } from "@open-wiki/access";
+import type { ExportResult, SourceKind } from "@open-wiki/access";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type { DropOutcome } from "../main/ingest.js";
 // From `shared/`, never from `main/watcher.js`. That module starts a chokidar
@@ -11,6 +11,7 @@ import { useDialogs, type Dialogs } from "./Ask.js";
 import { bridge, hasBridge, NoBridgeError } from "./bridge.js";
 import {
   deleteQuestion,
+  exportQuestion,
   newPageQuestion,
   occasionOf,
   occasionQuestion,
@@ -43,7 +44,6 @@ import { useRecording } from "./recording.js";
 import { StatusBar } from "./StatusBar.js";
 import { Titlebar } from "./Titlebar.js";
 import { Drawer } from "./ui/Drawer.js";
-import { Sheet } from "./ui/Sheet.js";
 import { Chat } from "./Chat.js";
 import { Launcher } from "./Launcher.js";
 import { htmlLang } from "./languages.js";
@@ -68,7 +68,13 @@ const COALESCE_MS = 120;
  * padded `<main>` — the old behaviour — until somebody gives it a frame, rather
  * than silently rendering edge to edge with no bar at all.
  */
-const FRAMED_PANES: ReadonlySet<Pane> = new Set<Pane>(["wiki", "sources", "checks", "chat"]);
+const FRAMED_PANES: ReadonlySet<Pane> = new Set<Pane>([
+  "wiki",
+  "sources",
+  "checks",
+  "chat",
+  "settings",
+]);
 
 /**
  * The shell (plan 8.2), browsing the wiki inside it (8.5), and the screens
@@ -502,7 +508,10 @@ export function App(): React.JSX.Element {
         project={project?.name ?? "…"}
         recording={recording}
         onRecord={(action) => void record(action)}
-        onSettings={() => show({ kind: "settings" })}
+        /* A pane now, so the gear navigates rather than opening a sheet. It
+           stays in the titlebar as well as in the rail: it is the door people
+           already know, and the rail entry is the one they find. */
+        onSettings={() => goTo("settings")}
         onBack={() => void leaveFor(() => shell.current.back())}
         onForward={() => void leaveFor(() => shell.current.forward())}
         canGoBack={shell.current.canGoBack}
@@ -542,6 +551,7 @@ export function App(): React.JSX.Element {
               notices={notices}
               onOpen={(slug) => visit({ pane: "wiki", selection: slug })}
               onCreate={() => void createPage(index, askFully, visit, say)}
+              onExport={() => void exportWiki(confirm, say)}
               onEdit={() => setEditing(true)}
               onRename={() => {
                 if (page) void renameFlow(page.slug, ask, visit, say);
@@ -653,6 +663,12 @@ export function App(): React.JSX.Element {
               )}
             />
           ) : null}
+          {/* A pane rather than a sheet over the window — see `navigation.ts`.
+              Unmounted when you are elsewhere, unlike the chat pane below: it
+              holds nothing a main process has heard of, so coming back to it
+              simply re-reads the two files it is about. */}
+          {location.pane === "settings" ? <Settings /> : null}
+
           {/* The chat pane stays mounted and is hidden when you are elsewhere.
               Unmounting it would reset the reducer holding the transcript and
               the `threadId` generated once per window (R7.1) — you would come
@@ -661,10 +677,7 @@ export function App(): React.JSX.Element {
               one unreachable. The wrapper is `display: contents`, so what the
               pane lays out against is unchanged. */}
           <div className="pane-chat" hidden={location.pane !== "chat"}>
-            <Chat
-              active={location.pane === "chat"}
-              onOpenSettings={() => show({ kind: "settings" })}
-            />
+            <Chat active={location.pane === "chat"} onOpenSettings={() => goTo("settings")} />
           </div>
         </main>
       </div>
@@ -677,14 +690,9 @@ export function App(): React.JSX.Element {
         onUndo={lastWrite ? () => show({ kind: "history" }) : null}
       />
 
-      {/* The overlays. None of them is a place you went (R2.2), so none is in
-          the history — closing one puts you back exactly where it opened. */}
-      {overlay?.kind === "settings" ? (
-        <Sheet title="Settings" onClose={dismiss}>
-          <Settings />
-        </Sheet>
-      ) : null}
-
+      {/* The overlays. Neither is a place you went (R2.2), so neither is in the
+          history — closing one puts you back exactly where it opened. The
+          settings were the third of these and are a pane above. */}
       {overlay?.kind === "history" ? (
         <Drawer title="History" onClose={dismiss}>
           <HistoryPanel reloadKey={reloadKey} />
@@ -767,6 +775,45 @@ async function createPage(
       return;
     }
     visit({ pane: "wiki", selection: slug });
+  } catch (e) {
+    say(failure("wiki", e));
+  }
+}
+
+/**
+ * Take the project away as one zip (`specs/wiki-export` R4.3, wiki-pane R6).
+ *
+ * **The survey happens before the question and the question before the save
+ * dialog.** `raw/` is where the bytes are, and a several-hundred-megabyte file
+ * is a decision to make rather than one to discover afterwards — which is the
+ * property the settings sheet had by printing the size beside the button, and
+ * the only thing that had to be rebuilt when the button moved into a bar with no
+ * room for a sentence.
+ *
+ * Where it goes is the save dialog's answer and never this window's: a path
+ * crossing the bridge would be a compromised renderer naming anywhere the user
+ * can write, which is the correction `record:start` already took.
+ */
+async function exportWiki(
+  confirm: Dialogs["confirm"],
+  say: (notice: Notice) => void,
+): Promise<void> {
+  let survey: ExportResult | null = null;
+  try {
+    survey = await bridge().exportSurvey();
+  } catch {
+    // Not knowing the size is a reason to say so, not a reason to refuse — the
+    // question says which of the two it is asking under.
+  }
+  if (!(await confirm(exportQuestion(survey)))) return;
+  try {
+    const outcome = await bridge().exportRun();
+    // Cancelling the save dialog is the feature working, so it says nothing
+    // rather than reporting a failure the user caused on purpose.
+    if (!outcome.ok) say(failure("wiki", outcome.reason));
+    else if (!outcome.canceled) {
+      say(note("wiki", `Exported ${outcome.files} files to ${outcome.path}`));
+    }
   } catch (e) {
     say(failure("wiki", e));
   }

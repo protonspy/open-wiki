@@ -214,8 +214,14 @@ body {
 
 /* The tabs, and only the tabs (uxpass 4.5). The language chip below them is not
    one, and a `tablist` holding a child that is not a `tab` is a child nothing
-   can name. */
+   can name.
+
+   It takes the rail's whole height so that the settings tab can be pushed to
+   the bottom of it from inside. That is why there is no spacer element between
+   the tablist and the language chip any more: the gap has to be *within* the
+   tablist, or the one tab that belongs at the foot would have to leave it. */
 .rail__tabs {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -264,7 +270,14 @@ body {
   background: var(--primary);
 }
 
-/* The language is shown, not offered — the settings sheet is where it changes. */
+/* The settings tab, at the foot of the rail. The four above it are what the
+   project holds; this one is how the application is set up, and every rail draws
+   that separation. It is still a tab in the tablist — see `Rail.tsx`. */
+.rail-btn--foot {
+  margin-top: auto;
+}
+
+/* The language is shown, not offered — the settings pane is where it changes. */
 .rail-btn--static {
   cursor: default;
 }
@@ -272,10 +285,6 @@ body {
 .rail-btn--static:hover {
   background: transparent;
   color: var(--muted-foreground);
-}
-
-.rail-spacer {
-  flex: 1;
 }
 
 .statusbar {
@@ -717,25 +726,19 @@ button[aria-current="true"],
   pointer-events: none;
 }
 
-/* --- The three overlays. All modal `<dialog>`s: the top layer, the focus
-   trap, Escape and the return of focus are the platform's, and what differs
-   between them is where they sit and how wide they are. */
-.sheet,
+/* --- The overlays. Modal `<dialog>`s: the top layer, the focus trap, Escape
+   and the return of focus are the platform's, and what differs between them is
+   where they sit and how wide they are.
+
+   There were three. The sheet was the settings, and the settings are a pane —
+   so the primitive and its rule went with them, rather than staying as a width
+   nothing is ever that wide. */
 .drawer {
   padding: 0;
   color: var(--foreground);
   background: var(--popover);
   border: 1px solid var(--border);
   font: inherit;
-}
-
-.sheet {
-  width: 560px;
-  max-width: 100%;
-  max-height: 100%;
-  overflow-y: auto;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 80%);
 }
 
 /* Against the right edge, full height — the draft's "beside the work, not on
@@ -784,7 +787,6 @@ button[aria-current="true"],
   padding: 6px 14px 14px;
 }
 
-.sheet::backdrop,
 .drawer::backdrop {
   background: rgb(0 0 0 / 55%);
 }
@@ -2195,8 +2197,78 @@ a:hover,
   cursor: pointer;
 }
 
-/* --- The settings sheet (8.3, 8.12, then desktop-ui 6.1). One block per
-   setting: what it is, what it costs you, and the control. */
+/* --- The settings pane (8.3, 8.12, desktop-ui 6.1, then the pane it became).
+   The frame every other pane draws — a 38px bar over a body that scrolls inside
+   it — so that a window whose panes are 38px in four places and something else
+   in the fifth does not stop reading as one window. */
+.settings-pane {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The tab strip, then the section. Only the section scrolls: tabs that scroll
+   away with the thing they switch between are tabs you lose. */
+.settings-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* `overflow-y: hidden` is not redundant: a box with `overflow-x: auto` computes
+   `overflow-y` to `auto` as well, and Windows drew the vertical scrollbar's
+   arrows in the corner of a 34px strip that can never scroll down. */
+.settings-tabs {
+  display: flex;
+  gap: var(--space-4);
+  padding: 0 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Underlined rather than filled. The rail already spends the amber accent on
+   where the window is, and a second filled selection in the same view competes
+   with it for the same meaning. */
+.settings-tab {
+  position: relative;
+  padding: var(--space-2) 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  color: var(--foreground);
+}
+
+.settings-tab--on {
+  border-bottom-color: var(--primary);
+  color: var(--foreground);
+}
+
+.settings {
+  max-width: 78ch;
+  padding: 0 14px var(--space-6);
+  overflow: auto;
+}
+
+/* What just happened, above the section rather than inside one — a language
+   change is reported while it is being read, and switching tab must not take
+   the sentence away before it has been. */
+.settings__status {
+  margin: var(--space-3) 0 0;
+}
+
+/* One block per setting: what it is, what it costs you, and the control. */
 .setting {
   padding: 14px 0;
   border-bottom: 1px solid var(--border);
