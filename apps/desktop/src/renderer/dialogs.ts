@@ -1,3 +1,7 @@
+// The `format` subpath and not the barrel: a value import from either of the
+// restricted ones pulls `node:fs` into this bundle. `format.ts` imports
+// nothing, which is what makes it safe here rather than what makes it allowed.
+import { humanBytes } from "@open-wiki/access/format";
 import { DEFAULT_PAGE_TYPE, PAGE_TYPES } from "./page-template.js";
 
 /**
@@ -162,6 +166,39 @@ export function unsavedQuestion(): Question {
     cancelLabel: "Keep editing",
     emptyMeans: "accept",
     danger: true,
+  };
+}
+
+/**
+ * Taking the project away as one zip (`specs/wiki-export` R4.3, wiki-pane R6.2).
+ *
+ * **The size is in the question, and that is the whole reason there is one.**
+ * The export used to live in the settings sheet, where a line of prose could sit
+ * beside the button saying how many files and how many bytes it would carry; in
+ * a pane bar there is no room for that, and dropping it would turn a
+ * several-hundred-megabyte write into something you discover afterwards rather
+ * than decide. So the survey is what the dialog is for — the affirmative button
+ * only opens the save dialog, which is where the decision that matters is
+ * actually taken.
+ *
+ * A survey that failed still asks. Not knowing the size is a worse answer than
+ * knowing it and a reason to say so, not a reason to refuse to export.
+ */
+export function exportQuestion(survey: { files: number; bytes: number } | null): Question {
+  const size = survey
+    ? `${survey.files} ${survey.files === 1 ? "file" : "files"}, ${humanBytes(survey.bytes)}. `
+    : "The size could not be measured, so this is going ahead without it. ";
+  return {
+    kind: "confirm",
+    title: "Export this wiki",
+    detail:
+      size +
+      "One zip holding wiki/ and raw/, which unpacks into a directory ow opens as a project — " +
+      "so every citation still resolves. The snapshots in .state/ are left out: they hold each " +
+      "page as it was before every write, which is where a redaction would survive being redacted.",
+    confirmLabel: "Choose where to save it",
+    cancelLabel: "Cancel",
+    emptyMeans: "accept",
   };
 }
 

@@ -1,4 +1,5 @@
-import { BookText, CircleCheck, Globe, Layers, MessagesSquare } from "lucide-react";
+import { BookText, CircleCheck, Globe, Layers, MessagesSquare, Settings2 } from "lucide-react";
+import clsx from "clsx";
 import { railMove } from "./keyboard.js";
 import type { Pane } from "./navigation.js";
 import { ICON_MD, type Icon } from "./ui/icons.js";
@@ -19,17 +20,33 @@ export interface RailPane {
   pane: Pane;
   label: string;
   icon: Icon;
+  /**
+   * Drawn at the foot of the rail rather than in the run at the top.
+   *
+   * **Still a tab, and still inside the tablist.** It is one of the window's
+   * panes, so it takes its `Ctrl`+digit like the rest and the arrow keys reach
+   * it; what changes is only where the eye finds it. Separating the entry that
+   * is about the application from the ones that are about the work is what every
+   * rail does, and doing it by leaving the tablist would cost the keyboard
+   * pattern uxpass 4.5 built.
+   */
+  foot?: true;
 }
 
 /**
  * In the order the draft draws them: what you read, what it rests on, what is
  * wrong with it. That is also the order a page is written in.
+ *
+ * The settings are the fifth and last, at the foot. They were a sheet over the
+ * window and are a pane because that is what they behave like — the argument is
+ * in `navigation.ts`.
  */
 export const PANES: readonly RailPane[] = [
   { pane: "wiki", label: "Wiki", icon: BookText },
   { pane: "sources", label: "Sources", icon: Layers },
   { pane: "checks", label: "Checks", icon: CircleCheck },
   { pane: "chat", label: "Chat", icon: MessagesSquare },
+  { pane: "settings", label: "Settings", icon: Settings2, foot: true },
 ];
 
 export interface RailProps {
@@ -75,12 +92,12 @@ export function Rail({ current, onGoTo, language }: RailProps): React.JSX.Elemen
         aria-label="Panes"
         onKeyDown={onKeyDown}
       >
-        {PANES.map(({ pane, label, icon: IconGlyph }, i) => (
+        {PANES.map(({ pane, label, icon: IconGlyph, foot }, i) => (
           <button
             key={pane}
             type="button"
             role="tab"
-            className="rail-btn"
+            className={clsx("rail-btn", foot && "rail-btn--foot")}
             data-ow-rail-index={i}
             // The roving stop: the open pane is the one Tab reaches. Never
             // none, or Tab would skip the rail entirely.
@@ -95,10 +112,9 @@ export function Rail({ current, onGoTo, language }: RailProps): React.JSX.Elemen
           </button>
         ))}
       </div>
-      <span className="rail-spacer" />
       {/* Shown, not offered. The language is a project setting (`ow.json`), and
-          the sheet is where it is changed — this is the reminder that the agent
-          was told to write in it. */}
+          the settings pane one row above is where it is changed — this is the
+          reminder that the agent was told to write in it. */}
       <span className="rail-btn rail-btn--static" title={`Content language: ${language}`}>
         <Globe size={ICON_MD} aria-hidden />
         {language.toUpperCase()}

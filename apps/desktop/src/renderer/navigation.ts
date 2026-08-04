@@ -12,10 +12,20 @@ import { FRAGMENT_ATTR, PAGE_ATTR, SOURCE_ATTR } from "./markdown.js";
  * **A location is a pane and a selection within it; an overlay is neither.**
  *
  * This used to be one flat `view` that also carried `settings` and `history`,
- * which made opening the settings a place you had gone — so Back after closing
- * them landed on the pane *before* the one you opened them from, the settings
- * having eaten the press that should have taken you there. `Shell` below is
- * where that separation is enforced.
+ * which made opening either a place you had gone — so Back after closing one
+ * landed on the pane *before* the one you opened it from, the overlay having
+ * eaten the press that should have taken you there. `Shell` below is where that
+ * separation is enforced.
+ *
+ * **The settings crossed back over, deliberately.** They were an overlay for the
+ * reason above and are a pane now, because they are not a thing you glance at:
+ * four sections, one of which prints a configuration file, and the work done
+ * there — paste a key, wait for it to be checked, read where the file is, come
+ * back to it — is going somewhere rather than consulting something. So the
+ * settings are a location, they are in the back history, and Back after leaving
+ * them returns to them exactly as it does for any other pane. The rule R2.2
+ * states is unchanged; the settings simply stopped being one of the things it is
+ * about.
  */
 
 /**
@@ -24,8 +34,12 @@ import { FRAGMENT_ATTR, PAGE_ATTR, SOURCE_ATTR } from "./markdown.js";
  * `chat` carries the embedded agent (specs/embedded-agent): a window where the
  * agent reads this project and writes the wiki through the gate, pausing for
  * approval on every write.
+ *
+ * `settings` is the last of them, and the rail draws it apart from the rest: the
+ * four above are what the project holds, and that one is how the application is
+ * set up.
  */
-export type Pane = "wiki" | "sources" | "checks" | "chat";
+export type Pane = "wiki" | "sources" | "checks" | "chat" | "settings";
 
 export interface Location {
   pane: Pane;
@@ -39,18 +53,18 @@ export interface Location {
  * `Shell` holds one of these rather than a set, because two at once is a state
  * nothing can arrive at and a set would make it representable.
  *
- * **Two are modal `<dialog>`s; the provenance viewer is deliberately not.** You
+ * **One is a modal `<dialog>`; the provenance viewer is deliberately not.** You
  * open a citation to check a claim you are in the middle of reading, and a
  * panel that makes the paragraph behind it unreadable has answered a question
  * by taking away the thing that raised it. So the rule that nothing navigates
  * while an overlay is open is asserted below rather than inherited from the
- * modal — it would hold for two of the three by accident, which is the kind of
- * rule something later is built on and discovers to be false.
+ * modal — it would hold for the drawer by accident, which is the kind of rule
+ * something later is built on and discovers to be false.
+ *
+ * The settings sheet was the third of these and is a pane now — see `Pane`.
  */
 export type Overlay =
-  | { kind: "settings" }
-  | { kind: "history" }
-  | { kind: "provenance"; source: string; fragment: string };
+  { kind: "history" } | { kind: "provenance"; source: string; fragment: string };
 
 export class History {
   private readonly entries: Location[] = [];

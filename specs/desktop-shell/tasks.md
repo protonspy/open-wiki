@@ -19,3 +19,8 @@
 - [x] 9.1 (Unit) Make the rail one tab stop with arrow movement, per the `tablist` its markup already claimed — R4.4
 - [x] 9.2 (Unit) Run the checks when the project opens and after every write, so the bar says something about the wiki's health before anybody goes looking — R5.2
 - [x] 9.3 (Unit) Tell a run in flight and a run that failed from a count, in the bar — R5.6
+
+## 10 · The settings become a pane (`plans/settings-pane-and-export.md`)
+
+- [x] 10.1 (Unit) Make `settings` a pane and take it out of the overlays, so it is recorded as a location and Back returns to it — R1.1, R1.2, R2.1
+- [x] 10.2 (Unit) Point the titlebar's gear at the pane, and give the rail a Settings tab at its foot that the arrows and `Ctrl`+digit still reach — R3.5, R4.1, R4.5

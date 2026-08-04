@@ -111,11 +111,14 @@ export function railMove(chord: Chord, index: number, count: number): number | n
 /**
  * Whether Escape here should close the overlay the shell is holding.
  *
- * **Only for the one overlay that is not a modal.** The settings sheet and the
- * history drawer are `<dialog>`s: the platform closes them on Escape and their
- * own `onClose` dismisses the shell. The provenance panel is deliberately *not*
- * modal (spec `desktop-shell`, R2.6) — you read the paragraph while you check
- * its citation — so nothing was listening for Escape over it.
+ * **Only for the one overlay that is not a modal.** The history drawer is a
+ * `<dialog>`: the platform closes it on Escape and its own `onClose` dismisses
+ * the shell. The provenance panel is deliberately *not* modal (spec
+ * `desktop-shell`, R2.6) — you read the paragraph while you check its citation —
+ * so nothing was listening for Escape over it.
+ *
+ * The settings were the third of these and are a pane now, so Escape has nothing
+ * to do with them: leaving a pane is Back, or another pane.
  *
  * A keystroke inside a text box is never this: Escape in a field is the
  * field's, and taking it would close the panel somebody was typing a citation

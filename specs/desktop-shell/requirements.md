@@ -15,8 +15,8 @@ view and an optional slug, and the draft needs three things it cannot express: a
 pane, a selection within that pane, and overlays that are not panes at all.
 
 Getting that wrong is not cosmetic. A wiki is read by following links and coming
-back, so Back is half of how the content is used — and if opening the settings
-sheet enters the back history, Back stops meaning "where I came from" and starts
+back, so Back is half of how the content is used — and if opening the history
+drawer enters the back history, Back stops meaning "where I came from" and starts
 meaning "undo the last thing I clicked". 8.5 paid attention to this once and it
 has to survive the repaint.
 
@@ -38,8 +38,8 @@ has to survive the repaint.
 
 ## R2 · Overlays are not locations
 
-- **R2.1** The shell shall open the settings sheet, the history drawer and the
-  provenance viewer as overlays over the current location.
+- **R2.1** (MODIFIED) The shell shall open the history drawer and the provenance
+  viewer as overlays over the current location.
 - **R2.6** While the provenance viewer is open, the shell shall leave the page
   behind it readable and its links followable.
 - **R2.2** The shell shall not record an overlay as a location.
@@ -49,6 +49,14 @@ has to survive the repaint.
   change the location.
 - **R2.5** The shell shall show at most one overlay at a time.
 
+R2.1 named three overlays and names two. The settings were the third, and they
+were never the shape this group is about: an overlay is something you consult or
+adjust beside the work, and the settings page is four sections — one of which
+prints a configuration file — that somebody goes to in order to work on the
+setup. So they are a pane (R1.1), they are recorded as a location (R1.2), and
+Back returns to them. Nothing in R2.2 to R2.5 changed; the settings simply
+stopped being one of the things those rules are about.
+
 ## R3 · The titlebar
 
 - **R3.1** The titlebar shall show the open project's name.
@@ -57,7 +65,7 @@ has to survive the repaint.
 - **R3.3** While a recording is running or paused, the titlebar shall offer
   pausing or resuming it, and stopping it.
 - **R3.4** While no recording is running, the titlebar shall offer starting one.
-- **R3.5** The titlebar shall offer opening the settings.
+- **R3.5** (MODIFIED) When the user chooses the settings in the titlebar, the shell shall show the settings pane.
 - **R3.6** The titlebar shall offer going back and going forward, and shall show when there is nowhere to go.
 
 ## R4 · The rail
@@ -68,6 +76,9 @@ has to survive the repaint.
 - **R4.3** The rail shall show the project's content language.
 - **R4.4** (ADDED) The rail shall be one stop in the window's tab order, with the
   arrow keys moving between its panes.
+- **R4.5** (ADDED) The rail shall draw the settings pane apart from the panes
+  that hold the project's content, while keeping it reachable by the same
+  keyboard as the rest.
 
 ## R5 · The status bar
 

@@ -265,13 +265,13 @@ describe("Shell", () => {
   });
 
   it("does not record an overlay as a place you went — R2.2, R2.3", () => {
-    // The failure this exists for: with the settings sheet in the history,
-    // Back after closing it lands on the pane *before* the one you opened it
-    // from, the sheet having eaten the press that should have taken you there.
+    // The failure this exists for: with an overlay in the history, Back after
+    // closing it lands on the pane *before* the one you opened it from, the
+    // overlay having eaten the press that should have taken you there.
     const shell = new Shell();
     shell.visit({ pane: "wiki", selection: "fenix" });
     shell.goTo("sources");
-    shell.show({ kind: "settings" });
+    shell.show({ kind: "history" });
     shell.dismiss();
     expect(shell.location).toEqual({ pane: "sources" });
     expect(shell.back()).toEqual({ pane: "wiki", selection: "fenix" });
@@ -279,9 +279,22 @@ describe("Shell", () => {
 
   it("shows one overlay at a time — R2.5", () => {
     const shell = new Shell();
-    shell.show({ kind: "settings" });
+    shell.show({ kind: "provenance", source: "weekly", fragment: "0:00" });
     shell.show({ kind: "history" });
     expect(shell.overlay).toEqual({ kind: "history" });
+  });
+
+  it("records the settings as the place they are — R1.2, R2.1", () => {
+    // The other half of the same rule, and the reason the settings left the
+    // overlays: they *are* somewhere you go. Back after leaving them returns to
+    // them, which a sheet could never do — dismissing one put you back where it
+    // had opened, as the test above asserts it still does for the drawer.
+    const shell = new Shell();
+    shell.visit({ pane: "wiki", selection: "fenix" });
+    shell.goTo("settings");
+    expect(shell.location).toEqual({ pane: "settings" });
+    shell.goTo("wiki");
+    expect(shell.back()).toEqual({ pane: "settings" });
   });
 
   it("stays where it is while an overlay is open — R2.4", () => {

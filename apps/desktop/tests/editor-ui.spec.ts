@@ -73,9 +73,11 @@ describe("what can be done to the page while it is being edited (2.2)", () => {
 
   it("disables edit, rename and delete", () => {
     // All three were confirmed live mid-edit, which put *Delete this page* one
-    // click away from an unsaved draft.
+    // click away from an unsaved draft. Four now: Export joined them when it
+    // moved into this bar, because the archive is written from what is on disk
+    // and that is not what is on screen while a buffer is unsaved.
     const disabled = [...pane.matchAll(/disabled=\{editing\}/g)];
-    expect(disabled).toHaveLength(3);
+    expect(disabled).toHaveLength(4);
   });
 
   it("takes the editing flag rather than guessing from the reader's contents", () => {
