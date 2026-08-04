@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { FolderOpen, FolderPlus } from "lucide-react";
 import type { Harness, Language } from "@open-wiki/access";
+import { Button } from "./ui/Button.js";
 import { HARNESS_CHOICES, toggleHarness } from "./harnesses.js";
 import type { KnownProject } from "../main/settings.js";
 import { bridge } from "./bridge.js";
@@ -39,6 +41,20 @@ export function Launcher(): React.JSX.Element {
    */
   const [creatingAt, setCreatingAt] = useState("");
   const [busy, setBusy] = useState(false);
+  /**
+   * Where a new project would land (R3.4), said in the heading rather than
+   * discovered inside a form. It is also the folder R2.6 has just read, so the
+   * list below and this line are about the same place.
+   */
+  const [defaultRoot, setDefaultRoot] = useState("");
+
+  useEffect(() => {
+    void bridge()
+      .defaultDirectory()
+      .then(setDefaultRoot)
+      // A heading line is not worth an error: the doors below both still work.
+      .catch(() => setDefaultRoot(""));
+  }, []);
 
   /**
    * The list, with whatever is already sitting in the default location taken on
@@ -131,15 +147,26 @@ export function Launcher(): React.JSX.Element {
 
   return (
     <div className="launcher">
-      <h2>Projects on this machine</h2>
+      <div className="launcher__head">
+        <h2>Projects on this machine</h2>
+        {/* Where a new one lands, said before anybody asks — the draft's §2.2
+            caption idiom, which states the effect in the machine's own voice. */}
+        {defaultRoot ? <p className="launcher__where">new projects go in {defaultRoot}</p> : null}
+      </div>
+
       {error ? <p className="error">{error}</p> : null}
 
       {/* Above the list, because these are what somebody came here to do — the
           list is what they came here to pick from. Below it, the two doors sat
           past however many projects this machine has. */}
       {creating === "form" ? null : (
-        <div className="editor__bar">
-          <button
+        <div className="launcher__doors">
+          {/* The one amber button on this screen. Opening a project is done from
+              its own row, so creating is the single act that has nowhere else to
+              live — and `Button` reserves primary for exactly that. */}
+          <Button
+            variant="primary"
+            icon={FolderPlus}
             onClick={() => {
               setCreatingAt("");
               // Nothing known yet — the guided run, which is the only path that
@@ -149,13 +176,13 @@ export function Launcher(): React.JSX.Element {
             }}
           >
             New project
-          </button>
+          </Button>
           {/* R2.1 — the other half. Without it the only way into a project the
               registry does not list is to go and run `ow` in its directory,
               which is what the note below used to be the whole answer. */}
-          <button onClick={() => void openExistingProject()} disabled={busy}>
+          <Button icon={FolderOpen} onClick={() => void openExistingProject()} disabled={busy}>
             {busy ? "Opening…" : "Open project…"}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -177,32 +204,58 @@ export function Launcher(): React.JSX.Element {
       ) : null}
 
       {projects && projects.length > 0 ? (
-        <ul className="list">
+        <ul className="launcher__projects">
           {projects.map((project) => (
-            <li key={project.name} className="operation">
-              <strong>{project.name}</strong>
-              <code className="launcher__path">{project.path || "— moved or deleted"}</code>
+            <li
+              key={project.name}
+              className={
+                project.present
+                  ? "launcher__project"
+                  : "launcher__project launcher__project--missing"
+              }
+            >
+              <span className="launcher__identity">
+                <span className="launcher__name">{project.name}</span>
+                <code className="launcher__path">{project.path || "moved or deleted"}</code>
+              </span>
               {!project.present ? (
                 <span className="badge badge--failed">not where it was</span>
               ) : null}
-              <span className="chrome__spacer" />
-              {/* A list of projects with no way to open one was a list that
-                  could only forget them. */}
-              <button onClick={() => void open(project.name)} disabled={!project.present}>
-                Open
-              </button>
-              <button onClick={() => void forget(project.name)}>Forget</button>
+              <span className="launcher__actions">
+                {/* A list of projects with no way to open one was a list that
+                    could only forget them. Forget is quiet on purpose: it drops
+                    an entry and touches nothing on disk, so it must not carry
+                    the weight of a delete. */}
+                <Button
+                  size="sm"
+                  onClick={() => void open(project.name)}
+                  disabled={!project.present}
+                >
+                  Open
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void forget(project.name)}>
+                  Forget
+                </Button>
+              </span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="empty">Nothing here yet.</p>
+        /* An empty screen is an invitation, not a report. "Nothing here yet."
+           described the state and left the reader to work out the rest. */
+        <div className="launcher__nothing">
+          <p className="launcher__foot">No projects on this machine yet.</p>
+          <p className="launcher__foot">
+            Create one, or open a project you already have — any folder holding <code>raw/</code>,{" "}
+            <code>wiki/</code> and <code>.state/</code>, however it got there.
+          </p>
+        </div>
       )}
 
-      <p className="empty">
-        Opening a project is <code>ow</code> inside its directory — the same way <code>code .</code>{" "}
-        works. This list is a convenience, and it is a cache rather than the truth: a project that
-        moved is shown here so you can see that it did.
+      <p className="launcher__foot">
+        This list is a cache rather than the truth, so a project whose directory moved is shown here
+        instead of quietly disappearing. Running <code>ow</code> inside a project opens it too, the
+        same way <code>code .</code> does.
       </p>
     </div>
   );

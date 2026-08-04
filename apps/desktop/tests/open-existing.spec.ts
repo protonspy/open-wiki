@@ -279,8 +279,11 @@ describe("the launcher offers both doors (R2.1, R3.1)", () => {
   it("puts the two doors above the list they act on", () => {
     // Below it, they sat past however many projects this machine has — and the
     // list is what somebody came here to pick from, not what they came to do.
+    // The list stopped being `.list` — borrowed from the sources table — when
+    // the launcher got a row of its own. The rule is unchanged; the class it is
+    // read from is not.
     const doors = launcher.indexOf("New project");
-    const list = launcher.indexOf('<ul className="list">');
+    const list = launcher.indexOf('className="launcher__projects"');
     expect(doors).toBeGreaterThan(-1);
     expect(list).toBeGreaterThan(-1);
     expect(doors).toBeLessThan(list);
