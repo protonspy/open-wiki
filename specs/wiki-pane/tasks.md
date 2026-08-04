@@ -25,3 +25,18 @@
 
 - [x] 5.1 (Unit) The reader's no-selection and loading states say so rather than showing nothing — including a wiki whose index has not come back yet, which is not an empty wiki and greeted every launch as one — R4.1, R4.2, R4.4
 - [x] 5.2 (Unit) The empty wiki (1.4's `EmptyWiki`) shown in the wiki pane when there are no pages — R4.3
+
+## 6 · The UX pass (`plans/desktop-ui-uxpass.md`)
+
+Driven rather than read: a Playwright pass over every pane at four window sizes,
+with the preload bridge stubbed. The work is in that plan's groups; these lines
+are what it changed about _this_ feature.
+
+- [x] 6.1 (Unit) Render the page title once — the reader draws it only where the body has no heading of its own, which every page in the wiki had — R2.3
+- [x] 6.2 (Unit) Say in a broken wikilink's own text that it is broken, rather than in a `title` a keyboard never surfaces — R2.5
+- [x] 6.3 (Unit) Make every link the reader renders focusable and followable from the keyboard: there were zero focusable elements inside a rendered `<article>` — R2.8
+- [x] 6.4 (Unit) Disable edit, rename and delete while the editor is open, and confirm before leaving unsaved work — all three were live beside an unsaved draft — R2.9
+- [x] 6.5 (Unit) A table of contents in the side panel for a page with enough headings, from the anchors `markdown.ts` now mints — R3.6
+- [x] 6.6 (Unit) Rebuild the no-selection state as a block that says what the pane is for and offers a page — R4.1
+- [x] 6.7 (Unit) Collapse the side panel below ~1000px and the tree below ~820px, each to a sheet the pane bar toggles — R5.1, R5.2
+- [x] 6.8 (Unit) Assert the reader stays above 380px at every width the window allows — it was 115px at 720×480 — R5.3

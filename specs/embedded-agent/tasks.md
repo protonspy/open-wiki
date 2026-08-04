@@ -86,3 +86,12 @@
 
 - [x] 7.1 (Unit) Add `deepagents`, `@langchain/groq`, `@langchain/langgraph`, `langchain`, and `@langchain/core` to `docs/stack.md` with one line each on why — R2.2
 - [x] 7.2 (Unit) Add canonical terms (embedded agent, chat pane, wiki-gate backend) to `docs/glossary.md` with the synonyms to avoid — R1.1, R2.1
+
+## 9 · The UX pass (`plans/desktop-ui-uxpass.md`)
+
+- [x] 9.1 (Unit) Give the pane a bar: its title, the model in use, and a new conversation — R1.6
+- [x] 9.2 (Unit) Show a run in flight in the transcript rather than in a placeholder that disappears when anybody types — R1.7
+- [x] 9.3 (Unit) Mark what actually differs between `old_string` and `new_string`, word by word — R5.2
+- [x] 9.4 (Unit) Move the focus to the decision when a write pauses, and bind approve and reject — R5.6
+- [x] 9.5 (Unit) Refuse a message while a run is paused, and say why in place of the composer's prompt — R5.7
+- [x] 9.6 (Unit) Scope the approve and reject shortcuts to the decision, so a keystroke inside the edit box cannot land or discard the write it was opened to change — R5.8

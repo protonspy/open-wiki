@@ -35,7 +35,9 @@ describe("renderPageBody (8.5)", () => {
   const render = (body: string, slugs: string[] = []): string => renderPageBody(body, { slugs });
 
   it("renders markdown", () => {
-    expect(render("# Title\n\nbody\n")).toContain("<h1>Title</h1>");
+    // The heading carries an anchor since uxpass 5.6 — see `heading ids` in
+    // `reading-surface.spec.ts` for what that is for.
+    expect(render("# Title\n\nbody\n")).toContain('<h1 id="title">Title</h1>');
   });
 
   it("makes a resolved wikilink something the application can follow", () => {

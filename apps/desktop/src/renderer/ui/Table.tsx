@@ -8,8 +8,17 @@ import clsx from "clsx";
  * it is naming.
  */
 export interface Column {
-  /** What the header says. Empty for a column of row actions. */
+  /** What the header says. */
   header: string;
+  /**
+   * Whether the header is for the ear only (uxpass 4.3).
+   *
+   * A column of row actions needs no visible heading — the buttons say what
+   * they do — but an unlabelled `<th>` leaves anybody reading the table cell by
+   * cell with an unnamed column, which is worse than a redundant word. So the
+   * word is written and hidden, rather than not written.
+   */
+  hiddenHeader?: boolean;
   /**
    * Pushed to the right edge. For counts and for the actions column: a number
    * read down a column is read by its last digit, and a ragged right edge is
@@ -40,8 +49,8 @@ export function Table({ columns, className, children }: TableProps): React.JSX.E
         <tr>
           {columns.map((column, i) => (
             <th
-              // By position: a column of row actions has no header text, and
-              // two of them would collide on an empty string.
+              // By position: two columns may legitimately share a heading, and
+              // a key that collides is a column React reuses for another one.
               key={`${column.header}-${i}`}
               scope="col"
               style={{
@@ -49,7 +58,11 @@ export function Table({ columns, className, children }: TableProps): React.JSX.E
                 textAlign: column.align === "right" ? "right" : undefined,
               }}
             >
-              {column.header}
+              {column.hiddenHeader ? (
+                <span className="visually-hidden">{column.header}</span>
+              ) : (
+                column.header
+              )}
             </th>
           ))}
         </tr>

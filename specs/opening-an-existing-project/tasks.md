@@ -43,3 +43,8 @@
 
 - [x] 8.1 (Unit) Create under the kebab-case of the typed name on both doors, using the one name for creating, storing the credential and opening — R3.6
 - [x] 8.2 (Unit) Show which name will be used, while it can still be changed — R3.6
+
+## 9 · The UX pass (`plans/desktop-ui-uxpass.md`)
+
+- [x] 9.1 (Unit) Offer **Locate…** on a project that is not where it was, dropping the stale entry before taking the chosen directory on — R2.8
+- [x] 9.2 (Unit) Carry the directory on a refused relocate and offer naming it, so the entry it already dropped is not lost with nowhere to go — R2.9

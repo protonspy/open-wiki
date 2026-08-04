@@ -250,9 +250,82 @@ export function editableOf(proposal: Proposal, action: ChatActionRequest): Edita
   }
 }
 
+/**
+ * What the pane announces, given where the run is (uxpass 4.2).
+ *
+ * **The three things that change without the user acting**, and the reason a
+ * live region is worth having at all here: a turn starting, a turn ending, and
+ * the moment the agent stops and waits for a decision. Somebody who cannot see
+ * the transcript had no way to learn any of them — the only signal was the
+ * composer's placeholder, which vanishes the moment anybody types.
+ *
+ * The boundaries, not the tokens: announcing a stream word by word is a region
+ * that never stops talking, which is how a live region becomes something people
+ * turn off.
+ */
+export function chatAnnouncement(state: ChatState): string {
+  if (state.error !== null) return `The agent stopped: ${state.error}`;
+  if (state.interrupt) return "The agent is waiting for your approval before it writes.";
+  if (state.running) return "The agent is working.";
+  if (state.messages.some((message) => message.role === "assistant")) {
+    return "The agent has finished its turn.";
+  }
+  return "";
+}
+
+/**
+ * What the composer says while it cannot be typed into (uxpass 6.4, 6.6).
+ *
+ * Two findings meet here. The composer stayed enabled during an interrupt, so a
+ * message could be sent into a run that was paused waiting for a decision — and
+ * the working state lived in the placeholder, which disappears the moment
+ * anybody types. The placeholder now says why the box is disabled, and it is
+ * only ever read while it *is* disabled; the working state is an element of its
+ * own in the transcript.
+ */
+export function composerPlaceholder(state: ChatState): string {
+  if (state.interrupt) return "Approve or reject the write above to carry on";
+  if (state.running) return "The agent is working…";
+  return "Message the agent";
+}
+
+/** Whether the composer may be typed into at all (uxpass 6.4). */
+export function composerDisabled(state: ChatState): boolean {
+  return state.running || state.interrupt !== null;
+}
+
+/** What a chord means while an approval card has the focus (uxpass 6.5). */
+export type InterruptDecision = "approve" | "reject";
+
+/**
+ * The keyboard for a repeated approve loop (uxpass 6.5).
+ *
+ * **Modified, not bare.** `A` and `R` would be faster and are not available: the
+ * card carries an Edit textarea, and a bare letter that decides a write while
+ * somebody is typing into one is the worst possible false positive for a
+ * human-in-the-loop surface. `Ctrl`/`Cmd` with Enter and Backspace is the pair
+ * every editor already uses for *commit* and *discard*.
+ */
+export function interruptShortcut(chord: {
+  key: string;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+}): InterruptDecision | null {
+  if (!(chord.ctrlKey === true || chord.metaKey === true)) return null;
+  if (chord.altKey === true || chord.shiftKey === true) return null;
+  if (chord.key === "Enter") return "approve";
+  if (chord.key === "Backspace") return "reject";
+  return null;
+}
+
 /** The actions the pane dispatches to its reducer. */
 export type ChatAction =
-  { type: "send"; text: string } | { type: "resume" } | { type: "event"; event: ChatEvent };
+  | { type: "send"; text: string }
+  | { type: "resume" }
+  | { type: "reset" }
+  | { type: "event"; event: ChatEvent };
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
@@ -260,6 +333,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return sendUser(state, action.text);
     case "resume":
       return resumeRun(state);
+    // A new conversation (uxpass 6.1). The thread id is the component's and is
+    // replaced beside this — a cleared transcript still addressing the old
+    // checkpointed thread would be a window showing nothing and an agent
+    // remembering everything.
+    case "reset":
+      return initialChat;
     case "event":
       return applyEvent(state, action.event);
   }

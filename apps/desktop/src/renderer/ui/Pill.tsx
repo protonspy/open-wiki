@@ -9,8 +9,14 @@ import clsx from "clsx";
  * among the others, and a filled pill in a row of filled pills is precisely
  * how it disappears. It is also the one tone that survives being read by
  * somebody who cannot tell the colours apart.
+ *
+ * `warning` follows the same rule and was added for the same reason (uxpass
+ * 9.1): its marker is a triangle rather than a dot, so an error and a warning
+ * are told apart by shape — which is what `ChecksPane` already does with
+ * `CircleAlert` and `TriangleAlert`, and what keeps this from reading as
+ * `cited`, whose amber means something else entirely.
  */
-export type PillTone = "neutral" | "ok" | "error" | "cited" | "working" | "uncited";
+export type PillTone = "neutral" | "ok" | "error" | "warning" | "cited" | "working" | "uncited";
 
 /** The classes a pill wears. */
 export function pillClass(tone: PillTone = "neutral", extra?: string): string {

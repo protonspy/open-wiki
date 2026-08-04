@@ -140,6 +140,32 @@ export function retitleQuestion(title: string): Question {
 }
 
 /**
+ * Leaving a page with the editor open on unsaved work (uxpass 2.3).
+ *
+ * **Asked, not prevented.** Navigating away is a legitimate thing to want with
+ * a draft on screen, and a window that refuses is a window somebody fights. What
+ * it must not do is what it used to: throw the buffer away silently, because
+ * every path out of the editor — a wikilink in the prose, the rail, Back — ran
+ * `setEditing(false)` and nothing else.
+ *
+ * The affirmative is the destructive one here, so it is drawn as such and says
+ * what it costs rather than saying "OK".
+ */
+export function unsavedQuestion(): Question {
+  return {
+    kind: "confirm",
+    title: "Leave without saving?",
+    detail:
+      "This page has changes that have not been written to disk. Leaving discards them — " +
+      "nothing else has a copy, and there is no undo for a page that was never saved.",
+    confirmLabel: "Discard my changes",
+    cancelLabel: "Keep editing",
+    emptyMeans: "accept",
+    danger: true,
+  };
+}
+
+/**
  * Naming a recording before it starts (4.16).
  *
  * **Both buttons record.** An empty occasion falls back to the timestamp

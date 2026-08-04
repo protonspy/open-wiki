@@ -54,6 +54,19 @@ export interface Fix {
 }
 
 /**
+ * Whether taking this fix writes to the project (uxpass 7.5).
+ *
+ * The checks pane drew `create-page` as a ghost button while `add-to-index` and
+ * `replace` were solid — all three write to disk, and two of them looked like
+ * it. Emphasis is what tells a button that navigates from a button that changes
+ * the wiki, and it has to be decided from what the fix *does* rather than from a
+ * list of kinds written out again at the call site.
+ */
+export function writesToDisk(kind: FixKind): boolean {
+  return kind === "add-to-index" || kind === "create-page" || kind === "replace";
+}
+
+/**
  * A page's slug from the path a finding names.
  *
  * `adr:0016-a-page-is-its-slug-wherever-it-sits`: the basename is the slug,

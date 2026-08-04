@@ -1,10 +1,13 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageView } from "../main/api.js";
-import { bridge } from "./bridge.js";
+import { bridge, hasBridge } from "./bridge.js";
+import { applyCompletion, completionAt, completionsFor, type Completion } from "./completion.js";
 import { renderPageBody } from "./markdown.js";
+import { Button } from "./ui/Button.js";
+import { Pill } from "./ui/Pill.js";
 
 /**
- * Editing a page (plan 8.7 and 8.8).
+ * Editing a page (plan 8.7 and 8.8, then uxpass group 2).
  *
  * Markdown with a preview, saved through the group 5 validations — which it
  * reaches by calling the store, not by knowing anything about the schema. When
@@ -15,29 +18,100 @@ import { renderPageBody } from "./markdown.js";
  * The buffer's *base* is tracked separately from its content. That is 8.8: a
  * save is refused when the file moved under the editor, and what makes the
  * refusal possible is remembering what was loaded rather than assuming it is
- * still there.
+ * still there. It is also what makes a dirty state free (uxpass 2.3) — *changed
+ * since I opened it* is the same comparison, asked of the buffer instead of the
+ * disk.
+ *
+ * **The buffer is a hook and the actions are their own component.** The pass
+ * found two competing action rows on one screen: Save and Cancel floating above
+ * the source box while the pane bar four rows up carried its own cluster. One
+ * screen gets one action row, so Save and Cancel moved into the bar (2.4) — and
+ * a bar rendered by `WikiPane` cannot reach state held inside `Editor`, which is
+ * why the buffer lives one level up.
  */
-export function Editor({
+
+export interface EditorBuffer {
+  /** Whether an edit session is open at all. */
+  editing: boolean;
+  markdown: string;
+  setMarkdown: (next: string) => void;
+  /** Changed since it was opened — 2.3, and what arms the navigation guard. */
+  dirty: boolean;
+  busy: boolean;
+  problems: string[];
+  /** The version on disk, when a save was refused as stale (8.8). */
+  conflict: string | null;
+  /** Every source id in the project, for completing a citation (2.5). */
+  sourceIds: readonly string[];
+  save: () => void;
+  saveAsCopy: () => void;
+  takeTheirs: () => void;
+  keepMine: () => void;
+}
+
+export function useEditorBuffer({
   page,
-  slugs,
+  editing,
   onSaved,
-  onCancel,
 }: {
-  page: PageView;
-  slugs: readonly string[];
+  page: PageView | null;
+  editing: boolean;
   onSaved: (markdown: string) => void;
-  onCancel: () => void;
-}): React.JSX.Element {
-  const [markdown, setMarkdown] = useState(page.markdown);
-  const [base, setBase] = useState(page.markdown);
+}): EditorBuffer {
+  const [markdown, setMarkdown] = useState("");
+  const [base, setBase] = useState("");
   const [problems, setProblems] = useState<string[]>([]);
   const [conflict, setConflict] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sourceIds, setSourceIds] = useState<readonly string[]>([]);
 
-  const preview = useMemo(
-    () => renderPageBody(stripFrontmatter(markdown), { slugs }),
-    [markdown, slugs],
-  );
+  const slug = page?.slug;
+  const opened = page?.markdown ?? "";
+
+  /**
+   * The buffer is filled when a session **opens**, and never again.
+   *
+   * Not on every change to `page`: the watcher reloads the open page whenever
+   * anything writes to the project, and re-seeding from that would replace what
+   * somebody is in the middle of typing with what the agent just wrote. The
+   * disagreement is 8.8's to report at save time, with both versions in hand —
+   * silently taking one of them is the loss that whole mechanism exists to
+   * prevent.
+   *
+   * **`editing` alone, and not the slug.** Keying this on `editing ? slug :
+   * undefined` reads as the same thing and is not: a watcher reload that *fails*
+   * sets `page` to null, so the key goes `"fenix"` → `undefined` → `"fenix"` and
+   * the effect fires a second time, over a buffer somebody is typing into. It is
+   * a narrow window and it is exactly the silent loss above, so it is closed
+   * rather than noted. Nothing else can move `editing` under an open session:
+   * every path that leaves the page goes through the guard in `App`.
+   */
+  const seed = useRef(opened);
+  seed.current = opened;
+  useEffect(() => {
+    if (!editing) return;
+    setMarkdown(seed.current);
+    setBase(seed.current);
+    setProblems([]);
+    setConflict(null);
+  }, [editing]);
+
+  /** The ids a citation may name (2.5), asked for once per session. */
+  useEffect(() => {
+    if (!editing || !hasBridge()) return;
+    let live = true;
+    void bridge()
+      .sources()
+      .then((rows) => {
+        if (live) setSourceIds(rows.map((row) => row.id));
+      })
+      // A completion nobody can offer is not a failure worth a red box: the
+      // box is still typeable, which is how every citation was written before.
+      .catch(() => setSourceIds([]));
+    return () => {
+      live = false;
+    };
+  }, [editing]);
 
   /**
    * The third answer to a conflict (6.4): keep both, and name the copy.
@@ -48,15 +122,17 @@ export function Editor({
    * both in front of them.
    */
   const saveAsCopy = useCallback(async () => {
+    if (!slug) return;
     setBusy(true);
     setProblems([]);
     try {
-      const result = await bridge().saveAsCopy(page.slug, markdown);
+      const result = await bridge().saveAsCopy(slug, markdown);
       if (result.saved) {
         setConflict(null);
         // The editor closes onto the copy, because that is the page the buffer
         // now belongs to — staying on the original with the copy's content in
         // the box is how the next save overwrites the thing this just avoided.
+        setBase(result.markdown);
         onSaved(result.markdown);
         return;
       }
@@ -66,14 +142,15 @@ export function Editor({
     } finally {
       setBusy(false);
     }
-  }, [markdown, onSaved, page.slug]);
+  }, [markdown, onSaved, slug]);
 
   const save = useCallback(async () => {
+    if (!slug) return;
     setBusy(true);
     setProblems([]);
     setConflict(null);
     try {
-      const result = await bridge().save({ slug: page.slug, markdown, baseMarkdown: base });
+      const result = await bridge().save({ slug, markdown, baseMarkdown: base });
       if (result.saved) {
         // What landed, not what was sent — the store completes frontmatter on
         // the way through, and the next save's base has to be the file as it
@@ -90,57 +167,230 @@ export function Editor({
     } finally {
       setBusy(false);
     }
-  }, [base, markdown, onSaved, page.slug]);
+  }, [base, markdown, onSaved, slug]);
+
+  const takeTheirs = useCallback(() => {
+    if (conflict === null) return;
+    setMarkdown(conflict);
+    setBase(conflict);
+    setConflict(null);
+  }, [conflict]);
+
+  const keepMine = useCallback(() => {
+    if (conflict === null) return;
+    // Only re-based, so this buffer wins the next save. The content is left
+    // alone, which is the difference between this button and the one above it.
+    setBase(conflict);
+    setConflict(null);
+  }, [conflict]);
+
+  return {
+    editing,
+    markdown,
+    setMarkdown,
+    dirty: editing && markdown !== base,
+    busy,
+    problems,
+    conflict,
+    sourceIds,
+    save: () => void save(),
+    saveAsCopy: () => void saveAsCopy(),
+    takeTheirs,
+    keepMine,
+  };
+}
+
+/**
+ * Save and Cancel, in the pane bar (2.4).
+ *
+ * **Save is disabled while nothing has changed** (2.3): a button that is always
+ * live says nothing about whether there is anything to write, and the dirty mark
+ * beside it is the same fact stated so it can be seen rather than inferred.
+ */
+export function EditorActions({
+  buffer,
+  onCancel,
+}: {
+  buffer: EditorBuffer;
+  onCancel: () => void;
+}): React.JSX.Element {
+  return (
+    <>
+      {buffer.dirty ? <Pill tone="working">unsaved</Pill> : null}
+      <Button variant="primary" onClick={buffer.save} disabled={buffer.busy || !buffer.dirty}>
+        {buffer.busy ? "Saving…" : "Save"}
+      </Button>
+      <Button onClick={onCancel} disabled={buffer.busy}>
+        Cancel
+      </Button>
+    </>
+  );
+}
+
+export function Editor({
+  buffer,
+  slugs,
+}: {
+  buffer: EditorBuffer;
+  /** Every slug in the wiki, for the preview and for completing a link (2.5). */
+  slugs: readonly string[];
+}): React.JSX.Element {
+  const preview = useMemo(
+    () => renderPageBody(stripFrontmatter(buffer.markdown), { slugs }),
+    [buffer.markdown, slugs],
+  );
 
   return (
     <div className="editor">
-      <div className="editor__bar">
-        <button onClick={() => void save()} disabled={busy}>
-          Save
-        </button>
-        <button onClick={onCancel} disabled={busy}>
-          Cancel
-        </button>
-        {busy ? <span className="empty">saving…</span> : null}
-      </div>
-
-      {problems.length > 0 ? (
+      {buffer.problems.length > 0 ? (
         <div className="error">
           <strong>This page cannot be saved yet:</strong>
           <ul>
-            {problems.map((problem) => (
+            {buffer.problems.map((problem) => (
               <li key={problem}>{problem}</li>
             ))}
           </ul>
         </div>
       ) : null}
 
-      {conflict !== null ? (
+      {buffer.conflict !== null ? (
         <Conflict
-          onDisk={conflict}
-          busy={busy}
-          onTakeTheirs={() => {
-            setMarkdown(conflict);
-            setBase(conflict);
-            setConflict(null);
-          }}
-          onKeepMine={() => {
-            setBase(conflict);
-            setConflict(null);
-          }}
-          onSaveAsCopy={() => void saveAsCopy()}
+          onDisk={buffer.conflict}
+          busy={buffer.busy}
+          onTakeTheirs={buffer.takeTheirs}
+          onKeepMine={buffer.keepMine}
+          onSaveAsCopy={buffer.saveAsCopy}
         />
       ) : null}
 
       <div className="editor__panes">
-        <textarea
-          className="editor__source"
-          value={markdown}
-          spellCheck={false}
-          onChange={(event) => setMarkdown(event.target.value)}
-        />
+        <Source buffer={buffer} slugs={slugs} />
         <article className="page" dangerouslySetInnerHTML={{ __html: preview }} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * The source box, and what it can finish for you (2.5).
+ *
+ * The popup is a `listbox` the textarea owns through `aria-activedescendant`,
+ * rather than a widget focus moves into: taking the focus out of the box
+ * somebody is typing in is how a completion menu becomes something to escape
+ * from. Every decision it makes — what is being completed, what matches, what
+ * the buffer says afterwards — is in `completion.ts`.
+ */
+function Source({
+  buffer,
+  slugs,
+}: {
+  buffer: EditorBuffer;
+  slugs: readonly string[];
+}): React.JSX.Element {
+  const box = useRef<HTMLTextAreaElement>(null);
+  const [completion, setCompletion] = useState<Completion | null>(null);
+  const [highlighted, setHighlighted] = useState(0);
+
+  const candidates = useMemo(
+    () =>
+      completion === null ? [] : completionsFor(completion, { slugs, sourceIds: buffer.sourceIds }),
+    [completion, slugs, buffer.sourceIds],
+  );
+
+  /** Recompute what is being completed from wherever the caret now is. */
+  const reconsider = useCallback(() => {
+    const element = box.current;
+    if (!element) return;
+    setCompletion(completionAt(element.value, element.selectionStart));
+    setHighlighted(0);
+  }, []);
+
+  const take = useCallback(
+    (choice: string) => {
+      if (!completion) return;
+      const next = applyCompletion(buffer.markdown, completion, choice);
+      buffer.setMarkdown(next.text);
+      setCompletion(null);
+      // After React has written the new value, or the caret would be put back
+      // where the old one ended.
+      requestAnimationFrame(() => {
+        const element = box.current;
+        if (element) element.setSelectionRange(next.caret, next.caret);
+      });
+    },
+    [buffer, completion],
+  );
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (candidates.length === 0) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlighted((at) => {
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        return (at + step + candidates.length) % candidates.length;
+      });
+      return;
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      const choice = candidates[highlighted];
+      if (!choice) return;
+      event.preventDefault();
+      take(choice);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setCompletion(null);
+    }
+  };
+
+  const listId = "editor-completions";
+  return (
+    <div className="editor__source-box">
+      <textarea
+        ref={box}
+        className="editor__source"
+        value={buffer.markdown}
+        spellCheck={false}
+        aria-label="Page source"
+        role="combobox"
+        aria-expanded={candidates.length > 0}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={
+          candidates.length > 0 ? `${listId}-${String(highlighted)}` : undefined
+        }
+        onChange={(event) => {
+          buffer.setMarkdown(event.target.value);
+          setCompletion(completionAt(event.target.value, event.target.selectionStart));
+          setHighlighted(0);
+        }}
+        onClick={reconsider}
+        onKeyUp={reconsider}
+        onBlur={() => setCompletion(null)}
+        onKeyDown={onKeyDown}
+      />
+      {candidates.length > 0 ? (
+        <ul className="editor__completions" id={listId} role="listbox" aria-label="Completions">
+          {candidates.map((candidate, i) => (
+            <li
+              key={candidate}
+              id={`${listId}-${String(i)}`}
+              role="option"
+              aria-selected={i === highlighted}
+              className={i === highlighted ? "editor__completion is-on" : "editor__completion"}
+              // `onMouseDown`, not `onClick`: the click would land after the
+              // textarea's blur has already closed the list.
+              onMouseDown={(event) => {
+                event.preventDefault();
+                take(candidate);
+              }}
+            >
+              {candidate}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -187,15 +437,15 @@ function Conflict({
       </p>
       <pre>{onDisk}</pre>
       <div className="editor__bar">
-        <button onClick={onTakeTheirs} disabled={busy}>
+        <Button onClick={onTakeTheirs} disabled={busy}>
           Load their version (discards my edits)
-        </button>
-        <button onClick={onSaveAsCopy} disabled={busy}>
+        </Button>
+        <Button onClick={onSaveAsCopy} disabled={busy}>
           {busy ? "Saving…" : "Save mine as a copy"}
-        </button>
-        <button className="danger" onClick={onKeepMine} disabled={busy}>
+        </Button>
+        <Button variant="danger" onClick={onKeepMine} disabled={busy}>
           Keep mine (overwrites theirs on the next save)
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -32,7 +32,8 @@ const COLUMNS: readonly Column[] = [
   { header: "Progress", width: "20%" },
   { header: "Size", width: "8%", align: "right" },
   { header: "Cited", width: "8%", align: "right" },
-  { header: "", align: "right" },
+  // uxpass 4.3 — named for the ear, blank for the eye.
+  { header: "Actions", hiddenHeader: true, align: "right" },
 ];
 
 /**
@@ -309,7 +310,19 @@ function SourceItem({
 
         <td>
           {cells.length > 0 ? (
-            <span className="chunks">
+            /* uxpass 4.3 — the bar was `<div>`s with nothing saying what they
+               were. It is a quantity that changes while nobody is touching it,
+               which is exactly what `progressbar` is for; the cells stay the
+               picture and the role carries the number. */
+            <span
+              className="chunks"
+              role="progressbar"
+              aria-label={`Transcribing ${row.title}`}
+              aria-valuemin={0}
+              aria-valuemax={row.progress?.total ?? 0}
+              aria-valuenow={row.progress?.done ?? 0}
+              aria-valuetext={`${String(row.progress?.done ?? 0)} of ${String(row.progress?.total ?? 0)} chunks`}
+            >
               {cells.map((cell, i) => (
                 <i key={i} className={cell === "pending" ? "chunk" : `chunk chunk--${cell}`} />
               ))}

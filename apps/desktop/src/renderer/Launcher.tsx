@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, FolderPlus } from "lucide-react";
 import type { Harness, Language } from "@open-wiki/access";
 import { Button } from "./ui/Button.js";
+import { Input } from "./ui/Input.js";
 import { HARNESS_CHOICES, toggleHarness } from "./harnesses.js";
 import type { KnownProject } from "../main/settings.js";
 import { bridge } from "./bridge.js";
@@ -13,6 +14,7 @@ import {
   directoryFor,
   kebabCase,
   openExisting,
+  relocateProject,
   type CreationScreen,
 } from "./open-existing.js";
 
@@ -94,6 +96,50 @@ export function Launcher(): React.JSX.Element {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
+
+  /**
+   * Say where a project went (uxpass 8.4).
+   *
+   * The same two answers **Open project…** has, because it is the same act seen
+   * from the other end: a directory chosen, and either it is a project or it is
+   * somewhere to make one. What is different is the stale entry, which
+   * `relocateProject` drops so the directory can be taken on under the name this
+   * project is actually called.
+   */
+  const locate = useCallback(
+    async (name: string) => {
+      setBusy(true);
+      try {
+        const attempt = await relocateProject(bridge(), name);
+        if (attempt.kind === "cancelled") return;
+        if (attempt.kind === "relocated") {
+          setError(null);
+          load();
+          return;
+        }
+        // Both refusals land here, and both land in the same place: the entry
+        // has already been dropped and cannot be put back, so the one thing
+        // left to do is name the directory, which registers it again.
+        setError(
+          attempt.kind === "not-a-project"
+            ? `${attempt.directory} is not a project — name it and it will be one.`
+            : `${name} could not be moved to ${attempt.directory}: ${attempt.reason}. ` +
+                `Its entry is gone — name the directory to list it again.`,
+        );
+        setCreatingAt(attempt.directory);
+        setCreating("form");
+        // The list has lost an entry either way, so it is redrawn rather than
+        // left showing the project this just forgot.
+        load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        load();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
 
   /**
    * Open a project this machine has never been told about (R2.1, R2.2, R2.4).
@@ -226,13 +272,18 @@ export function Launcher(): React.JSX.Element {
                     could only forget them. Forget is quiet on purpose: it drops
                     an entry and touches nothing on disk, so it must not carry
                     the weight of a delete. */}
-                <Button
-                  size="sm"
-                  onClick={() => void open(project.name)}
-                  disabled={!project.present}
-                >
-                  Open
-                </Button>
+                {project.present ? (
+                  <Button size="sm" onClick={() => void open(project.name)}>
+                    Open
+                  </Button>
+                ) : (
+                  /* uxpass 8.4 — a project that moved offered only Forget, so
+                     the one thing anybody wants to do with it was the one thing
+                     this screen could not do. */
+                  <Button size="sm" onClick={() => void locate(project.name)} disabled={busy}>
+                    Locate…
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => void forget(project.name)}>
                   Forget
                 </Button>
@@ -252,10 +303,19 @@ export function Launcher(): React.JSX.Element {
         </div>
       )}
 
+      {/* uxpass 8.3 — the cache sentence explains the list, so it is said where
+          there is a list. It appeared on the empty screen too, explaining the
+          behaviour of rows that could not exist. */}
+      {projects && projects.length > 0 ? (
+        <p className="launcher__foot">
+          This list is a cache rather than the truth, so a project whose directory moved is shown
+          here instead of quietly disappearing — <strong>Locate…</strong> is how you say where it
+          went.
+        </p>
+      ) : null}
       <p className="launcher__foot">
-        This list is a cache rather than the truth, so a project whose directory moved is shown here
-        instead of quietly disappearing. Running <code>ow</code> inside a project opens it too, the
-        same way <code>code .</code> does.
+        Running <code>ow</code> inside a project opens it too, the same way <code>code .</code>{" "}
+        does.
       </p>
     </div>
   );
@@ -375,8 +435,7 @@ function NewProject({
       </p>
       <label>
         Name
-        <input
-          className="editor__source"
+        <Input
           value={name}
           placeholder="fenix"
           autoFocus
@@ -394,9 +453,8 @@ function NewProject({
         Directory
         {/* R3.1 and R3.2 together: the chooser for the ordinary case, the box
             still typeable for a path somebody already has in hand. */}
-        <div className="editor__bar">
-          <input
-            className="editor__source"
+        <div className="field__row">
+          <Input
             value={directory}
             placeholder={defaultRoot || "C:\\projects\\fenix"}
             onChange={(event) => {
@@ -406,9 +464,9 @@ function NewProject({
               setDirectory(event.target.value);
             }}
           />
-          <button type="button" onClick={() => void choose()} disabled={busy}>
+          <Button onClick={() => void choose()} disabled={busy}>
             Choose…
-          </button>
+          </Button>
         </div>
       </label>
       <fieldset className="launcher__languages">
@@ -417,7 +475,7 @@ function NewProject({
           Where the convention is written, and it is committed — so it reaches everyone who clones
           this project. Choose every harness your team uses; you can add another later.
         </p>
-        <div className="editor__bar">
+        <div className="choice-row">
           {HARNESS_CHOICES.map((choice) => (
             <label key={choice.value}>
               <input
@@ -436,7 +494,7 @@ function NewProject({
           What transcription is told to expect, and what the generated entry file tells the agent to
           write pages in. The schema itself stays English, and this is changeable later.
         </p>
-        <div className="editor__bar">
+        <div className="choice-row">
           {LANGUAGES.map((option) => (
             <label key={option.value}>
               <input
@@ -450,13 +508,13 @@ function NewProject({
           ))}
         </div>
       </fieldset>
-      <div className="editor__bar">
-        <button onClick={() => void create()} disabled={busy}>
+      <div className="field__row">
+        <Button variant="primary" onClick={() => void create()} disabled={busy}>
           {busy ? "Creating…" : "Create"}
-        </button>
-        <button onClick={onCancel} disabled={busy}>
+        </Button>
+        <Button onClick={onCancel} disabled={busy}>
           Cancel
-        </button>
+        </Button>
       </div>
     </section>
   );

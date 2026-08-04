@@ -71,6 +71,44 @@ export function listMove(chord: Chord, index: number, count: number): number | n
 }
 
 /**
+ * Where an arrow key moves inside the rail (uxpass 4.5).
+ *
+ * The markup has claimed `role="tablist"` since the shell was built, and the
+ * pattern that role names was never implemented: four tabs were four separate
+ * tab stops, so reaching the reader from the titlebar cost four presses of Tab
+ * through controls the arrows were supposed to move between.
+ *
+ * **It wraps, where {@link listMove} does not**, and the difference is the
+ * length of the thing. Four tabs are a ring you can feel the shape of in one
+ * pass; two hundred pages are a list you cannot feel the end of if holding Down
+ * silently returns you to the top. The ARIA tablist pattern wraps for the same
+ * reason.
+ *
+ * Both axes are accepted. The role's default orientation is horizontal and the
+ * plan asks for Left/Right, but this rail is drawn as a column and Up/Down is
+ * what a hand reaches for when looking at one — so the markup declares
+ * `aria-orientation="vertical"` and this answers to either.
+ */
+export function railMove(chord: Chord, index: number, count: number): number | null {
+  if (count <= 0) return null;
+  const wrap = (n: number): number => ((n % count) + count) % count;
+  switch (chord.key) {
+    case "ArrowRight":
+    case "ArrowDown":
+      return wrap(index + 1);
+    case "ArrowLeft":
+    case "ArrowUp":
+      return wrap(index - 1);
+    case "Home":
+      return 0;
+    case "End":
+      return count - 1;
+    default:
+      return null;
+  }
+}
+
+/**
  * Whether Escape here should close the overlay the shell is holding.
  *
  * **Only for the one overlay that is not a modal.** The settings sheet and the
@@ -85,6 +123,24 @@ export function listMove(chord: Chord, index: number, count: number): number | n
  */
 export function closesOverlay(chord: Chord, overlayKind: string | null, inField: boolean): boolean {
   return chord.key === "Escape" && !inField && overlayKind === "provenance";
+}
+
+/**
+ * Whether this keystroke means *follow the link that has the focus* (uxpass 3.1).
+ *
+ * Enter and Space, which is what the platform does for a real `<a href>` and a
+ * `<button>` respectively. `markdown.ts` mints no `href` on purpose — a scheme
+ * is something a page author can forge and `data-ow-*` is not — and the price of
+ * that decision is that the activation the browser would have given for free has
+ * to be given here instead. It was not, so every wikilink and every citation in
+ * the reader was mouse-only.
+ *
+ * A modifier is not this: `Ctrl+Enter` and friends belong to whatever else is
+ * listening for them.
+ */
+export function activatesLink(chord: Chord): boolean {
+  if (chord.ctrlKey === true || chord.metaKey === true || chord.altKey === true) return false;
+  return chord.key === "Enter" || chord.key === " ";
 }
 
 /** Whether the focus is somewhere a keystroke belongs to the control. */

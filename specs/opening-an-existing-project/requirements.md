@@ -64,6 +64,29 @@ printing success is not a trade R1.1 is worth.
   directly inside the default location that it does not already know.
 - **R2.7** (ADDED) While the registry holds nothing, the launcher shall still show its list and
   both doors, and shall reach the guided first run from the one that creates.
+- **R2.8** (ADDED) Where a known project has moved, the launcher shall offer choosing where
+  it went, and shall point the registry at the directory chosen.
+- **R2.9** (ADDED) If the chosen directory cannot be taken on, then the launcher shall offer
+  naming it, rather than leave the project listed nowhere.
+
+R2.8 finishes what R2.1's _shown, not hidden_ started. A project marked **not
+where it was** offered only **Forget**, so the one thing anybody wants to do with
+a moved project — say where it went — was the one thing the screen could not do,
+and the entry was a dead end kept on purpose. The stale entry is dropped before
+the chosen directory is taken on, because R2.5's naming derives a _free_ name and
+the entry that moved is holding the one the project is called; a pointer that
+already resolves to nothing is not a thing to protect.
+
+R2.9 is the price of that order, and a code review found it. Once the entry is
+dropped there is no putting it back — the old directory is gone, which is the
+whole reason anybody pressed the button — so a refusal that only printed itself
+would leave the project listed nowhere and reachable by nothing, which is a
+worse dead end than the one R2.8 removed. `adoptProject` refuses a directory it
+cannot derive a name from, so this is reachable and not hypothetical. Both
+refusals — not a project, and could not be named — carry the directory to the
+same place: the create form, where naming it registers it again. Creating over a
+directory that is already a project changes nothing it holds (R1.3), so that
+step is a re-registration rather than a scaffold.
 
 R2.6 narrows R3.4's "nothing enumerates that location", which was written one
 change earlier and is no longer true. What it does **not** narrow is

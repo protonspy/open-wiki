@@ -13,3 +13,9 @@
 - [x] 2.2 (Unit) The icon rail: one entry per pane with its Lucide icon and name, the open one marked, and the project's content language at the foot — R4.1, R4.2, R4.3
 - [x] 2.3 (Unit) The status bar: the project's directory, the findings count as the way into the checks pane, and Undo last write — including what it says when there is nothing to undo — R5.1, R5.2, R5.3, R5.4, R5.5
 - [x] 2.4 (Unit) Assemble the three into the shell `App` renders, replacing the flat row of text buttons over a single column — R1.2, R4.2
+
+## 9 · The UX pass (`plans/desktop-ui-uxpass.md`)
+
+- [x] 9.1 (Unit) Make the rail one tab stop with arrow movement, per the `tablist` its markup already claimed — R4.4
+- [x] 9.2 (Unit) Run the checks when the project opens and after every write, so the bar says something about the wiki's health before anybody goes looking — R5.2
+- [x] 9.3 (Unit) Tell a run in flight and a run that failed from a count, in the bar — R5.6

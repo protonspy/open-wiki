@@ -18,6 +18,14 @@ export type StepId = "project" | "harness" | "language" | "transcription" | "don
 export interface Step {
   id: StepId;
   title: string;
+  /**
+   * One or two words for the stepper (uxpass 8.6).
+   *
+   * The heading is a sentence, and a row of five sentences is not a stepper. It
+   * lives on the step rather than in a lookup beside the component, so a step
+   * added later cannot arrive without one.
+   */
+  short: string;
   /** What this step is for, in one sentence. */
   detail: string;
 }
@@ -25,6 +33,7 @@ export interface Step {
 export const STEPS: readonly Step[] = [
   {
     id: "project",
+    short: "Project",
     title: "Create your first project",
     detail:
       "A project is a directory. Its own sources, its own pages, its own history — and the " +
@@ -32,6 +41,7 @@ export const STEPS: readonly Step[] = [
   },
   {
     id: "harness",
+    short: "Harnesses",
     title: "Which harnesses will read this project?",
     detail:
       "The convention is written into the project and committed, so it reaches everyone who " +
@@ -40,6 +50,7 @@ export const STEPS: readonly Step[] = [
   },
   {
     id: "language",
+    short: "Language",
     title: "What language should the pages be written in?",
     detail:
       "The transcription hint, and what the generated CLAUDE.md tells your agent to write in. " +
@@ -47,6 +58,7 @@ export const STEPS: readonly Step[] = [
   },
   {
     id: "transcription",
+    short: "Transcription",
     title: "How should meetings be transcribed?",
     detail:
       "The only credential this application holds. Skip it if you are not recording anything " +
@@ -54,6 +66,7 @@ export const STEPS: readonly Step[] = [
   },
   {
     id: "done",
+    short: "Done",
     title: "That is everything",
     detail:
       "The pages are your agent's to write: open the project in your harness and ask it for one. " +
@@ -65,6 +78,20 @@ export const STEPS: readonly Step[] = [
 export function nextStep(id: StepId): StepId | null {
   const at = STEPS.findIndex((step) => step.id === id);
   return STEPS[at + 1]?.id ?? null;
+}
+
+/**
+ * Which classes a step in the stepper wears (uxpass 8.6).
+ *
+ * Three states — done, here, still to come — because that is what a stepper is
+ * for: not *where am I* alone, which the heading already says, but *how much of
+ * this is left*. Computed here rather than in the JSX for the reason everything
+ * else in this renderer is: a decision inside a component is one no test reaches.
+ */
+export function stepClass(index: number, current: number): string {
+  if (index < current) return "stepper__step stepper__step--done";
+  if (index === current) return "stepper__step stepper__step--here";
+  return "stepper__step";
 }
 
 /** How far along, for the progress line. 1-based, because a person reads it. */
