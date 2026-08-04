@@ -45,7 +45,17 @@ export type RelocateAttempt =
   /** Found: the registry now points at where it actually is. */
   | { kind: "relocated"; name: string }
   /** The chosen directory is not a project — offer to make one there. */
-  | { kind: "not-a-project"; directory: string };
+  | { kind: "not-a-project"; directory: string }
+  /**
+   * The chosen directory could not be taken on, and the entry is already gone.
+   *
+   * Carried rather than thrown, because the recovery is the same screen
+   * `not-a-project` reaches: naming the directory. `adoptProject` refuses a
+   * directory it cannot derive a name from, and by then `forgetProject` has run
+   * — so a caller that only printed the error would leave the project listed
+   * nowhere, which is worse than the dead end this whole task removed.
+   */
+  | { kind: "could-not-take-it"; directory: string; reason: string };
 
 /** The three calls a relocate takes, and nothing else of the bridge. */
 export interface RelocateBridge extends OpenExistingBridge {
@@ -68,15 +78,31 @@ export interface RelocateBridge extends OpenExistingBridge {
  * what is real.
  *
  * The chooser is answered *first*, so cancelling forgets nothing.
+ *
+ * **And every way the adopt can end leaves somewhere to go.** Once the entry is
+ * dropped there is no putting it back — the old directory is gone, which is the
+ * whole reason we are here — so a refusal must not be reported and abandoned.
+ * Both refusals carry the directory, and the caller takes the same step for
+ * either: the create form, on that directory, where naming it registers it
+ * again. Creating over a directory that is already a project changes nothing it
+ * holds (R1.3), so that step is a re-registration rather than a scaffold.
  */
 export async function relocateProject(ow: RelocateBridge, name: string): Promise<RelocateAttempt> {
   const directory = await ow.chooseDirectory();
   if (directory === null) return { kind: "cancelled" };
   await ow.forgetProject(name);
-  const outcome = await ow.openDirectory(directory);
-  return outcome.kind === "adopted"
-    ? { kind: "relocated", name: outcome.project.name }
-    : { kind: "not-a-project", directory: outcome.directory };
+  try {
+    const outcome = await ow.openDirectory(directory);
+    return outcome.kind === "adopted"
+      ? { kind: "relocated", name: outcome.project.name }
+      : { kind: "not-a-project", directory: outcome.directory };
+  } catch (e) {
+    return {
+      kind: "could-not-take-it",
+      directory,
+      reason: e instanceof Error ? e.message : String(e),
+    };
+  }
 }
 
 /**

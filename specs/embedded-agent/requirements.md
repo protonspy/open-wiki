@@ -127,6 +127,8 @@ lands.
   proposal rather than apply a stale edit.
 - **R5.6** (ADDED) When a write pauses, the chat pane shall move the focus to the decision
   and shall bind approving and rejecting to the keyboard.
+- **R5.8** (ADDED) While the user is editing a paused write's arguments, the chat pane shall not
+  act on the approve or reject shortcut.
 - **R5.7** (ADDED) While a write is paused, the chat pane shall not accept a message, and
   shall say why in place of the composer's prompt.
 
@@ -137,6 +139,15 @@ deciding whether a write lands. R5.6 and R5.7 are the rest of that same
 argument: an approval loop is only worth having if answering it is cheap, and it
 was mouse-only, unfocused, and interruptible by a message sent into a run that
 had already stopped.
+
+R5.8 is R5.6's own hazard, found by a security review of the change that added
+it. The edit box of R5.4 is inside the card the shortcut is bound on, so a
+keystroke in it reaches the shortcut — and both chords already mean something in
+a text field. `Ctrl+Enter` is the submit reflex, and it approved the **original**
+proposal while discarding the edit the user opened the box to make;
+`Ctrl+Backspace` is delete-previous-word, and it rejected the whole write. Either
+one lands or discards a write the human did not decide on, which is the single
+thing R5.1 through R5.5 exist to prevent.
 
 ## R6 · The line is proved, not configured
 

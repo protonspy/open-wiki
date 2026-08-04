@@ -117,11 +117,23 @@ export function Launcher(): React.JSX.Element {
           load();
           return;
         }
-        setError(`${attempt.directory} is not a project — name it and it will be one.`);
+        // Both refusals land here, and both land in the same place: the entry
+        // has already been dropped and cannot be put back, so the one thing
+        // left to do is name the directory, which registers it again.
+        setError(
+          attempt.kind === "not-a-project"
+            ? `${attempt.directory} is not a project — name it and it will be one.`
+            : `${name} could not be moved to ${attempt.directory}: ${attempt.reason}. ` +
+                `Its entry is gone — name the directory to list it again.`,
+        );
         setCreatingAt(attempt.directory);
         setCreating("form");
+        // The list has lost an entry either way, so it is redrawn rather than
+        // left showing the project this just forgot.
+        load();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        load();
       } finally {
         setBusy(false);
       }

@@ -154,6 +154,45 @@ describe("relocateProject (8.4)", () => {
     });
   });
 
+  it("still has somewhere to go when taking the directory on throws", async () => {
+    // `adoptProject` refuses a directory it cannot derive a name from, and by
+    // then the entry is gone and cannot be put back — the old directory is
+    // missing, which is the whole reason we are here. Reporting and stopping
+    // would leave the project listed nowhere, which is worse than the dead end
+    // this task removed.
+    const ow: RelocateBridge = {
+      chooseDirectory: () => Promise.resolve("D:/---"),
+      forgetProject: () => Promise.resolve(),
+      openDirectory: () => Promise.reject(new Error("cannot name a project after D:/---")),
+    };
+    await expect(relocateProject(ow, "fenix")).resolves.toEqual({
+      kind: "could-not-take-it",
+      directory: "D:/---",
+      reason: "cannot name a project after D:/---",
+    });
+  });
+
+  it("carries the directory on both refusals, because both end at the same screen", async () => {
+    const refused = await relocateProject(bridge("D:/empty", false), "fenix");
+    const threw = await relocateProject(
+      {
+        chooseDirectory: () => Promise.resolve("D:/---"),
+        forgetProject: () => Promise.resolve(),
+        openDirectory: () => Promise.reject(new Error("no")),
+      },
+      "fenix",
+    );
+    for (const attempt of [refused, threw]) {
+      expect(attempt).toHaveProperty("directory");
+    }
+    // And the launcher takes the same step for either: name it, which registers
+    // it again. Creating over a directory that is already a project changes
+    // nothing it holds (R1.3).
+    const launcher = source("Launcher.tsx");
+    expect(launcher).toContain('setCreating("form");');
+    expect(launcher).toContain("Its entry is gone — name the directory to list it again.");
+  });
+
   it("is what the row offers in place of Open", () => {
     const launcher = source("Launcher.tsx");
     expect(launcher).toContain("Locate…");

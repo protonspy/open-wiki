@@ -77,21 +77,28 @@ export function useEditorBuffer({
    * disagreement is 8.8's to report at save time, with both versions in hand —
    * silently taking one of them is the loss that whole mechanism exists to
    * prevent.
+   *
+   * **`editing` alone, and not the slug.** Keying this on `editing ? slug :
+   * undefined` reads as the same thing and is not: a watcher reload that *fails*
+   * sets `page` to null, so the key goes `"fenix"` → `undefined` → `"fenix"` and
+   * the effect fires a second time, over a buffer somebody is typing into. It is
+   * a narrow window and it is exactly the silent loss above, so it is closed
+   * rather than noted. Nothing else can move `editing` under an open session:
+   * every path that leaves the page goes through the guard in `App`.
    */
-  const session = editing ? slug : undefined;
   const seed = useRef(opened);
   seed.current = opened;
   useEffect(() => {
-    if (session === undefined) return;
+    if (!editing) return;
     setMarkdown(seed.current);
     setBase(seed.current);
     setProblems([]);
     setConflict(null);
-  }, [session]);
+  }, [editing]);
 
   /** The ids a citation may name (2.5), asked for once per session. */
   useEffect(() => {
-    if (session === undefined || !hasBridge()) return;
+    if (!editing || !hasBridge()) return;
     let live = true;
     void bridge()
       .sources()
@@ -104,7 +111,7 @@ export function useEditorBuffer({
     return () => {
       live = false;
     };
-  }, [session]);
+  }, [editing]);
 
   /**
    * The third answer to a conflict (6.4): keep both, and name the copy.

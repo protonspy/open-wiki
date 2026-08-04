@@ -11,7 +11,7 @@ import {
   sendUser,
   type ChatState,
 } from "../src/renderer/chat-model.js";
-import { DIFF_LIMIT, sideOf, tokenize, wordDiff } from "../src/renderer/diff.js";
+import { DIFF_CHAR_LIMIT, DIFF_LIMIT, sideOf, tokenize, wordDiff } from "../src/renderer/diff.js";
 
 /**
  * The chat pane (`plans/desktop-ui-uxpass.md`, group 6).
@@ -183,6 +183,30 @@ describe("wordDiff (6.3)", () => {
     const atLimit = Array.from({ length: DIFF_LIMIT }, () => "w").join("");
     expect(wordDiff(atLimit, atLimit)).not.toBeNull();
   });
+
+  it("refuses on total length too, not only on how many tokens there are", () => {
+    // The token cap bounds the table's *dimensions*; each cell compares two
+    // tokens for equality, which costs a token's length rather than a constant.
+    // A few hundred very long tokens stay under `DIFF_LIMIT` and still make the
+    // walk arbitrarily expensive — and these strings are the agent's, on the
+    // one surface whose job is to be available before a write lands.
+    const long = "x".repeat(DIFF_CHAR_LIMIT + 1);
+    expect(wordDiff(long, "short")).toBeNull();
+    expect(wordDiff("short", long)).toBeNull();
+  });
+
+  it("refuses before it allocates anything", () => {
+    // `tokenize` on a megabyte is already the work the cap exists to avoid.
+    const huge = "y ".repeat(DIFF_CHAR_LIMIT);
+    const started = performance.now();
+    expect(wordDiff(huge, huge)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
+  it("still answers at the character cap", () => {
+    const atLimit = "z".repeat(DIFF_CHAR_LIMIT);
+    expect(wordDiff(atLimit, atLimit)).not.toBeNull();
+  });
 });
 
 describe("sideOf (6.3)", () => {
@@ -282,6 +306,23 @@ describe("the approval card, as it ships (6.5)", () => {
 
   it("binds the two decisions where the focus is", () => {
     expect(chat).toContain("const decision = interruptShortcut(event);");
+  });
+
+  it("does not decide anything while the proposal is being edited", () => {
+    // The edit textarea is a descendant of the card, so a keydown in it bubbles
+    // to this handler — and both chords mean something else inside a text
+    // field. `Ctrl+Enter` is the submit reflex and would have approved the
+    // *original* proposal, discarding the edit somebody opened the box to make;
+    // `Ctrl+Backspace` is delete-previous-word and would have rejected the whole
+    // write instead of deleting a word. That is the one failure this surface
+    // exists to prevent, arriving through the shortcut meant to speed it up.
+    const handler = chat.slice(
+      chat.indexOf("const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>)"),
+    );
+    expect(handler.slice(0, 200)).toContain("if (editing !== null) return;");
+    expect(handler.indexOf("if (editing !== null) return;")).toBeLessThan(
+      handler.indexOf("interruptShortcut(event)"),
+    );
   });
 
   it("says what the chords are, where they are used", () => {

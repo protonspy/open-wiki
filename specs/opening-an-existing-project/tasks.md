@@ -47,3 +47,4 @@
 ## 9 · The UX pass (`plans/desktop-ui-uxpass.md`)
 
 - [x] 9.1 (Unit) Offer **Locate…** on a project that is not where it was, dropping the stale entry before taking the chosen directory on — R2.8
+- [x] 9.2 (Unit) Carry the directory on a refused relocate and offer naming it, so the entry it already dropped is not lost with nowhere to go — R2.9

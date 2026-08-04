@@ -28,6 +28,23 @@ export interface DiffSpan {
  */
 export const DIFF_LIMIT = 1200;
 
+/**
+ * And above this many characters on either side, for the same reason.
+ *
+ * **The token cap alone bounds the table's dimensions, not the work.** Each cell
+ * compares two tokens for equality, which costs the length of a token rather
+ * than a constant — so 1,199 tokens of a thousand characters each stays under
+ * `DIFF_LIMIT` and still makes the walk arbitrarily expensive. It matters here
+ * more than it would elsewhere: these two strings are the *agent's*, the agent
+ * reads pages somebody else may have written, and the thing that would freeze is
+ * the approval card — the one surface whose whole job is to be available before
+ * a write lands.
+ *
+ * Generous enough that no edit a person would read word by word hits it: past
+ * 40,000 characters a side, marking the difference is not what the card is for.
+ */
+export const DIFF_CHAR_LIMIT = 40_000;
+
 /** Words and the whitespace between them, so the text can be rebuilt exactly. */
 export function tokenize(text: string): string[] {
   return text.split(/(\s+)/).filter((token) => token !== "");
@@ -44,6 +61,9 @@ export function tokenize(text: string): string[] {
  * sides whole and says why.
  */
 export function wordDiff(before: string, after: string): DiffSpan[] | null {
+  // Length first, before anything is allocated: `tokenize` on a megabyte is
+  // already work, and the cap exists to not do work.
+  if (before.length > DIFF_CHAR_LIMIT || after.length > DIFF_CHAR_LIMIT) return null;
   const a = tokenize(before);
   const b = tokenize(after);
   if (a.length > DIFF_LIMIT || b.length > DIFF_LIMIT) return null;

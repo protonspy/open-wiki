@@ -87,6 +87,22 @@ describe("the dirty state (2.3)", () => {
   const editor = source("Editor.tsx");
   const app = source("App.tsx");
 
+  it("fills the buffer when the session opens, and never again", () => {
+    // Keyed on `editing` alone. `editing ? slug : undefined` reads as the same
+    // thing and is not: a watcher reload that *fails* sets `page` to null, so
+    // the key goes "fenix" → undefined → "fenix" and the effect fires a second
+    // time over a buffer somebody is typing into — which is the silent loss the
+    // whole staleness mechanism exists to prevent.
+    const seeding = editor.slice(editor.indexOf("if (!editing) return;"));
+    expect(seeding.slice(0, 200)).toContain("setMarkdown(seed.current);");
+    expect(seeding.slice(0, 260)).toContain("}, [editing]);");
+    expect(editor).not.toContain("const session = editing ? slug : undefined;");
+  });
+
+  it("reads the page through a ref, so a reload is not a dependency", () => {
+    expect(editor).toContain("seed.current = opened;");
+  });
+
   it("is the comparison the staleness check already made", () => {
     // `base` exists for 8.8; *changed since I opened it* is the same question
     // asked of the buffer instead of the disk, so it costs nothing to answer.

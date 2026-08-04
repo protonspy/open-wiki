@@ -367,8 +367,25 @@ function InterruptCard({
    */
   useEffect(() => card.current?.focus(), []);
 
-  /** The keyboard for a repeated approve loop (uxpass 6.5). */
+  /**
+   * The keyboard for a repeated approve loop (uxpass 6.5).
+   *
+   * **Only while the card is showing its decision, never while it is being
+   * edited.** The edit textarea is a descendant of this card, so a keydown in it
+   * bubbles here — and both chords mean something else inside a text field.
+   * `Ctrl+Enter` is the submit reflex, and it would have approved the *original*
+   * proposal, silently discarding the edit somebody opened the box specifically
+   * to make; `Ctrl+Backspace` is delete-previous-word, and it would have rejected
+   * the whole write instead of deleting a word.
+   *
+   * That is the one failure this surface exists to prevent — a write landing
+   * without the human having read what landed — reintroduced by the shortcut
+   * meant to make reviewing cheaper. Scoped rather than fixed in the textarea,
+   * because the rule is about which state the card is in, and a
+   * `stopPropagation` in one child leaves the next child to remember.
+   */
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (editing !== null) return;
     const decision = interruptShortcut(event);
     if (decision === null) return;
     event.preventDefault();

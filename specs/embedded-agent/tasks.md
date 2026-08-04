@@ -94,3 +94,4 @@
 - [x] 9.3 (Unit) Mark what actually differs between `old_string` and `new_string`, word by word — R5.2
 - [x] 9.4 (Unit) Move the focus to the decision when a write pauses, and bind approve and reject — R5.6
 - [x] 9.5 (Unit) Refuse a message while a run is paused, and say why in place of the composer's prompt — R5.7
+- [x] 9.6 (Unit) Scope the approve and reject shortcuts to the decision, so a keystroke inside the edit box cannot land or discard the write it was opened to change — R5.8
