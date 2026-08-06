@@ -2,6 +2,17 @@
 
 What changed in the wiki, newest first.
 
+## 2026-08-06
+
+- Moved every page into `wiki/pages/`, leaving `index.md` and `changelog.md` one
+  level up in `docs/wiki/`. Pages are content; the index and changelog are the wiki's
+  fixed documents, and keeping them out of `pages/` is what lets the validator tell
+  one from the other without matching filenames. Wikilinks are unaffected — the slug
+  is the filename, never the path, so `[[what-a-harness-loads]]` still resolves to
+  `pages/what-a-harness-loads.md`. `scc` v0.13.0 enforces the split (`wiki.legacy-page`
+  for any page left at the top level); the skills, `knowledge-base.md` rule, and
+  `CLAUDE.md` layout were updated to match.
+
 ## 2026-08-03
 
 - Recorded in [[what-a-harness-loads]] that **Claude Code reads a project's hooks from
