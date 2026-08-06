@@ -1,69 +1,84 @@
 {
   "files": [
     {
-      "hash": "079b5064b669b85f4e669af87f970806edf260a7d62b1d1df7c095c430a8715a",
+      "hash": "280a57c531ba9280674234b5fdb5fa52a4e9faa400e5798e2457f3a5211b2154",
       "path": ".claude/agents/code-review.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "3d0c6d2aa311bdcd19627cf3e4534689c2686e8ce074f97aec12b47abca85a41",
+      "hash": "4b999fafb8838f627ed2ba1081ade2dc455c24d94e9cead602fc9854f8eb2f3f",
       "path": ".claude/agents/security-review.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "9d5f7c92e706247690fdbbed4fa74a34b1c10ed790f3984d3e593e591e3a8f24",
       "path": ".claude/commands/scc-adr.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "6ee3a8ce85c76c6f3c1d83fa1124f092bbe37793fea01ab79dabe9986ddc23d9",
       "path": ".claude/commands/scc-codewiki.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "6139363a873cc0ab8909351290bb2ed974cb8da1d61fe255e6fbe500f4bd34b5",
       "path": ".claude/commands/scc-glossary.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "9256bedca55796b65fafb8dbd88d3fba12fecde76ff78dd44017184bbdd0080e",
+      "hash": "bdc03b3ff87ffa6b881c6bace0d2b7ffe6373af69d81a489520a62e453dce6ee",
       "path": ".claude/commands/scc-plan-run.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "2a7e1f3e6dd1be62f81e2ceedf0bd6c7361e83fc49bbfdedcbdf4825a2223208",
       "path": ".claude/commands/scc-prd.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "304b1ce1ec486edc0cffb85671810c19ca4343a8ddb048805cdbd97755633e35",
       "path": ".claude/commands/scc-stack.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "f0bba07b8e2cd1d67dcadd827843e21316de1a2c870171d7c13ad72fd58f5697",
       "path": ".claude/commands/scc-wiki.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "a47956d70f68539fbb43d079314f867d335d96551bac70d557cde3db6381f125",
+      "hash": "4d497f72b2fe6d596351b36c00d31482eb52aa10a4c89c3ab09c5bd9360d9cb8",
+      "path": ".claude/rules/artifacts.md",
+      "version": "14"
+    },
+    {
+      "hash": "6d277b3c9be7f444857b4c15afc4d2d57b1fc4502ab643a212b8725acf6a950f",
       "path": ".claude/rules/autonomy.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "15b3b6b9df8729e45d3a6148010a908daab9463efcbd88bda8dee45e0bbd2c2f",
+      "hash": "8eee2d450faada83295a4a04e5a1267bf5f717df9e7ac7da5fddd7649c666499",
+      "path": ".claude/rules/caveman.md",
+      "version": "14"
+    },
+    {
+      "hash": "82fc6b4c3406daaee2a83d928c9347c9a3e03011d425a5f582a1b34a5860c566",
+      "path": ".claude/rules/code-search.md",
+      "version": "14"
+    },
+    {
+      "hash": "b3e98a7f84e580d2c7f941a1f3d19a4434907c4d943ec413fa7788257b646b18",
       "path": ".claude/rules/delivery.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "0e3b478266551be1fcc61c3f4ad4a4b4f1fb9d2b8aa45047cf80fb507c2ea352",
+      "hash": "3ddb08d18b28db2487aa654777e38588c81b0cabf9ea5292ac9eb05ccf52cdb2",
       "path": ".claude/rules/knowledge-base.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "6b9f2635ba2c9b46e4e8b163dba32ef8dd939d4b61b73218f9c1a98d3b783894",
+      "hash": "79d5cbf1ab7fd09d26e9ea9119f3f283615467dbc35d3a4b1d4a030044b3598f",
       "path": ".claude/rules/methodology.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "075870d305b63294935b474d307ae3a01e704ddb0e97e73a3da26788c0867f2f",
@@ -71,59 +86,59 @@
       "version": "3"
     },
     {
-      "hash": "529f5314d30963cc5982578ea72fce4e3e1ce0cf5385fcfbf9917bdd6e3f129b",
+      "hash": "c8502ace5978c7b9c0543c49ebb5c9550584b1a3405e12c0217b595647e27722",
       "path": ".claude/rules/routing.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "c3d29267cfa27939fa67b57bf5d0b4d5a60b0145bdd162bcc2ecf1ecd46e9475",
+      "hash": "9d2cb860de6426ac350124d1b83dd75783ad6b00c583fe3d9590eff9a6f33cf8",
       "path": ".claude/rules/specs.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "a4e8435e48146de0273c6bb8ab90251f201501a59f07de5fbc5e03d8814ec3a3",
+      "hash": "350bfe758d894f0318517fa8000ce7160094ef71e15bd41e3771b492de14fcf6",
       "path": ".claude/rules/tasks.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "42b6b2a6ea8a99c41d70217791834960052e84872d7c1cde6628d4867b8a1dff",
+      "hash": "67817671b75ab832f8b3c7dd0d25d59289ed688da31cf78931ce3de56918399a",
       "path": ".claude/rules/verification.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "d79136eed898f20dfb3db233ab4deb4021aa1a7b3350201c06a6d7129e48bb15",
       "path": ".claude/skills/adr/SKILL.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "4cc0b1ac151610cfb6a9e4cf5735d44b1351d9bc24c5ff53ba2aac01035cec12",
       "path": ".claude/skills/codewiki/SKILL.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "88b152ef75a40b6691554730d86a58e240152ed7683333a8638fec5107474f09",
       "path": ".claude/skills/glossary/SKILL.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "bc184200892ee9f24e0daa731c84b98af22f8f36b28d2bdc400f2aca823e172b",
+      "hash": "c05706aaadfb3bd8bd8ea575b9bc6067ed7a5f823e4c0da6974972d388f8ef6a",
       "path": ".claude/skills/plan-run/SKILL.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "5523805330aa6de65d71344aa9b2570136fe453f31726128da9d1d43901b9d0e",
+      "hash": "1e9206e87770898bc7382348db30f6446f63c8716770669c1d84f0df9b413275",
       "path": ".claude/skills/prd/SKILL.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "865f88cef91fa59f6a42650ef1c518141f662d194058caf5fa8a1cc6093bc1dc",
       "path": ".claude/skills/stack/SKILL.md",
-      "version": "8"
+      "version": "14"
     },
     {
-      "hash": "41c24d2bb0ff8e3c22306ac62a5ff78b3316d0aa870cd8abde64609626e0e14d",
+      "hash": "15aa510d8b7af6f7b72c1093ae772b66135c63e8192af1d0662f1e17de232765",
       "path": ".claude/skills/wiki/SKILL.md",
-      "version": "8"
+      "version": "14"
     },
     {
       "hash": "22e98c53ca69d2b6be0e29b5e46507fda9223c32f6b15b9af2872a4d858e4fc8",
@@ -132,5 +147,5 @@
     }
   ],
   "harness": "claude",
-  "scc": "v0.8.0"
+  "scc": "v0.13.0"
 }

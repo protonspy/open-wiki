@@ -21,7 +21,9 @@ commands), knowledge-base (something learned, or a decision made).
 ```
 specs/<feature>/   requirements.md · design.md · tasks.md
 plans/<name>.md    structure, plus a checklist and/or spec references
-docs/              knowledge base — wiki, adr, codewiki, glossary, stack
+docs/wiki/         index.md · changelog.md — the wiki's fixed documents
+docs/wiki/pages/   one page per concept, linked with [[wikilinks]] and reached from index.md
+docs/              the rest of the knowledge base — adr, codewiki, glossary, stack
 .claude/rules/     the methodology above
 .claude/skills/    how to author each part of docs/ — invoked when it applies
 .claude/commands/  the same skills on demand: /scc-wiki, /scc-adr, /scc-prd, …
@@ -52,3 +54,19 @@ Covered:
 Meta: `rtk gain [--history]`, `rtk discover`, `rtk proxy <cmd>` (no filtering), `rtk init [--global]`
 Caveat: `rtk grep` with `-c -l -L -o -Z` runs raw.
 <!-- /rtk-instructions -->
+
+<!-- scc:codegraph-instructions v1 -->
+## CodeGraph
+Ask the symbol graph before reading files. "Who calls this", "what breaks if I change it",
+"where does this concept live" are one command here and a dozen reads otherwise.
+
+- `scc graph explore "<question>"` — the relevant symbols' source plus the call paths between them. Start here.
+- `scc graph query <name> [--kind function|class] [--limit N]` — find a symbol by name.
+- `scc graph status` — what the graph holds. `--check` exits 2 when there is none.
+- `scc graph sync` — re-index after you have written code you then need to search.
+- `scc graph build [--force]` — first index, or a full rebuild when the graph has gone wrong.
+
+`scc launch` indexes before the session starts, so the graph is current at turn one.
+It goes stale as you edit: sync before searching for something you just wrote.
+The graph is CodeGraph's — never edit `.codegraph/`, and never commit it.
+<!-- /scc:codegraph-instructions -->
