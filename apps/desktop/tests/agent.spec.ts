@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { isSandboxBackend } from "deepagents";
+import { ChatGroq } from "@langchain/groq";
 import { isCommand } from "@langchain/langgraph";
 import {
   AGENT_TOOL_NAMES,
@@ -261,6 +262,38 @@ describe("createEmbeddedAgent — construction (R2.1, R2.5, R4.4, R7.1)", () => 
         modelName: DEFAULT_MODEL,
       }),
     ).not.toThrow();
+  });
+
+  it("hides gpt-oss reasoning so it never round-trips as a rejected content block", () => {
+    // gpt-oss is a reasoning model. Groq's default reasoning format returns the
+    // chain-of-thought as a content block; ChatGroq stores it verbatim and sends
+    // it back on the next turn, and Groq rejects an assistant message whose
+    // `content` is not a string or a `text` block
+    // ("messages.N.content.0.type : value is not one of the allowed values
+    // ['text']"). `hidden` returns only the final answer as a plain string.
+    const { model } = createEmbeddedAgent({
+      projectRoot: root,
+      apiKey: "not-a-real-key",
+      modelName: DEFAULT_MODEL,
+    });
+    expect(model).toBeInstanceOf(ChatGroq);
+    expect((model as ChatGroq).reasoningFormat).toBe("hidden");
+  });
+
+  it("leaves an injected model untouched, including its reasoning format", () => {
+    // The proof tests inject a scripted model; whatever the caller passes is
+    // returned as-is, so a model configured for a test is not silently switched
+    // to `hidden`.
+    const injected = new ChatGroq({ model: DEFAULT_MODEL, apiKey: "not-a-real-key" });
+    injected.reasoningFormat = "raw";
+    const { model } = createEmbeddedAgent({
+      projectRoot: root,
+      apiKey: "not-a-real-key",
+      modelName: DEFAULT_MODEL,
+      model: injected,
+    });
+    expect(model).toBe(injected);
+    expect((model as ChatGroq).reasoningFormat).toBe("raw");
   });
 });
 

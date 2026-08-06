@@ -65,6 +65,11 @@ lands.
   `/models` list as the key's validation, persist the returned list and the user's
   chosen model in the application data directory keyed by project, and shall not
   write either into the project directory or the repository.
+- **R2.8** (ADDED) The desktop application shall restrict the agent's model to an allowlist
+  — `allam-2-7b`, `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.6-27b` — so the
+  settings screen offers, and the agent runs, only a model on the allowlist that the saved
+  Groq key can access, and shall neither offer nor persist a model Groq offers that is not
+  on the allowlist.
 
 ## R3 · Reading — unrestricted within the project
 

@@ -95,3 +95,8 @@
 - [x] 9.4 (Unit) Move the focus to the decision when a write pauses, and bind approve and reject — R5.6
 - [x] 9.5 (Unit) Refuse a message while a run is paused, and say why in place of the composer's prompt — R5.7
 - [x] 9.6 (Unit) Scope the approve and reject shortcuts to the decision, so a keystroke inside the edit box cannot land or discard the write it was opened to change — R5.8
+
+## 10 · Delta — model allowlist and reasoning format
+
+- [x] 10.1 (Unit) Restrict the agent's model to an allowlist (`allam-2-7b`, `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.6-27b`): filter the Groq `/models` list to it at write (`saveCredential`) and at read (`normalize`), so the settings screen offers and the agent runs only a model on the allowlist that Groq served, in the allowlist's order — R2.8
+- [x] 10.2 (Unit) Set `reasoningFormat = "hidden"` on the `ChatGroq` instance so gpt-oss's chain-of-thought is not returned as a content block that Groq rejects on the next turn (`messages.N.content.0.type : value is not one of the allowed values ['text']`); the model still reasons, and `hidden` is the one reasoning format Groq allows alongside tool calls — R1.2

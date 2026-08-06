@@ -95,6 +95,12 @@ export interface EmbeddedAgent {
   readonly checkpointer: MemorySaver;
   /** Every tool name the agent exposes (custom + middleware). */
   readonly toolNames: readonly string[];
+  /**
+   * The model the agent reasons with. Exposed so the build is testable — the
+   * `reasoningFormat` set on it is what keeps gpt-oss's chain-of-thought out of
+   * the message history (see `createEmbeddedAgent`).
+   */
+  readonly model: BaseChatModel;
 }
 
 export interface CreateAgentInput {
@@ -185,9 +191,22 @@ export function createEmbeddedAgent(input: CreateAgentInput): EmbeddedAgent {
 
   const checkpointer = new MemorySaver();
   // The Groq instance is built with the saved key, never `process.env`. The
-  // proof tests inject a scripted model in its place (R2.1 — the renderer cannot
-  // reach the model; the test reaches it through the same seam).
-  const model = injected ?? new ChatGroq({ model: modelName, apiKey });
+  // proof tests inject a scripted model in their place (R2.1 — the renderer
+  // cannot reach the model; the test reaches it through the same seam).
+  const model: BaseChatModel = injected ?? new ChatGroq({ model: modelName, apiKey });
+  // gpt-oss is a reasoning model. Groq's default reasoning format returns the
+  // chain-of-thought as a content block; ChatGroq stores it verbatim and sends
+  // it back on the next turn, and Groq rejects an assistant message whose
+  // `content` is not a string or a `text` block
+  // ("messages.N.content.0.type : value is not one of the allowed values
+  // ['text']"). `hidden` keeps the reasoning internal — the model still reasons
+  // — and returns only the final answer as a plain string, so no reasoning block
+  // ever enters the history to be rejected on the round trip. `hidden` is the
+  // one reasoning format Groq allows alongside tool calls, which this agent
+  // always binds. Set as a field because ChatGroq 1.3.1's constructor does not
+  // read `reasoningFormat` from its params, and `invocationParams` reads the
+  // field, not a call-time option — the field is the only seam.
+  if (!injected && model instanceof ChatGroq) model.reasoningFormat = "hidden";
   const agent = createAgent({
     model,
     tools: customTools,
@@ -198,7 +217,7 @@ export function createEmbeddedAgent(input: CreateAgentInput): EmbeddedAgent {
 
   const toolNames = collectToolNames(middleware, customTools, backend);
 
-  return { agent, backend, checkpointer, toolNames };
+  return { agent, backend, checkpointer, toolNames, model };
 }
 
 /** A middleware exposes its tools by name; that is all this needs. */

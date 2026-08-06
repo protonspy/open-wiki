@@ -57,7 +57,9 @@ Three new things, and each is load-bearing:
    eviction path regardless.
 
 2. **The agent construction in `apps/desktop/src/main/agent/agent.ts`** —
-   `createAgent` (langchain) with an explicit middleware stack: `model = new ChatGroq({ model: <selected>, apiKey })` — the selected
+   `createAgent` (langchain) with an explicit middleware stack: `model = new ChatGroq({ model: <selected>, apiKey })` with `reasoningFormat = "hidden"` set on the instance
+   (the constructor does not read `reasoningFormat` from its params, so it is set as a field;
+   `invocationParams` reads the field, not a call-time option) — the selected
    model read from the per-project agent prefs (default `openai/gpt-oss-120b`), the key read
    from `readSecrets` (the same Groq key the recorder uses, injected as `apiKey`, never into `process.env`); `backend = wikiGateBackend`;
    `systemPrompt` = the project's harness entry file, resolved at runtime and carried in
@@ -293,12 +295,25 @@ gate-backed backend is reversible (it is our code, not a framework commitment).
   every entry written since. A rollback that itself throws is named in the reasons rather
   than swallowed — "rolled back" is a claim about the wiki's state, and a caller told only
   that would believe it.
-- **The `/models` list includes models that cannot tool-call.** Groq's endpoint returns every
-  model the key can access, not only chat models that tool-call, and it does not advertise
-  tool support, so the list cannot be filtered mechanically. The user's explicit choice is
-  honored (R2.5); a model that cannot tool-call fails at run time, surfaced in place by R1.4.
-  The default `openai/gpt-oss-120b` is tool-capable, so the common path works — this is the
-  trade for offering the raw list the user asked for instead of a curated one.
+- **The `/models` list is curated to an allowlist.** Groq's endpoint returns every model the
+  key can access, not only chat models that tool-call, and it does not advertise tool support.
+  R2.8 restricts the agent to an allowlist — `allam-2-7b`, `openai/gpt-oss-120b`,
+  `openai/gpt-oss-20b`, `qwen/qwen3.6-27b` — so the list the settings screen offers is the
+  allowlist intersected with what Groq served, in the allowlist's order, and a model Groq
+  offers that is not on it is neither shown nor persisted. This reverses the earlier trade
+  (offering the raw list the user asked for): curation is now the choice, because a model
+  that cannot tool-call fails at run time, surfaced in place by R1.4, and the allowlist is
+  how that is prevented rather than left to the user. The default `openai/gpt-oss-120b` is
+  on the allowlist and tool-capable, so the common path works.
+- **gpt-oss is a reasoning model, and its reasoning must not round-trip.** Groq's default
+  reasoning format returns the chain-of-thought as a content block; ChatGroq stores it
+  verbatim and sends it back on the next turn, and Groq rejects an assistant message whose
+  `content` is not a string or a `text` block (`messages.N.content.0.type : value is not one
+  of the allowed values ['text']`). `reasoning_format: "hidden"` returns only the final
+  answer as a plain string — the model still reasons — and is the one reasoning format Groq
+  allows alongside tool calls, which this agent always binds. The chain-of-thought is not
+  safety-trained and is not shown to the user; hiding it is correct on its own, and it is
+  what keeps the second turn from being rejected (R1.2).
 - **The DeepAgents `BackendProtocol` is an internal interface.** It is exported but not
   versioned as a stable public API; a `deepagents` upgrade could change it. Pinned in
   `package.json`; the proof tests (R6.1) would fail on a behaviour change, which is the

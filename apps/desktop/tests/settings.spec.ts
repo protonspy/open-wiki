@@ -217,10 +217,17 @@ describe("credentialState (8.3)", () => {
 });
 
 describe("agent model list + selection (5.4, R2.5)", () => {
-  it("persists the captured model list beside the secrets file when a key checks out", async () => {
+  it("persists only the allowed models beside the secrets file when a key checks out", async () => {
     // The validation call is the model-list fetch: the catalogue Groq returned
-    // is written to its own file, separate from the secrets file (5.4).
-    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+    // is filtered to the allowlist and written to its own file, separate from
+    // the secrets file (5.4). A model Groq offered that is not allowed — here
+    // llama-3.3-70b — is dropped before it is stored, and the list keeps the
+    // allowlist's order rather than the catalogue's.
+    const { doFetch } = fakeModelsFetch([
+      "openai/gpt-oss-20b",
+      "llama-3.3-70b",
+      "openai/gpt-oss-120b",
+    ]);
     await saveCredential(
       root,
       { provider: "groq", apiKey: "gsk_good" },
@@ -230,12 +237,30 @@ describe("agent model list + selection (5.4, R2.5)", () => {
       },
     );
     const prefs = readAgentPrefs(root, appData);
-    expect(prefs?.models).toEqual(["openai/gpt-oss-120b", "llama-3.3-70b"]);
-    // The default is selected when it is in the list.
+    expect(prefs?.models).toEqual(["openai/gpt-oss-120b", "openai/gpt-oss-20b"]);
+    // The default is selected when it is in the (filtered) list.
     expect(prefs?.selectedModel).toBe("openai/gpt-oss-120b");
   });
 
-  it("falls back to the first model when the default is not in the list", async () => {
+  it("falls back to the first allowed model when the default is not in the list", async () => {
+    // Groq offered allowed models but not the default; the selection falls back
+    // to the first allowed one, in allowlist order.
+    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-20b", "allam-2-7b"]);
+    await saveCredential(
+      root,
+      { provider: "groq", apiKey: "gsk_good" },
+      {
+        fetch: doFetch,
+        appDataDir: appData,
+      },
+    );
+    expect(readAgentPrefs(root, appData)?.selectedModel).toBe("allam-2-7b");
+  });
+
+  it("falls back to the default alone when none of the allowed models were offered", async () => {
+    // A key that checks out but whose catalogue has no allowed model must not
+    // pick a model the agent may not run; the list is empty and the selection
+    // is the default, which is itself an allowed model.
     const { doFetch } = fakeModelsFetch(["llama-3.3-70b", "mixtral-8x7b"]);
     await saveCredential(
       root,
@@ -245,7 +270,10 @@ describe("agent model list + selection (5.4, R2.5)", () => {
         appDataDir: appData,
       },
     );
-    expect(readAgentPrefs(root, appData)?.selectedModel).toBe("llama-3.3-70b");
+    expect(readAgentPrefs(root, appData)).toEqual({
+      models: [],
+      selectedModel: DEFAULT_MODEL,
+    });
   });
 
   it("does not write agent prefs for whisper.cpp — the agent does not run for it", async () => {
@@ -271,10 +299,10 @@ describe("agent model list + selection (5.4, R2.5)", () => {
     expect(JSON.stringify(secrets)).not.toContain("openai/gpt-oss-120b");
   });
 
-  it("agentModels reports the list and selection, or the empty default", async () => {
+  it("agentModels reports the allowed list and selection, or the empty default", async () => {
     // Before a key is saved, there is nothing to pick.
     expect(agentModels(root, appData)).toEqual({ models: [], selectedModel: DEFAULT_MODEL });
-    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "llama-3.3-70b", "openai/gpt-oss-20b"]);
     await saveCredential(
       root,
       { provider: "groq", apiKey: "gsk_good" },
@@ -283,11 +311,11 @@ describe("agent model list + selection (5.4, R2.5)", () => {
         appDataDir: appData,
       },
     );
-    expect(agentModels(root, appData).models).toEqual(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+    expect(agentModels(root, appData).models).toEqual(["openai/gpt-oss-120b", "openai/gpt-oss-20b"]);
   });
 
-  it("selectAgentModel records the user's pick, and refuses a model the list never offered", async () => {
-    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "llama-3.3-70b"]);
+  it("selectAgentModel records the user's pick, and refuses a model not on the allowed list", async () => {
+    const { doFetch } = fakeModelsFetch(["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b"]);
     await saveCredential(
       root,
       { provider: "groq", apiKey: "gsk_good" },
@@ -296,12 +324,15 @@ describe("agent model list + selection (5.4, R2.5)", () => {
         appDataDir: appData,
       },
     );
-    const next = selectAgentModel(root, "llama-3.3-70b", appData);
-    expect(next.selectedModel).toBe("llama-3.3-70b");
-    expect(readAgentPrefs(root, appData)?.selectedModel).toBe("llama-3.3-70b");
+    const next = selectAgentModel(root, "openai/gpt-oss-20b", appData);
+    expect(next.selectedModel).toBe("openai/gpt-oss-20b");
+    expect(readAgentPrefs(root, appData)?.selectedModel).toBe("openai/gpt-oss-20b");
     // A model Groq never offered — a stale dropdown, a hand-edited value — must
     // not become the agent's model.
     expect(() => selectAgentModel(root, "gpt-4", appData)).toThrow(/not one of the models/);
+    // A model Groq offered but the allowlist refuses is just as unavailable: it
+    // was filtered out before the list was stored, so selecting it is refused.
+    expect(() => selectAgentModel(root, "llama-3.3-70b", appData)).toThrow(/not one of the models/);
   });
 });
 

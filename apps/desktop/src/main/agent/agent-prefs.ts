@@ -28,6 +28,32 @@ import { defaultAppDataDir, secretsFile } from "@open-wiki/access/secrets";
  */
 export const DEFAULT_MODEL = "openai/gpt-oss-120b";
 
+/**
+ * The only models the chat agent may run. The settings dropdown offers these
+ * alone — intersected with what Groq actually serves, so a model here that
+ * Groq no longer lists simply does not appear, and a model Groq offers that is
+ * not here is refused before it reaches the agent.
+ *
+ * The list is the dropdown's order too, not Groq's catalogue order: a deliberate
+ * sequence rather than whatever `/models` happened to return first.
+ */
+export const ALLOWED_MODELS = [
+  "allam-2-7b",
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "qwen/qwen3.6-27b",
+] as const;
+
+/**
+ * The models the agent may run, in the order the dropdown shows them: the
+ * allowlist intersected with what was offered, keeping the allowlist's order.
+ * Pure, so the settings module and the agent both reach it without langchain.
+ */
+export function filterAllowed(models: string[]): string[] {
+  const offered = new Set(models);
+  return ALLOWED_MODELS.filter((m) => offered.has(m));
+}
+
 export interface AgentPrefs {
   /** The Groq `/models` list captured when the credential was saved. */
   models: string[];
@@ -100,13 +126,25 @@ export function resolveModel(prefs: AgentPrefs | undefined, fallback = DEFAULT_M
   return fallback;
 }
 
-/** A prefs shape read off disk may be partial or malformed; coerce to valid. */
+/**
+ * A prefs shape read off disk may be partial or malformed; coerce to valid.
+ *
+ * Filters the list to {@link ALLOWED_MODELS} on every read, so a prefs file
+ * written before the allowlist existed — or one a model Groq has since dropped
+ * left a stale entry in — never offers the agent a model it may not run. The
+ * selection is re-resolved against the filtered list when it is no longer in
+ * it, so a stored selection that fell off the allowlist does not survive as a
+ * model the agent would refuse.
+ */
 function normalize(raw: Partial<AgentPrefs>): AgentPrefs {
-  const models = Array.isArray(raw.models)
+  const parsed = Array.isArray(raw.models)
     ? raw.models.filter((m): m is string => typeof m === "string")
     : [];
+  const models = filterAllowed(parsed);
   const selectedModel =
-    typeof raw.selectedModel === "string" && raw.selectedModel.length > 0
+    typeof raw.selectedModel === "string" &&
+    raw.selectedModel.length > 0 &&
+    models.includes(raw.selectedModel)
       ? raw.selectedModel
       : resolveModel({ models, selectedModel: "" });
   return { models, selectedModel };
