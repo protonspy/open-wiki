@@ -33,6 +33,7 @@ import { GROQ_URL, type FetchLike } from "@open-wiki/audio";
 import { looksLikeProject } from "./project.js";
 import {
   DEFAULT_MODEL,
+  filterAllowed,
   parseModelList,
   readAgentPrefs,
   resolveModel,
@@ -201,18 +202,21 @@ export async function saveCredential(
   writeSecrets(projectRoot, secrets, deps.appDataDir ?? defaultAppDataDir());
 
   // The validation call doubled as the model-list fetch (5.4): persist the list
-  // beside the secrets file, with the default selected. whisper.cpp carries no
-  // agent model — its list stays empty and the agent refuses to run for it
-  // (R2.4, 5.3).
+  // beside the secrets file, with the default selected. The list is filtered to
+  // the allowlist before it is written, so the file holds only models the agent
+  // may run. whisper.cpp carries no agent model — its list stays empty and the
+  // agent refuses to run for it (R2.4, 5.3).
   if (input.provider === "groq") {
+    const models = filterAllowed(check.models);
     writeAgentPrefs(
       projectRoot,
       {
-        models: check.models,
-        selectedModel: resolveModel({ models: check.models, selectedModel: "" }),
+        models,
+        selectedModel: resolveModel({ models, selectedModel: "" }),
       },
       deps.appDataDir ?? defaultAppDataDir(),
     );
+    return { ok: true, models };
   }
   return { ok: true, models: check.models };
 }
@@ -233,8 +237,10 @@ export function agentModels(
 
 /**
  * Record the model the user picked from the list (R2.5). The selection must be
- * one Groq offered — a model the catalogue never returned is refused, so a stale
- * dropdown choice or a hand-edited value cannot become the agent's model.
+ * one Groq offered **and** on the {@link ALLOWED_MODELS} allowlist — the list
+ * `agentModels` returns is already filtered to both, so a stale dropdown choice
+ * or a hand-edited value that is neither is refused before it becomes the
+ * agent's model.
  */
 export function selectAgentModel(
   projectRoot: string,

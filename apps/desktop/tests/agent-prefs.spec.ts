@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { secretsFile } from "@open-wiki/access/secrets";
 import {
   agentPrefsFile,
+  ALLOWED_MODELS,
   DEFAULT_MODEL,
+  filterAllowed,
   parseModelList,
   readAgentPrefs,
   resolveModel,
@@ -41,15 +43,31 @@ describe("agentPrefsFile (5.4)", () => {
 });
 
 describe("writeAgentPrefs / readAgentPrefs", () => {
-  it("round-trips the list and selection", () => {
+  it("round-trips an allowed list and selection", () => {
     writeAgentPrefs(
       root,
-      { models: ["openai/gpt-oss-120b", "llama-3.3-70b"], selectedModel: "llama-3.3-70b" },
+      { models: ["openai/gpt-oss-120b", "openai/gpt-oss-20b"], selectedModel: "openai/gpt-oss-20b" },
       appData,
     );
     expect(readAgentPrefs(root, appData)).toEqual({
-      models: ["openai/gpt-oss-120b", "llama-3.3-70b"],
-      selectedModel: "llama-3.3-70b",
+      models: ["openai/gpt-oss-120b", "openai/gpt-oss-20b"],
+      selectedModel: "openai/gpt-oss-20b",
+    });
+  });
+
+  it("drops models that are not on the allowlist, and re-resolves the selection to an allowed one", () => {
+    // A prefs file written before the allowlist, or carrying a model Groq has
+    // since dropped, must not offer the agent a model it may not run. The
+    // selection is re-resolved against the filtered list when it is no longer
+    // in it, so a stored selection that fell off the allowlist does not survive.
+    writeAgentPrefs(
+      root,
+      { models: ["llama-3.3-70b", "openai/gpt-oss-120b"], selectedModel: "llama-3.3-70b" },
+      appData,
+    );
+    expect(readAgentPrefs(root, appData)).toEqual({
+      models: ["openai/gpt-oss-120b"],
+      selectedModel: "openai/gpt-oss-120b",
     });
   });
 
@@ -124,6 +142,40 @@ describe("parseModelList", () => {
     expect(parseModelList(null)).toEqual([]);
     expect(parseModelList({ data: "no" })).toEqual([]);
     expect(parseModelList({ data: [{ id: 7 }, { other: "x" }] })).toEqual([]);
+  });
+});
+
+describe("ALLOWED_MODELS / filterAllowed", () => {
+  it("is the four models the chat agent may run", () => {
+    expect([...ALLOWED_MODELS]).toEqual([
+      "allam-2-7b",
+      "openai/gpt-oss-120b",
+      "openai/gpt-oss-20b",
+      "qwen/qwen3.6-27b",
+    ]);
+  });
+
+  it("includes the default, so the empty-list fallback is always an allowed model", () => {
+    // resolveModel falls back to DEFAULT_MODEL when nothing is selected and the
+    // list is empty; if the default were not on the allowlist, an empty list
+    // would resolve to a model the agent may not run.
+    expect([...ALLOWED_MODELS]).toContain(DEFAULT_MODEL);
+  });
+
+  it("keeps the allowlist's order, not the catalogue's", () => {
+    // The dropdown shows a deliberate sequence, not whatever Groq returned first.
+    expect(filterAllowed(["openai/gpt-oss-20b", "allam-2-7b", "openai/gpt-oss-120b"])).toEqual([
+      "allam-2-7b",
+      "openai/gpt-oss-120b",
+      "openai/gpt-oss-20b",
+    ]);
+  });
+
+  it("drops everything Groq offers that is not on the allowlist", () => {
+    expect(filterAllowed(["llama-3.3-70b", "mixtral-8x7b", "openai/gpt-oss-120b"])).toEqual([
+      "openai/gpt-oss-120b",
+    ]);
+    expect(filterAllowed(["llama-3.3-70b", "mixtral-8x7b"])).toEqual([]);
   });
 });
 
