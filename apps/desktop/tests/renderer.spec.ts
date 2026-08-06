@@ -214,8 +214,10 @@ describe("History (8.5)", () => {
  * (spec `desktop-shell`, R1 and R2).
  */
 describe("Shell", () => {
-  it("starts in the wiki, with nothing selected", () => {
-    expect(new Shell().location).toEqual({ pane: "wiki" });
+  it("starts on chat, the primary pane, with nothing selected", () => {
+    // Chat leads the rail, so the window opens on it; the wiki is one
+    // keystroke away. Nothing is selected because chat has no selection.
+    expect(new Shell().location).toEqual({ pane: "chat" });
   });
 
   it("records a pane and a selection as places you have been — R1.2, R1.3", () => {
@@ -249,7 +251,9 @@ describe("Shell", () => {
     shell.visit({ pane: "wiki", selection: "fenix" });
     shell.visit({ pane: "wiki", selection: "fenix" });
     shell.back();
-    expect(shell.location).toEqual({ pane: "wiki" });
+    // Back returns to the window's start (chat, the primary pane), proving the
+    // duplicate wiki visit was not recorded.
+    expect(shell.location).toEqual({ pane: "chat" });
     expect(shell.canGoBack).toBe(false);
   });
 

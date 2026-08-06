@@ -140,12 +140,14 @@ export class Shell {
   private readonly lastSeen: Partial<Record<Pane, string>> = {};
   private open: Overlay | null = null;
 
-  constructor(start: Location = { pane: "wiki" }) {
+  // Chat is the primary pane — it leads the rail, and the window opens on it
+  // rather than on the wiki. The wiki is one keystroke (Ctrl/Cmd+2) away.
+  constructor(start: Location = { pane: "chat" }) {
     this.history.visit(start);
   }
 
   get location(): Location {
-    return this.history.current ?? { pane: "wiki" };
+    return this.history.current ?? { pane: "chat" };
   }
 
   get overlay(): Overlay | null {
