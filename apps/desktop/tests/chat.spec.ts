@@ -403,6 +403,84 @@ describe("createChatControl run loop (2.6, 3.2)", () => {
     const err = pushed.find((e) => e.kind === "error") as Extract<ChatEvent, { kind: "error" }>;
     expect(err.message).toMatch(/groq blew up/);
   });
+
+  it("injects the harness entry as the first user message on an empty thread, and not on a later turn (R2.9)", async () => {
+    // The harness entry (CLAUDE.md / AGENTS.md) is the conversation's first user
+    // message, injected once on the empty thread and then carried by the
+    // checkpointer — not re-sent every turn. Asserted by capturing the input the
+    // run loop hands to `streamEvents`: turn 1 carries the entry ahead of the
+    // user's text; turn 2 carries only the user's text.
+    const seen: unknown[] = [];
+    let getStateCalls = 0;
+    const harnessEntry = { content: "HARNESS-ENTRY", path: "CLAUDE.md" };
+    const pushed: ChatEvent[] = [];
+    const control = createChatControl({
+      projectRoot: root,
+      resolveCredentials: creds,
+      send: (_c, p) => pushed.push(p as ChatEvent),
+      buildAgent: () =>
+        ({
+          agent: {
+            async *streamEvents(input: unknown) {
+              seen.push(input);
+              yield { event: "on_chat_model_stream", data: { chunk: { content: "ok" } } };
+            },
+            async getState() {
+              getStateCalls += 1;
+              // The first read (before turn 1) sees an empty thread; every later
+              // read sees the conversation the checkpointer now holds.
+              return getStateCalls === 1
+                ? { tasks: [], values: { messages: [] } }
+                : { tasks: [], values: { messages: [{ role: "user", content: "prior" }] } };
+            },
+          },
+          harnessEntry,
+        }) as unknown as EmbeddedAgent,
+    });
+    control.send({ text: "first", threadId: "t" });
+    await waitFor(() => pushed.some((e) => e.kind === "done"));
+    const first = seen[0] as { messages: { role: string; content: string }[] };
+    // Turn 1: the harness entry is injected ahead of the user's first message.
+    expect(first.messages[0]).toEqual({ role: "user", content: "HARNESS-ENTRY" });
+    expect(first.messages[1]).toEqual({ role: "user", content: "first" });
+
+    control.send({ text: "second", threadId: "t" });
+    await waitFor(() => pushed.filter((e) => e.kind === "done").length >= 2);
+    const second = seen[1] as { messages: { role: string; content: string }[] };
+    // Turn 2: the checkpointer already holds the entry, so only the user's text
+    // is sent — the entry is not re-injected every turn.
+    expect(second.messages).toEqual([{ role: "user", content: "second" }]);
+  });
+
+  it("sends only the user's text when the project has no harness entry (R2.9)", async () => {
+    // A project with neither CLAUDE.md nor AGENTS.md resolves no harness entry,
+    // so the run loop sends only the user's text — the fixed system prompt alone
+    // frames the agent.
+    const seen: unknown[] = [];
+    const pushed: ChatEvent[] = [];
+    const control = createChatControl({
+      projectRoot: root,
+      resolveCredentials: creds,
+      send: (_c, p) => pushed.push(p as ChatEvent),
+      buildAgent: () =>
+        ({
+          agent: {
+            async *streamEvents(input: unknown) {
+              seen.push(input);
+              yield { event: "on_chat_model_stream", data: { chunk: { content: "ok" } } };
+            },
+            async getState() {
+              return { tasks: [], values: { messages: [] } };
+            },
+          },
+          harnessEntry: null,
+        }) as unknown as EmbeddedAgent,
+    });
+    control.send({ text: "hello", threadId: "t" });
+    await waitFor(() => pushed.some((e) => e.kind === "done"));
+    const first = seen[0] as { messages: { role: string; content: string }[] };
+    expect(first.messages).toEqual([{ role: "user", content: "hello" }]);
+  });
 });
 
 async function waitFor(cond: () => boolean, timeoutMs = 4000): Promise<void> {

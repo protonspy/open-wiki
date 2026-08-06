@@ -43,13 +43,29 @@ lands.
 - **R2.2** The embedded agent shall use Groq as its model, via `ChatGroq`, with the same
   Groq credential the recorder uses for transcription; no second credential shall be
   introduced.
-- **R2.3** The embedded agent's instructions shall be the project's harness entry file —
-  the file the project was scaffolded for its harness to read — and the scaffolded skills,
-  carried in unchanged; no hand-written system prompt shall be added beside them. A project
-  scaffolded for more than one harness carries more than one entry file, and they are
-  renderings of one convention, so the embedded agent shall resolve one deterministically —
-  from the scaffold metadata or the active harness, rejecting ambiguity before construction —
-  and shall not duplicate the convention in its prompt.
+- **R2.3** (MODIFIED) The embedded agent's `system` slot shall carry a fixed,
+  application-authored system prompt that frames what the wiki is and how the agent shall
+  behave within it — product-level framing the project cannot override — and the project's
+  harness entry file and scaffolded skills shall be carried in unchanged as the agent's
+  **first user message** and its skill source, not as the system prompt. The harness entry is
+  the user's instruction, not the system's rules: a project's `CLAUDE.md` can direct the
+  agent's work, but it does so from the lesser trust position of a user message, and the
+  fixed system prompt is the only hand-authored prompt the agent carries. (Replaces the
+  earlier "no hand-written system prompt shall be added beside them": the fixed prompt is now
+  application code, not project content, and is what the agent is before any project is
+  opened.) The scaffolded skills are loaded by the middleware's `read_file` unchanged, as
+  before; only the harness entry's slot moves, from `system` to the first user message.
+- **R2.9** (ADDED) The embedded agent shall assemble each conversation in this order: the
+  fixed system prompt, then the project's harness entry file as the first user message of the
+  thread, then the conversation history. The harness entry shall be injected once per
+  conversation — on the first turn of a thread, ahead of the user's first message — and
+  carried by the checkpointer for every subsequent turn, so it is neither re-sent on later
+  turns nor lost across the turns of one conversation. The embedded agent shall resolve the
+  harness entry deterministically: `CLAUDE.md` at the project root when it is present,
+  otherwise `AGENTS.md` when no `CLAUDE.md` is present — both are renderings of one
+  convention, and the precedence is fixed rather than ambiguous. A project that carries
+  neither sends no first user message, leaving the fixed system prompt alone with the
+  conversation.
 - **R2.4** While the project has no Groq credential, the desktop application shall disable
   the embedded agent and state in the settings screen that a Groq key is required for the
   agent and serves transcription and the agent both.
@@ -178,5 +194,7 @@ thing R5.1 through R5.5 exist to prevent.
   credential purpose."
 - MCP-over-HTTP (`adr:0018`, unbuilt). The embedded agent reads the project directly; it does
   not go through the MCP server.
-- Re-authoring the convention. The system prompt stays the generated `CLAUDE.md` plus the
-  scaffolded skills.
+- Re-authoring the convention. The harness entry (`CLAUDE.md` / `AGENTS.md`) and the
+  scaffolded skills are carried in unchanged; the fixed system prompt (R2.3) frames the wiki
+  and the agent's behavior at the product level, and does not re-state or override the
+  convention.

@@ -16,6 +16,7 @@ import { createAgent, humanInTheLoopMiddleware, tool, type InterruptOnConfig } f
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { WikiGateBackend } from "./wiki-gate-backend.js";
 import { pageGuardMiddleware } from "./page-guard.js";
+import { SYSTEM_PROMPT } from "./system-prompt.js";
 // `DEFAULT_MODEL` is canonical in `agent-prefs.ts` (pure, no langchain) so the
 // settings module can read the default without importing the agent's graph.
 // Re-exported here to keep this module's public surface stable.
@@ -57,27 +58,41 @@ export const INTERRUPT_ON: Record<string, InterruptOnConfig> = Object.fromEntrie
 );
 
 /**
- * Resolve the project's harness entry file — the agent's system prompt —
- * deterministically (R2.3). Today that is `CLAUDE.md` at the project root;
- * `plans/harness-portability.md` will write one entry file per harness and a
- * project may carry several, at which point this resolver picks one from the
- * scaffold metadata and rejects ambiguity. For v1 there is one candidate.
+ * The harness entry file candidates, in precedence order (R2.3, R2.9). Both are
+ * renderings of one convention — `CLAUDE.md` for a project scaffolded for
+ * Claude, `AGENTS.md` for the cross-harness name — and the precedence is fixed
+ * rather than ambiguous: a project carrying both is read from `CLAUDE.md`.
+ */
+const HARNESS_ENTRY_FILES = ["CLAUDE.md", "AGENTS.md"] as const;
+
+/**
+ * Resolve the project's harness entry file — the agent's **first user message**
+ * — deterministically (R2.3, R2.9). `CLAUDE.md` at the project root when it is
+ * present, otherwise `AGENTS.md`; a project carrying neither resolves to `null`,
+ * and the agent runs on the fixed system prompt alone. `plans/harness-portability.md`
+ * will write one entry file per harness and a project may carry several, at which
+ * point this resolver picks one from the scaffold metadata; for v1 the precedence
+ * above is the decision.
  *
  * Read with `assertWithin` + real-path resolution (the same check the gate
- * uses), not a bare `node:fs` read: a junction at `CLAUDE.md` pointing outside
- * the project must not become the agent's rules. Returned unchanged — no
- * hand-written prompt is appended beside it.
+ * uses), not a bare `node:fs` read: a junction at the entry file pointing outside
+ * the project must not become the agent's first user message. Returned unchanged —
+ * no hand-written prompt is appended beside it (the fixed system prompt is
+ * application code, set separately on `createAgent`).
  */
 export function resolveHarnessEntry(projectRoot: string): { content: string; path: string } | null {
-  const candidate = resolve(projectRoot, "CLAUDE.md");
-  try {
-    const real = assertWithin(projectRoot, candidate);
-    if (!existsSync(real)) return null;
-    return { content: readFileSync(real, "utf8"), path: "CLAUDE.md" };
-  } catch (e) {
-    if (e instanceof OutsideProjectError) return null;
-    throw e;
+  for (const name of HARNESS_ENTRY_FILES) {
+    try {
+      const real = assertWithin(projectRoot, resolve(projectRoot, name));
+      if (!existsSync(real)) continue;
+      return { content: readFileSync(real, "utf8"), path: name };
+    } catch (e) {
+      // A candidate that escapes the project is not the entry file; try the next.
+      if (e instanceof OutsideProjectError) continue;
+      throw e;
+    }
   }
+  return null;
 }
 
 /** The agent's write tools, named for the construction test and the IPC layer. */
@@ -95,6 +110,19 @@ export interface EmbeddedAgent {
   readonly checkpointer: MemorySaver;
   /** Every tool name the agent exposes (custom + middleware). */
   readonly toolNames: readonly string[];
+  /**
+   * The fixed, application-authored system prompt the agent was constructed with
+   * (R2.3). Exposed so the construction is testable — the harness entry is not
+   * the system prompt, and this is what is.
+   */
+  readonly systemPrompt: string;
+  /**
+   * The project's resolved harness entry (`CLAUDE.md` or `AGENTS.md`), carried in
+   * unchanged as the agent's first user message on an empty thread (R2.9), or
+   * `null` when the project carries neither. Exposed so the chat control can
+   * inject it once per conversation.
+   */
+  readonly harnessEntry: { content: string; path: string } | null;
   /**
    * The model the agent reasons with. Exposed so the build is testable — the
    * `reasoningFormat` set on it is what keeps gpt-oss's chain-of-thought out of
@@ -187,7 +215,10 @@ export function createEmbeddedAgent(input: CreateAgentInput): EmbeddedAgent {
   ];
 
   const harness = resolveHarnessEntry(projectRoot);
-  const systemPrompt = harness?.content;
+  // The `system` slot is the fixed, application-authored prompt (R2.3) — not the
+  // harness entry. The harness entry is injected as the first user message of
+  // each conversation by the chat control (R2.9), carried in unchanged.
+  const systemPrompt = SYSTEM_PROMPT;
 
   const checkpointer = new MemorySaver();
   // The Groq instance is built with the saved key, never `process.env`. The
@@ -217,7 +248,7 @@ export function createEmbeddedAgent(input: CreateAgentInput): EmbeddedAgent {
 
   const toolNames = collectToolNames(middleware, customTools, backend);
 
-  return { agent, backend, checkpointer, toolNames, model };
+  return { agent, backend, checkpointer, toolNames, model, systemPrompt, harnessEntry: harness };
 }
 
 /** A middleware exposes its tools by name; that is all this needs. */

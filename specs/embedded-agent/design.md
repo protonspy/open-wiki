@@ -62,15 +62,20 @@ Three new things, and each is load-bearing:
    `invocationParams` reads the field, not a call-time option) — the selected
    model read from the per-project agent prefs (default `openai/gpt-oss-120b`), the key read
    from `readSecrets` (the same Groq key the recorder uses, injected as `apiKey`, never into `process.env`); `backend = wikiGateBackend`;
-   `systemPrompt` = the project's harness entry file, resolved at runtime and carried in
-   unchanged (today `CLAUDE.md`; `plans/harness-portability.md` will write an entry file per
-   harness — Codex, opencode, Claude — and a project may carry several, as renderings of one
-   convention, so the resolver reads one — chosen deterministically from the scaffold metadata
-   or the active harness, rejecting ambiguity before the agent is constructed — and does not
-   duplicate); `skills = [".claude/skills/"]`
+   `systemPrompt` = a **fixed, application-authored prompt** (`agent/system-prompt.ts`) that
+   frames what the wiki is and how the agent behaves — product-level framing the project
+   cannot override. It is application code, not project content: it does not re-state the
+   convention, and it is the only hand-authored prompt the agent carries. The project's
+   harness entry file is **no longer the system prompt** — it is injected as the first user
+   message of each conversation (R2.9), carried in unchanged, so it instructs the agent from
+   the lesser trust position of a user message rather than the `system` slot. The resolver
+   reads `CLAUDE.md` at the project root when present, otherwise `AGENTS.md` — both are
+   renderings of one convention, and the precedence is fixed; a project carrying neither sends
+   no first user message; `skills = [".claude/skills/"]`
    (the shared skills location `adr:0015` chose, loaded by the middleware's `read_file` from
    the same backend); `checkpointer = new MemorySaver()` keyed by a `thread_id` per
-   conversation; `interruptOn` set for `write_file`, `edit_file`, `rename_page`, `delete_page`,
+   conversation, which is what carries the harness entry past the first turn — it is injected
+   once, on the empty thread, and the checkpointer holds it for every subsequent turn (R2.9); `interruptOn` set for `write_file`, `edit_file`, `rename_page`, `delete_page`,
    applied through langchain's `humanInTheLoopMiddleware({ interruptOn })` in the middleware
    stack; `tools = [renamePageTool, deletePageTool]` (the two custom tools, as tool objects —
    `tools` takes tool objects, not a string allowlist).
@@ -156,9 +161,9 @@ R4.2, R4.3, R4.4, R4.5, R4.6, R5.1, R5.2, R5.3, R5.4, R5.5, R6.1, R7.1, R7.2.
   the project root with the same `assertWithin` `packages/mcp` uses; a path that escapes
   (including a symlink or junction inside the project that points outside — the realistic
   escape on Windows, the only supported platform) throws `OutsideProjectError`, which the
-  backend returns as a tool error. The harness entry file (the agent's system prompt) is
-  resolved and read in main with the same `assertWithin` + real-path check, not a bare
-  `node:fs` read; the scaffolded skills are loaded by the middleware's `read_file` through the
+  backend returns as a tool error. The harness entry file (the agent's first user message —
+  R2.3, R2.9) is resolved and read in main with the same `assertWithin` + real-path check,
+  not a bare `node:fs` read; the scaffolded skills are loaded by the middleware's `read_file` through the
   backend, so they are confined too.
 - **IPC contract.** `chat:send({ text, thread_id })`, `chat:resume({ decisions, interrupt_id,
 run_id })`, `chat:cancel({ run_id })`, and push `chat:event({ kind, thread_id, run_id, ... })`
@@ -264,12 +269,18 @@ gate-backed backend is reversible (it is our code, not a framework commitment).
 - **A well-formed and wrong page passes the gate.** This is `adr:0019`'s stated cost; the
   mitigation is the human-in-the-loop approval (R5), not the gate. The interrupt shows the
   proposed change so a human can reject a plausible-but-wrong page.
-- **The system prompt is project-controlled.** The agent's instructions are the project's
-  `CLAUDE.md` and skills, read from disk. Opening an untrusted project with the agent
-  enabled is the trust decision: a malicious `CLAUDE.md` is the agent's rules, not just the
-  content it reads, and it can instruct well-formed wrong pages that pass the gate. This is
-  the accepted cost of carrying the convention in unchanged; human-in-the-loop is the only
-  mitigation. The agent is the lesser door, not a harness.
+- **The harness entry is project-controlled, and it is now a user message, not the system
+  prompt.** The agent's `system` slot is a fixed, application-authored prompt (R2.3) the
+  project cannot override; the project's `CLAUDE.md` / `AGENTS.md` and skills are read from
+  disk and carried in as the first user message and the skill source. Opening an untrusted
+  project with the agent enabled is still the trust decision — a malicious harness entry can
+  instruct well-formed wrong pages that pass the gate — but it does so from the lesser trust
+  position of a user message, which is the honest model for content the user chose to open.
+  This is the accepted cost of carrying the convention in unchanged; human-in-the-loop is the
+  only mitigation. The agent is the lesser door, not a harness. (Demoting the harness entry
+  from `system` to the first user message is the delta against the earlier "system prompt is
+  project-controlled" risk: the framing layer is now app-controlled, and the project-controlled
+  instructions are named as the user's, not the system's.)
 - **The wiki's index, changelog, and log are `NON_ENTITY_PAGES`.** `gateWrite` passes them
   with no content validation — they are "themselves." R4.6 protects them against
   `rename_page`/`delete_page` (structural removal or replacement) but not against
