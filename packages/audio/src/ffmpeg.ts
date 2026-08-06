@@ -78,7 +78,15 @@ export function resolveFfmpeg(repoRoot = defaultRepoRoot()): string {
   throw new FfmpegMissingError(looked);
 }
 
-/** `packages/audio/src` → the repository root. */
+/**
+ * `packages/audio/src` → the repository root.
+ *
+ * Only true while this module *is* that file. A consumer that bundles it moves
+ * it to a depth this count does not know — the desktop main process is one
+ * esbuild output, where four levels up stops at `apps/` — so a bundling
+ * consumer states the path in `OPEN_WIKI_FFMPEG` rather than relying on this.
+ * See `apps/desktop/src/main/resources.ts`.
+ */
 function defaultRepoRoot(): string {
   return resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..");
 }

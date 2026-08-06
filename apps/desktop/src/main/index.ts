@@ -7,7 +7,7 @@ import { PUSH_CHANNELS } from "./channels.js";
 import { asDropOutcome, inboxFailure } from "./ingest.js";
 import { resolveProject } from "./project.js";
 import { RecorderSession, resolveRecorder, spawnTransport } from "./recorder.js";
-import { applyPackagedBinaries } from "./resources.js";
+import { applyBinaries, checkoutBinaries, packagedBinaries } from "./resources.js";
 import { serveQueries } from "@open-wiki/access/socket";
 import { drainInbox, watchInbox, type InboxOutcome, type InboxWatcher } from "@open-wiki/access";
 import { defaultAppDataDir, readSecrets } from "@open-wiki/access/secrets";
@@ -296,8 +296,12 @@ function createWindow(projectRoot: string | null): BrowserWindow {
 void app.whenReady().then(() => {
   // 10.1 — ffmpeg and `recorder.exe` ship beside the asar, and the resolvers
   // that look for them count directories up from their own source file. The
-  // bundle collapses those depths, so the packaged location is stated here.
-  if (app.isPackaged) applyPackagedBinaries(process.resourcesPath);
+  // bundle collapses those depths, so the location is stated here — in a
+  // checkout too, where the same collapse sends the ffmpeg resolver looking in
+  // `apps/vendor/ffmpeg`.
+  applyBinaries(
+    app.isPackaged ? packagedBinaries(process.resourcesPath) : checkoutBinaries(app.getAppPath()),
+  );
 
   // Before the first window, and never again.
   armChannels();
