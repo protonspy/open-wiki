@@ -119,6 +119,7 @@ describe("the raw buttons (7.2)", () => {
   const NOT_BUTTONS = [
     "tree-item", // a row in the page list
     "rail-btn", // a tab in the rail
+    "rail-lang__item", // a choice in the rail's language menu, not an action
     "statusbar__button", // text that acts
     "src-card", // a source, as a card
     "side-toc__item", // a heading, as a line of the page's own words

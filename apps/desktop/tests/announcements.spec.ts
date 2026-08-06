@@ -213,11 +213,34 @@ describe("the rail, as it ships (4.5)", () => {
 
   it("keeps the language chip out of the tablist", () => {
     // It is not a tab, and a non-tab child of a `tablist` is a child nothing
-    // can name. The settings tab *is* one, which is why it stays inside the list
-    // and is pushed to the foot from within it — so there is no spacer element
-    // between the two any more, and the slice ends at the list's closing tag.
+    // can name — that did not change when it became a button. The settings tab
+    // *is* one, which is why it stays inside the list and is pushed to the foot
+    // from within it, so the slice ends at the list's closing tag.
     const tabs = rail.slice(rail.indexOf('className="rail__tabs"'), rail.indexOf("</div>"));
-    expect(tabs).not.toContain("rail-btn--static");
+    expect(tabs).not.toContain("rail-lang");
     expect(css).toMatch(/\.rail__tabs\s*\{[^}]*flex-direction:\s*column/);
+  });
+
+  it("offers the language from the chip, not only from the settings pane", () => {
+    // The chip opens a menu of the content languages and reports the choice back
+    // through `onLanguageChange`, so the language can be changed without leaving
+    // the pane the reader is on.
+    expect(rail).toContain("onLanguageChange");
+    expect(rail).toContain('aria-haspopup="menu"');
+    expect(rail).toContain('role="menu"');
+    expect(rail).toContain("LANGUAGES.map(");
+    // The current language is marked, not just coloured.
+    expect(rail).toContain('aria-checked={value === language}');
+  });
+
+  it("keeps the keyboard contract its `role=\"menu\"` claims", () => {
+    // Declaring the role is a promise: arrows move between items, Escape closes,
+    // and focus lands in the menu on open and back on the chip on close. Asserted
+    // at the source because this suite has no DOM — the behaviour is the code.
+    expect(rail).toMatch(/ArrowDown|ArrowUp/);
+    expect(rail).toMatch(/Escape/);
+    expect(rail).toContain("chipRef.current?.focus()");
+    // Focus moves into the menu when it opens, not left on the chip.
+    expect(rail).toMatch(/querySelectorAll<HTMLButtonElement>\('\[role="menuitemradio"\]'\)/);
   });
 });

@@ -214,8 +214,10 @@ describe("History (8.5)", () => {
  * (spec `desktop-shell`, R1 and R2).
  */
 describe("Shell", () => {
-  it("starts in the wiki, with nothing selected", () => {
-    expect(new Shell().location).toEqual({ pane: "wiki" });
+  it("starts in chat, with nothing selected", () => {
+    // Chat leads the rail, so the window opens on it — the thing the rail puts
+    // first is the thing the reader lands on.
+    expect(new Shell().location).toEqual({ pane: "chat" });
   });
 
   it("records a pane and a selection as places you have been — R1.2, R1.3", () => {
@@ -245,7 +247,9 @@ describe("Shell", () => {
   });
 
   it("does not record the location you are already at — R1.6", () => {
-    const shell = new Shell();
+    // Start somewhere explicit: the assertion is about re-visiting, not about
+    // which pane the window opens on, so it must not ride on the default.
+    const shell = new Shell({ pane: "wiki" });
     shell.visit({ pane: "wiki", selection: "fenix" });
     shell.visit({ pane: "wiki", selection: "fenix" });
     shell.back();

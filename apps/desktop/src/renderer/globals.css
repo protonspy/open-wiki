@@ -277,14 +277,64 @@ body {
   margin-top: auto;
 }
 
-/* The language is shown, not offered — the settings pane is where it changes. */
-.rail-btn--static {
-  cursor: default;
+/* The language chip and its popover. The chip is a `rail-btn` that also opens
+   a menu; the wrapper only positions the menu, which overflows the rail into the
+   pane beside it — nothing on the rail or `.app-body` clips, so no portal. */
+.rail-lang {
+  position: relative;
 }
 
-.rail-btn--static:hover {
+.rail-lang__btn {
+  cursor: pointer;
+}
+
+/* A click anywhere else closes the menu. Fixed and behind the menu, so it covers
+   the window without shifting layout. */
+.rail-lang__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+}
+
+.rail-lang__menu {
+  position: absolute;
+  left: 100%;
+  bottom: 0;
+  margin-left: var(--space-1);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: var(--space-1);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px -8px rgb(0 0 0 / 60%);
+}
+
+.rail-lang__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
   background: transparent;
-  color: var(--muted-foreground);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-lang__item:hover {
+  background: var(--muted);
+}
+
+/* The current language, in the accent — colour alone is not a state, so a check
+   marks it too. */
+.rail-lang__item[aria-checked="true"] {
+  color: var(--primary);
 }
 
 .statusbar {

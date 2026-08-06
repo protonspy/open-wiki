@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ExportResult, SourceKind } from "@open-wiki/access";
+import type { ExportResult, Language, SourceKind } from "@open-wiki/access";
 import type { PageView, ProjectInfo, WikiIndex } from "../main/api.js";
 import type { DropOutcome } from "../main/ingest.js";
 // From `shared/`, never from `main/watcher.js`. That module starts a chokidar
@@ -165,6 +165,27 @@ export function App(): React.JSX.Element {
       say(failure("shell", e));
     }
   }, [say]);
+
+  /**
+   * Change the project's content language from the rail's chip.
+   *
+   * The settings pane has its own `changeLanguage` that also refreshes the
+   * settings view and posts a status line; the rail needs neither — it only
+   * writes the value and re-loads the project, which is what makes the chip and
+   * the document's `lang` follow. `setLanguage` regenerates `CLAUDE.md`, so the
+   * agent is told what to write in without a message saying so.
+   */
+  const changeLanguage = useCallback(
+    async (next: Language) => {
+      try {
+        await bridge().setLanguage(next);
+        await refreshProject();
+      } catch (e: unknown) {
+        say(failure("shell", e));
+      }
+    },
+    [refreshProject, say],
+  );
 
   /** Arrive somewhere: whatever the `Shell` decided, put it on screen. */
   const arrive = useCallback((at: Location) => {
@@ -535,7 +556,12 @@ export function App(): React.JSX.Element {
       />
 
       <div className="app-body">
-        <Rail current={location.pane} onGoTo={goTo} language={project?.language ?? "en"} />
+        <Rail
+          current={location.pane}
+          onGoTo={goTo}
+          language={project?.language ?? "en"}
+          onLanguageChange={changeLanguage}
+        />
 
         {/* Every pane draws its own frame — a bar, and a body that scrolls
             inside it — so `<main>` stops padding and stops scrolling. The chat

@@ -140,12 +140,12 @@ export class Shell {
   private readonly lastSeen: Partial<Record<Pane, string>> = {};
   private open: Overlay | null = null;
 
-  constructor(start: Location = { pane: "wiki" }) {
+  constructor(start: Location = { pane: "chat" }) {
     this.history.visit(start);
   }
 
   get location(): Location {
-    return this.history.current ?? { pane: "wiki" };
+    return this.history.current ?? { pane: "chat" };
   }
 
   get overlay(): Overlay | null {
