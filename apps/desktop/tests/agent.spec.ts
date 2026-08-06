@@ -23,6 +23,7 @@ import {
   resumeCommand,
 } from "../src/main/agent/agent.js";
 import { disableTracing } from "../src/main/agent/tracing.js";
+import { SYSTEM_PROMPT } from "../src/main/agent/system-prompt.js";
 
 function tempProject(): string {
   const root = mkdtempSync(join(tmpdir(), "ow-agent-"));
@@ -164,12 +165,12 @@ function walk(dir: string): string[] {
   return out;
 }
 
-describe("resolveHarnessEntry (R2.3)", () => {
+describe("resolveHarnessEntry (R2.3, R2.9)", () => {
   let root: string;
   beforeEach(() => (root = tempProject()));
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it("reads CLAUDE.md at the project root as the system prompt, unchanged", () => {
+  it("reads CLAUDE.md at the project root, unchanged", () => {
     writeFileSync(join(root, "CLAUDE.md"), "# Rules\nYou are an open-wiki agent.\n");
     const h = resolveHarnessEntry(root);
     expect(h).not.toBeNull();
@@ -177,7 +178,25 @@ describe("resolveHarnessEntry (R2.3)", () => {
     expect(h!.content).toContain("open-wiki agent");
   });
 
-  it("returns null when there is no harness entry file", () => {
+  it("falls back to AGENTS.md when no CLAUDE.md is present", () => {
+    writeFileSync(join(root, "AGENTS.md"), "# Rules\nCarry the convention in.\n");
+    const h = resolveHarnessEntry(root);
+    expect(h).not.toBeNull();
+    expect(h!.path).toBe("AGENTS.md");
+    expect(h!.content).toContain("Carry the convention in");
+  });
+
+  it("prefers CLAUDE.md over AGENTS.md when both are present", () => {
+    // Both are renderings of one convention; the precedence is fixed, not
+    // ambiguous, so a project carrying both is read from CLAUDE.md.
+    writeFileSync(join(root, "CLAUDE.md"), "# Rules\nfrom claude\n");
+    writeFileSync(join(root, "AGENTS.md"), "# Rules\nfrom agents\n");
+    const h = resolveHarnessEntry(root);
+    expect(h!.path).toBe("CLAUDE.md");
+    expect(h!.content).toContain("from claude");
+  });
+
+  it("returns null when neither CLAUDE.md nor AGENTS.md is present", () => {
     expect(resolveHarnessEntry(root)).toBeNull();
   });
 });
@@ -251,17 +270,31 @@ describe("createEmbeddedAgent — construction (R2.1, R2.5, R4.4, R7.1)", () => 
     }
   });
 
-  it("uses CLAUDE.md as the system prompt when present", () => {
-    writeFileSync(join(root, "CLAUDE.md"), "# Rules\nCarry the convention in.\n");
+  it("uses the fixed system prompt, and carries the harness entry as the first user message, not as the system prompt (R2.3, R2.9)", () => {
+    writeFileSync(join(root, "CLAUDE.md"), "# Rules\nA unique harness marker.\n");
     expect(existsSync(join(root, "CLAUDE.md"))).toBe(true);
-    // Construction does not throw with a system prompt resolved from disk.
-    expect(() =>
-      createEmbeddedAgent({
-        projectRoot: root,
-        apiKey: "not-a-real-key",
-        modelName: DEFAULT_MODEL,
-      }),
-    ).not.toThrow();
+    const { systemPrompt, harnessEntry } = createEmbeddedAgent({
+      projectRoot: root,
+      apiKey: "not-a-real-key",
+      modelName: DEFAULT_MODEL,
+    });
+    // The `system` slot is the fixed, application-authored prompt — not the
+    // project's CLAUDE.md, which is now the first user message (R2.3, R2.9).
+    expect(systemPrompt).toBe(SYSTEM_PROMPT);
+    expect(systemPrompt).not.toContain("unique harness marker");
+    // The harness entry is exposed separately, resolved from disk, unchanged.
+    expect(harnessEntry).not.toBeNull();
+    expect(harnessEntry!.path).toBe("CLAUDE.md");
+    expect(harnessEntry!.content).toContain("unique harness marker");
+  });
+
+  it("carries no harness entry when the project has neither CLAUDE.md nor AGENTS.md (R2.9)", () => {
+    const { harnessEntry } = createEmbeddedAgent({
+      projectRoot: root,
+      apiKey: "not-a-real-key",
+      modelName: DEFAULT_MODEL,
+    });
+    expect(harnessEntry).toBeNull();
   });
 
   it("hides gpt-oss reasoning so it never round-trips as a rejected content block", () => {
