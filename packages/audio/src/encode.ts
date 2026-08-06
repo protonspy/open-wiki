@@ -79,6 +79,17 @@ export function trimConcatFilter(keeps: readonly Interval[]): string {
  * Windows caps a command line at about 32 000 characters — a limit that would
  * be hit by exactly the long recordings this pipeline exists for, and only by
  * those.
+ *
+ * **`-/filter_complex`, not `-filter_complex_script`.** The dedicated option was
+ * removed upstream. The vendored ffmpeg 9 answers it with `Unrecognized option
+ * 'filter_complex_script'` and exits having touched no audio — so every
+ * recording long enough to need a cut list failed, and only those. `-/<option>`
+ * is the general form, "read this option's value from this file", and it is not
+ * specific to filtergraphs.
+ *
+ * The trade is that an `OPEN_WIKI_FFMPEG` pointing at a build predating that
+ * form will not run. The vendored binary is the supported one (`docs/stack.md`);
+ * an override is a developer convenience and carries its own version.
  */
 export function encodeArgs(input: string, output: string, filterScript: string | null): string[] {
   return [
@@ -87,7 +98,7 @@ export function encodeArgs(input: string, output: string, filterScript: string |
     "-y",
     "-i",
     input,
-    ...(filterScript ? ["-filter_complex_script", filterScript, "-map", "[out]"] : []),
+    ...(filterScript ? ["-/filter_complex", filterScript, "-map", "[out]"] : []),
     "-vn",
     "-ac",
     "1",

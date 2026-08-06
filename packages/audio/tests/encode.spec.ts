@@ -1,8 +1,9 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FfmpegResult } from "../src/ffmpeg.js";
+import { resolveFfmpeg, runOrThrow, spawnFfmpeg } from "../src/ffmpeg.js";
 import {
   encodeArgs,
   encodeTrack,
@@ -89,7 +90,7 @@ describe("encodeArgs", () => {
 
   it("reads the graph from a file, because the command line has a length limit", () => {
     const withFilter = encodeArgs("mic.wav", "mic.opus", "filter.txt");
-    expect(withFilter[withFilter.indexOf("-filter_complex_script") + 1]).toBe("filter.txt");
+    expect(withFilter[withFilter.indexOf("-/filter_complex") + 1]).toBe("filter.txt");
   });
 
   it("maps the graph's output, without which the filter would be ignored", () => {
@@ -98,7 +99,7 @@ describe("encodeArgs", () => {
   });
 
   it("omits the graph entirely when there is none", () => {
-    expect(args).not.toContain("-filter_complex_script");
+    expect(args).not.toContain("-/filter_complex");
     expect(args).not.toContain("-map");
   });
 
@@ -111,7 +112,7 @@ describe("encodeTrack", () => {
   it("hands ffmpeg a graph carrying the cut list", async () => {
     let seen = "";
     const run = async (args: readonly string[]): Promise<FfmpegResult> => {
-      const script = args[args.indexOf("-filter_complex_script") + 1]!;
+      const script = args[args.indexOf("-/filter_complex") + 1]!;
       seen = readFileSync(script, "utf8");
       return { code: 0, stdout: "", stderr: "" };
     };
@@ -122,7 +123,7 @@ describe("encodeTrack", () => {
   it("writes the graph outside the recording, which is frozen once written", async () => {
     let script = "";
     const run = async (args: readonly string[]): Promise<FfmpegResult> => {
-      script = args[args.indexOf("-filter_complex_script") + 1]!;
+      script = args[args.indexOf("-/filter_complex") + 1]!;
       return { code: 0, stdout: "", stderr: "" };
     };
     await encodeTrack(
@@ -139,7 +140,7 @@ describe("encodeTrack", () => {
   it("leaves no graph behind even when ffmpeg fails", async () => {
     let script = "";
     const failing = async (args: readonly string[]): Promise<FfmpegResult> => {
-      script = args[args.indexOf("-filter_complex_script") + 1]!;
+      script = args[args.indexOf("-/filter_complex") + 1]!;
       expect(existsSync(script)).toBe(true);
       return { code: 1, stdout: "", stderr: "boom" };
     };
@@ -162,7 +163,7 @@ describe("encodeTrack", () => {
       return { code: 0, stdout: "", stderr: "" };
     };
     await encodeTrack(run, "mic.wav", join(dir, "mic.opus"), [{ startNs: 0, endNs: s(10) }], s(10));
-    expect(args).not.toContain("-filter_complex_script");
+    expect(args).not.toContain("-/filter_complex");
   });
 
   it("encodes the whole track when there is nothing to keep", async () => {
@@ -172,7 +173,7 @@ describe("encodeTrack", () => {
       return { code: 0, stdout: "", stderr: "" };
     };
     await encodeTrack(run, "mic.wav", join(dir, "mic.opus"), [], s(10));
-    expect(args).not.toContain("-filter_complex_script");
+    expect(args).not.toContain("-/filter_complex");
   });
 
   it("passes the input and the output through", async () => {
@@ -224,4 +225,49 @@ describe("probeDurationNs", () => {
     expect(args[args.indexOf("-i") + 1]).toBe("mic.opus");
     expect(args).not.toContain("-c:a");
   });
+});
+
+/**
+ * The one test here that talks to the real binary.
+ *
+ * Every other test drives a fake runner. That proves the arithmetic and cannot
+ * prove ffmpeg accepts what we build — the gap that let `-filter_complex_script`
+ * outlive its own removal upstream and reach a user as
+ * `Unrecognized option 'filter_complex_script'`, with a full green suite behind
+ * it. It needs no audio device, only the vendored binary, and it is skipped
+ * where there is none: CI, and a checkout before `fetch-ffmpeg`.
+ */
+const vendored = ((): string | null => {
+  try {
+    return resolveFfmpeg();
+  } catch {
+    return null;
+  }
+})();
+
+describe.skipIf(!vendored)("encodeArgs, against the vendored ffmpeg", () => {
+  it(
+    "builds an invocation the binary accepts, filtergraph and all",
+    async () => {
+      const run = spawnFfmpeg(vendored!, 60_000);
+      const wav = join(dir, "in.wav");
+      await runOrThrow(run, [
+        ...["-hide_banner", "-nostats", "-y"],
+        ...["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2"],
+        wav,
+      ]);
+      const script = join(dir, "filter.txt");
+      writeFileSync(script, trimConcatFilter([{ startNs: 0, endNs: SECOND }]), "utf8");
+
+      const result = await run(encodeArgs(wav, join(dir, "out.opus"), script));
+
+      // Asserted before the exit code: a rejected option is a *different*
+      // failure from a filtergraph ffmpeg parsed and disliked, and the exit
+      // code alone does not tell them apart.
+      expect(result.stderr).not.toMatch(/Unrecognized option|Option not found/);
+      expect(result.code).toBe(0);
+      expect(existsSync(join(dir, "out.opus"))).toBe(true);
+    },
+    60_000,
+  );
 });

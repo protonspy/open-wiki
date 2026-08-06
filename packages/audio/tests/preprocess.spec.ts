@@ -196,7 +196,7 @@ describe("preprocessRecording", () => {
         probe += 1;
         return { code: 0, stdout: "", stderr: log };
       }
-      const script = args.indexOf("-filter_complex_script");
+      const script = args.indexOf("-/filter_complex");
       if (args.includes("-c:a")) {
         const output = args[args.length - 1]!;
         graphs.set(output, script >= 0 ? readFileSync(args[script + 1]!, "utf8") : "");
