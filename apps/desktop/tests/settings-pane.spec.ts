@@ -189,3 +189,26 @@ describe("the export, where it went (2.2)", () => {
     expect(source("WikiPane.tsx")).toMatch(/onClick=\{onExport\}[\s\S]{0,120}disabled=\{editing\}/);
   });
 });
+
+describe("the rail's language chip after a language change", () => {
+  // No DOM in this suite, so the wiring is asserted against the source. The bug
+  // was that the chip reads `project.language`, the project is loaded once on
+  // mount, and `changeLanguage` refreshed only the settings view — so the chip
+  // (and the document's `lang`) kept the old language until the window reopened.
+  it("App re-loads the project and hands it to Settings", () => {
+    const app = source("App.tsx");
+    // A callback that re-fetches the project, not just the settings view.
+    expect(app).toContain("const refreshProject = useCallback(async () => {");
+    expect(app).toContain("setProject(await bridge().project())");
+    // Passed to the settings pane, which fires it after a change.
+    expect(app).toContain("<Settings onProjectChanged={refreshProject} />");
+  });
+
+  it("Settings fires the callback after writing the new language", () => {
+    const settings = source("Settings.tsx");
+    expect(settings).toContain("onProjectChanged");
+    // `setLanguage` before `onProjectChanged`, inside `changeLanguage` — the
+    // project is re-loaded only after the new value has been written.
+    expect(settings).toMatch(/bridge\(\)\.setLanguage[\s\S]*?onProjectChanged\?\.\(\)/);
+  });
+});

@@ -34,18 +34,19 @@ export interface RailPane {
 }
 
 /**
- * In the order the draft draws them: what you read, what it rests on, what is
- * wrong with it. That is also the order a page is written in.
+ * Chat leads the rail. The rest follow the order a page is written in — what
+ * you read, what it rests on, what is wrong with it — and that order is still
+ * the one the draft draws them in; Chat is simply pulled ahead of it.
  *
- * The settings are the fifth and last, at the foot. They were a sheet over the
- * window and are a pane because that is what they behave like — the argument is
- * in `navigation.ts`.
+ * The settings are the last, at the foot. They were a sheet over the window and
+ * are a pane because that is what they behave like — the argument is in
+ * `navigation.ts`.
  */
 export const PANES: readonly RailPane[] = [
+  { pane: "chat", label: "Chat", icon: MessagesSquare },
   { pane: "wiki", label: "Wiki", icon: BookText },
   { pane: "sources", label: "Sources", icon: Layers },
   { pane: "checks", label: "Checks", icon: CircleCheck },
-  { pane: "chat", label: "Chat", icon: MessagesSquare },
   { pane: "settings", label: "Settings", icon: Settings2, foot: true },
 ];
 

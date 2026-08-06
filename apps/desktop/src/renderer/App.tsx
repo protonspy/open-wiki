@@ -150,6 +150,22 @@ export function App(): React.JSX.Element {
     [say],
   );
 
+  /**
+   * Re-fetch the project after a setting that lives on it has changed.
+   *
+   * The mount effect loads `project` once; nothing re-loads it, so a language
+   * change made in the settings pane left the rail's language chip — and the
+   * document's `lang` — showing the old value until the window was reopened.
+   * The settings pane calls this once it has written the new value.
+   */
+  const refreshProject = useCallback(async () => {
+    try {
+      setProject(await bridge().project());
+    } catch (e: unknown) {
+      say(failure("shell", e));
+    }
+  }, [say]);
+
   /** Arrive somewhere: whatever the `Shell` decided, put it on screen. */
   const arrive = useCallback((at: Location) => {
     setEditing(false);
@@ -667,7 +683,7 @@ export function App(): React.JSX.Element {
               Unmounted when you are elsewhere, unlike the chat pane below: it
               holds nothing a main process has heard of, so coming back to it
               simply re-reads the two files it is about. */}
-          {location.pane === "settings" ? <Settings /> : null}
+          {location.pane === "settings" ? <Settings onProjectChanged={refreshProject} /> : null}
 
           {/* The chat pane stays mounted and is hidden when you are elsewhere.
               Unmounting it would reset the reducer holding the transcript and

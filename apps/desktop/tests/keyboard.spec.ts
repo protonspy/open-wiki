@@ -21,7 +21,8 @@ describe("paneShortcut (8.1)", () => {
   });
 
   it("takes Cmd as well as Ctrl", () => {
-    expect(paneShortcut({ key: "1", metaKey: true })).toBe("wiki");
+    // Chat leads the rail, so Ctrl/Cmd+1 reaches it.
+    expect(paneShortcut({ key: "1", metaKey: true })).toBe("chat");
   });
 
   it("is nothing without a modifier", () => {
