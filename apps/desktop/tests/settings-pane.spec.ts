@@ -212,3 +212,18 @@ describe("the rail's language chip after a language change", () => {
     expect(settings).toMatch(/bridge\(\)\.setLanguage[\s\S]*?onProjectChanged\?\.\(\)/);
   });
 });
+
+describe("the rail's language chip can change the language", () => {
+  // The chip reports its choice through `onLanguageChange`; App wires that to the
+  // same write-then-refresh the settings pane uses, so the chip and
+  // `document.lang` follow without the settings pane being open.
+  it("App hands the rail a callback that writes the language and refreshes", () => {
+    const app = source("App.tsx");
+    expect(app).toContain("const changeLanguage = useCallback(");
+    // Write before refresh: the project is re-loaded only after the new value
+    // has been written, as the settings pane does.
+    expect(app).toContain("await bridge().setLanguage(next);");
+    expect(app).toContain("await refreshProject();");
+    expect(app).toContain("onLanguageChange={changeLanguage}");
+  });
+});

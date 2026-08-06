@@ -1,7 +1,10 @@
-import { BookText, CircleCheck, Globe, Layers, MessagesSquare, Settings2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { Language } from "@open-wiki/access";
+import { BookText, Check, CircleCheck, Globe, Layers, MessagesSquare, Settings2 } from "lucide-react";
 import clsx from "clsx";
 import { railMove } from "./keyboard.js";
 import type { Pane } from "./navigation.js";
+import { LANGUAGES } from "./languages.js";
 import { ICON_MD, type Icon } from "./ui/icons.js";
 
 /**
@@ -53,15 +56,74 @@ export const PANES: readonly RailPane[] = [
 export interface RailProps {
   current: Pane;
   onGoTo: (pane: Pane) => void;
-  /** The project's content language, as its code — `en`, `pt`, `es` (8.12). */
+  /** The project's content language, as its code — `en`, `pt-BR`, `es` (8.12). */
   language: string;
+  /** Write a new content language to the project (`ow.json`) and refresh. */
+  onLanguageChange: (next: Language) => void;
 }
 
-export function Rail({ current, onGoTo, language }: RailProps): React.JSX.Element {
+export function Rail({ current, onGoTo, language, onLanguageChange }: RailProps): React.JSX.Element {
   const at = Math.max(
     0,
     PANES.findIndex((entry) => entry.pane === current),
   );
+  /** The language menu is open. Owned here because it is the chip's own state. */
+  const [langOpen, setLangOpen] = useState(false);
+  // The chip gets focus back when the menu closes, and the menu is reached by
+  // arrow keys rather than only Tab — the `role="menu"` claims that contract, so
+  // it is implemented rather than only asserted.
+  const chipRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  /** Close the menu and return focus to the chip it opened from. */
+  const closeLang = (): void => {
+    setLangOpen(false);
+    chipRef.current?.focus();
+  };
+
+  // On open, land in the menu — on the current language if it is listed, else the
+  // first item — so the keyboard is in the menu the moment it appears, not left on
+  // the chip the mouse already left.
+  useEffect(() => {
+    if (!langOpen) return;
+    const menu = menuRef.current;
+    if (!menu) return;
+    const items = menu.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
+    const focus =
+      Array.from(items).find((item) => item.getAttribute("aria-checked") === "true") ??
+      items[0];
+    focus?.focus();
+  }, [langOpen]);
+
+  /** The menu keyboard contract: arrows move between items, Escape closes. */
+  const onMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [],
+    );
+    const i = items.findIndex((item) => item === document.activeElement);
+    switch (event.key) {
+      case "Escape":
+        event.preventDefault();
+        closeLang();
+        return;
+      case "ArrowDown":
+        event.preventDefault();
+        items[(i + 1) % items.length]?.focus();
+        return;
+      case "ArrowUp":
+        event.preventDefault();
+        items[(i - 1 + items.length) % items.length]?.focus();
+        return;
+      case "Home":
+        event.preventDefault();
+        items[0]?.focus();
+        return;
+      case "End":
+        event.preventDefault();
+        items[items.length - 1]?.focus();
+        return;
+    }
+  };
 
   /**
    * One tab stop for the whole rail, and the arrows move within it (uxpass 4.5).
@@ -113,13 +175,62 @@ export function Rail({ current, onGoTo, language }: RailProps): React.JSX.Elemen
           </button>
         ))}
       </div>
-      {/* Shown, not offered. The language is a project setting (`ow.json`), and
-          the settings pane one row above is where it is changed — this is the
-          reminder that the agent was told to write in it. */}
-      <span className="rail-btn rail-btn--static" title={`Content language: ${language}`}>
-        <Globe size={ICON_MD} aria-hidden />
-        {language.toUpperCase()}
-      </span>
+      {/* The language the agent writes in is a project setting (`ow.json`), and
+          it is offered here — not only in the settings pane — because the rail
+          is always in view and the settings pane is not. It is still not a tab:
+          a non-tab child of a `tablist` is a child assistive technology has no
+          name for, so it stays outside the list exactly as it did when it was
+          display-only. */}
+      <div className="rail-lang">
+        <button
+          ref={chipRef}
+          type="button"
+          className="rail-btn rail-lang__btn"
+          aria-haspopup="menu"
+          aria-expanded={langOpen}
+          aria-controls={langOpen ? "rail-lang-menu" : undefined}
+          title={`Content language: ${language}`}
+          onClick={() => setLangOpen((open) => !open)}
+        >
+          <Globe size={ICON_MD} aria-hidden />
+          {language.toUpperCase()}
+        </button>
+        {langOpen ? (
+          <>
+            {/* A click anywhere else closes the menu. Fixed and behind the menu,
+                so it covers the whole window without shifting layout. */}
+            <div className="rail-lang__backdrop" onClick={closeLang} />
+            <div
+              id="rail-lang-menu"
+              ref={menuRef}
+              className="rail-lang__menu"
+              role="menu"
+              aria-label="Content language"
+              onKeyDown={onMenuKeyDown}
+            >
+              {LANGUAGES.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={value === language}
+                  className="rail-lang__item"
+                  onClick={() => {
+                    closeLang();
+                    // `void`: the callback writes and refreshes; it catches its own
+                    // errors, and dropping the promise here is explicit rather than
+                    // an oversight a later caller could break.
+                    void onLanguageChange(value);
+                  }}
+                >
+                  <span>{label}</span>
+                  {value === language ? <Check size={ICON_MD} aria-hidden /> : null}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
