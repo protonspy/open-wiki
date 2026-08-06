@@ -39,7 +39,18 @@ import { Switch } from "./ui/Switch.js";
  * setting: it acts on the wiki, like creating a page or deleting one, and every
  * other act on the wiki is in the wiki pane's bar. That is where it went.
  */
-export function Settings(): React.JSX.Element {
+export function Settings({
+  onProjectChanged,
+}: {
+  /**
+   * Fired after the content language is written, so the rail's language chip
+   * and the document's `lang` stop showing the value that was just replaced.
+   * The mount effect in `App` loads the project once and nothing else re-loads
+   * it; without this, a language change in this pane did not reach the rail
+   * until the window was reopened.
+   */
+  onProjectChanged?: () => void | Promise<void>;
+}): React.JSX.Element {
   const [credential, setCredential] = useState<CredentialState | null>(null);
   const [view, setView] = useState<SettingsView | null>(null);
   const [provider, setProvider] = useState<"groq" | "whispercpp">("groq");
@@ -95,7 +106,10 @@ export function Settings(): React.JSX.Element {
     // in. Saying so is the difference between a setting and a surprise.
     setStatus("Language changed. The project's CLAUDE.md was regenerated.");
     setView(await bridge().settingsView());
-  }, []);
+    // The rail's language chip and the document's `lang` read the project, not
+    // this view — re-load the project so they reflect what was just chosen.
+    await onProjectChanged?.();
+  }, [onProjectChanged]);
 
   const changeDeleteWav = useCallback(async (on: boolean) => {
     await bridge().setDeleteWav(on);
